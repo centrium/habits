@@ -14,19 +14,11 @@
 			remoteGlobalIDString = C91EE3FA2F4C589800DB70AC;
 			remoteInfo = Habits;
 		};
-		C91EE4152F4C589A00DB70AC /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = C91EE3F32F4C589800DB70AC /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = C91EE3FA2F4C589800DB70AC;
-			remoteInfo = Habits;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		C91EE3FB2F4C589800DB70AC /* Habits.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Habits.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C91EE40A2F4C589A00DB70AC /* HabitsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HabitsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		C91EE4142F4C589A00DB70AC /* HabitsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HabitsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -62,13 +54,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C91EE4112F4C589A00DB70AC /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -87,7 +72,6 @@
 			children = (
 				C91EE3FB2F4C589800DB70AC /* Habits.app */,
 				C91EE40A2F4C589A00DB70AC /* HabitsTests.xctest */,
-				C91EE4142F4C589A00DB70AC /* HabitsUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -140,29 +124,6 @@
 			productReference = C91EE40A2F4C589A00DB70AC /* HabitsTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		C91EE4132F4C589A00DB70AC /* HabitsUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = C91EE4242F4C589A00DB70AC /* Build configuration list for PBXNativeTarget "HabitsUITests" */;
-			buildPhases = (
-				C91EE4102F4C589A00DB70AC /* Sources */,
-				C91EE4112F4C589A00DB70AC /* Frameworks */,
-				C91EE4122F4C589A00DB70AC /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				C91EE4162F4C589A00DB70AC /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				C91EE4172F4C589A00DB70AC /* HabitsUITests */,
-			);
-			name = HabitsUITests;
-			packageProductDependencies = (
-			);
-			productName = HabitsUITests;
-			productReference = C91EE4142F4C589A00DB70AC /* HabitsUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -177,10 +138,6 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					C91EE4092F4C589A00DB70AC = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = C91EE3FA2F4C589800DB70AC;
-					};
-					C91EE4132F4C589A00DB70AC = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = C91EE3FA2F4C589800DB70AC;
 					};
@@ -202,7 +159,6 @@
 			targets = (
 				C91EE3FA2F4C589800DB70AC /* Habits */,
 				C91EE4092F4C589A00DB70AC /* HabitsTests */,
-				C91EE4132F4C589A00DB70AC /* HabitsUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -216,13 +172,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C91EE4082F4C589A00DB70AC /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C91EE4122F4C589A00DB70AC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -246,13 +195,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C91EE4102F4C589A00DB70AC /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -260,11 +202,6 @@
 			isa = PBXTargetDependency;
 			target = C91EE3FA2F4C589800DB70AC /* Habits */;
 			targetProxy = C91EE40B2F4C589A00DB70AC /* PBXContainerItemProxy */;
-		};
-		C91EE4162F4C589A00DB70AC /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = C91EE3FA2F4C589800DB70AC /* Habits */;
-			targetProxy = C91EE4152F4C589A00DB70AC /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -494,44 +431,6 @@
 			};
 			name = Release;
 		};
-		C91EE4252F4C589A00DB70AC /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ma.HabitsUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Habits;
-			};
-			name = Debug;
-		};
-		C91EE4262F4C589A00DB70AC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ma.HabitsUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Habits;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -558,15 +457,6 @@
 			buildConfigurations = (
 				C91EE4222F4C589A00DB70AC /* Debug */,
 				C91EE4232F4C589A00DB70AC /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		C91EE4242F4C589A00DB70AC /* Build configuration list for PBXNativeTarget "HabitsUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C91EE4252F4C589A00DB70AC /* Debug */,
-				C91EE4262F4C589A00DB70AC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

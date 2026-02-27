@@ -13,6 +13,7 @@ struct GitHubHeatmapGrid: View {
     let weeks: [Week]
     let cellSize: CGFloat = 10
     let cellSpacing: CGFloat = 4
+    let selectedDate: Date
     let intensityFor: (Date) -> Double
     let onTapDay: (Date) -> Void
 
@@ -97,6 +98,8 @@ struct GitHubHeatmapGrid: View {
                                 accent: accent,
                                 intensity: intensityFor(day),
                                 size: cellSize,
+                                isSelected: Calendar.current.isDate(day, inSameDayAs: selectedDate),
+                                isToday: Calendar.current.isDateInToday(day),
                                 onTap: { onTapDay(day) }
                             )
                         } else {

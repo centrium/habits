@@ -17,19 +17,20 @@ struct HabitsListView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(habits) { habit in
-                        HabitCard(habit: habit)
-                    }
-
-                    if habits.isEmpty {
-                        EmptyState()
-                            .padding(.top, 28)
-                    }
+            List {
+                ForEach(habits) { habit in
+                    HabitCard(habit: habit)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
-                .padding()
+
+                if habits.isEmpty {
+                    EmptyState()
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
             }
+            .listStyle(.plain)
             .navigationTitle("Habits")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

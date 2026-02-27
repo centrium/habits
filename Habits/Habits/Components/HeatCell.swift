@@ -13,6 +13,8 @@ struct HeatCell: View {
     let accent: Color
     let intensity: Double
     let size: CGFloat
+    let isSelected: Bool
+    let isToday: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -23,9 +25,29 @@ struct HeatCell: View {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
             )
+            .overlay(selectionOverlay)
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
             .accessibilityLabel(Text(formatted(date)))
+    }
+
+    private var selectionOverlay: some View {
+        let strokeColor: Color?
+        let lineWidth: CGFloat
+
+        if isSelected {
+            strokeColor = Color.white.opacity(0.6)
+            lineWidth = 2
+        } else if isToday {
+            strokeColor = Color.primary.opacity(0.35)
+            lineWidth = 1
+        } else {
+            strokeColor = nil
+            lineWidth = 0
+        }
+
+        return RoundedRectangle(cornerRadius: 2)
+            .strokeBorder(strokeColor ?? .clear, lineWidth: lineWidth)
     }
 
     private func formatted(_ date: Date) -> String {
