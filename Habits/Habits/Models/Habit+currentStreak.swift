@@ -13,26 +13,16 @@ extension Habit {
         guard hasStreakGoal else { return 0 }
 
         var streak = 0
-        var date = referenceDate
+        var interval = periodRange(for: referenceDate, calendar: calendar)
 
         while true {
-            let interval = periodRange(for: date, calendar: calendar)
-
             if hasHitTarget(in: interval) {
                 streak += 1
             } else {
                 break
             }
 
-            // Step backwards one full period
-            switch streakGoalType {
-            case .daily:
-                date = calendar.date(byAdding: .day, value: -1, to: interval.start)!
-            case .monthly:
-                date = calendar.date(byAdding: .month, value: -1, to: interval.start)!
-            case .yearly:
-                date = calendar.date(byAdding: .year, value: -1, to: interval.start)!
-            }
+            interval = previousPeriod(from: interval, calendar: calendar)
         }
 
         return streak
@@ -40,5 +30,20 @@ extension Habit {
 
     func currentStreak(calendar: Calendar = .current) -> Int {
         currentStreak(referenceDate: .now, calendar: calendar)
+    }
+
+    private func previousPeriod(from interval: DateInterval, calendar: Calendar) -> DateInterval {
+        let component: Calendar.Component
+        switch streakGoalType {
+        case .daily:
+            component = .day
+        case .monthly:
+            component = .month
+        case .yearly:
+            component = .year
+        }
+
+        let previousDate = calendar.date(byAdding: component, value: -1, to: interval.start)!
+        return periodRange(for: previousDate, calendar: calendar)
     }
 }

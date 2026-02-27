@@ -209,6 +209,70 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(streak, 2)
     }
 
+    func testTotalCountTreatsIntervalEndAsExclusive() {
+        let habit = makeGoalHabit(goalType: .daily, target: 1)
+        let today = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let yesterdayStart = Fixtures.calendar.date(byAdding: .day, value: -1, to: today)!
+        let yesterdayInterval = DateInterval(start: yesterdayStart, end: today)
+
+        habit.logs = [HabitLog(day: today, count: 2, calendar: Fixtures.calendar)]
+
+        XCTAssertEqual(habit.totalCount(in: yesterdayInterval), 0)
+    }
+
+    func testDailyCurrentStreakForBrandNewHabitCountsOnlyToday() {
+        let habit = makeGoalHabit(goalType: .daily, target: 2)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: reference, count: 2, calendar: Fixtures.calendar)]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(streak, 1)
+    }
+
+    func testDailyCurrentStreakIsZeroWhenCurrentDayIsIncomplete() {
+        let habit = makeGoalHabit(goalType: .daily, target: 2)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let yesterday = Fixtures.calendar.date(byAdding: .day, value: -1, to: reference)!
+
+        habit.logs = [
+            HabitLog(day: yesterday, count: 2, calendar: Fixtures.calendar),
+            HabitLog(day: reference, count: 1, calendar: Fixtures.calendar)
+        ]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(streak, 0)
+    }
+
+    func testDailyCurrentStreakIsZeroWhenThereAreNoLogs() {
+        let habit = makeGoalHabit(goalType: .daily, target: 2)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(streak, 0)
+    }
+
+    func testDailyCurrentStreakUsesProvidedCalendarBoundaries() {
+        var localCalendar = Calendar(identifier: .gregorian)
+        localCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
+
+        let habit = makeGoalHabit(goalType: .daily, target: 1)
+        let reference = localCalendar.date(from: DateComponents(year: 2025, month: 3, day: 10, hour: 12))!
+        let today = localCalendar.startOfDay(for: reference)
+        let yesterday = localCalendar.date(byAdding: .day, value: -1, to: today)!
+
+        habit.logs = [
+            HabitLog(day: yesterday, count: 1, calendar: localCalendar),
+            HabitLog(day: today, count: 1, calendar: localCalendar)
+        ]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: localCalendar)
+
+        XCTAssertEqual(streak, 2)
+    }
+
     // MARK: - Monthly Goal Behavior
 
     func testMonthlyProgressAccumulatesAcrossDaysInMonth() {
@@ -284,6 +348,18 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(streak, 1)
     }
 
+    func testMonthlyCurrentStreakDoesNotDoubleCountAtMonthBoundary() {
+        let habit = makeGoalHabit(goalType: .monthly, target: 5)
+        let reference = Fixtures.makeDate(year: 2025, month: 3, day: 15)
+        let marchStart = Fixtures.makeDate(year: 2025, month: 3, day: 1)
+
+        habit.logs = [HabitLog(day: marchStart, count: 5, calendar: Fixtures.calendar)]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(streak, 1)
+    }
+
     // MARK: - Yearly Goal Behavior
 
     func testYearlyProgressAccumulatesAcrossDaysInYear() {
@@ -349,6 +425,18 @@ final class HabitBehaviorTests: XCTestCase {
             HabitLog(day: year2024, count: 3, calendar: Fixtures.calendar),
             HabitLog(day: year2025, count: 10, calendar: Fixtures.calendar)
         ]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(streak, 1)
+    }
+
+    func testYearlyCurrentStreakDoesNotDoubleCountAtYearBoundary() {
+        let habit = makeGoalHabit(goalType: .yearly, target: 5)
+        let reference = Fixtures.makeDate(year: 2025, month: 8, day: 1)
+        let yearStart = Fixtures.makeDate(year: 2025, month: 1, day: 1)
+
+        habit.logs = [HabitLog(day: yearStart, count: 5, calendar: Fixtures.calendar)]
 
         let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
 

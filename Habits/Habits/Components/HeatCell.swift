@@ -19,7 +19,7 @@ struct HeatCell: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(accent.opacity(intensity))
+            .fill(accent.opacity(intensity * 0.6))
             .frame(width: size, height: size)
             .overlay(
                 RoundedRectangle(cornerRadius: 2)

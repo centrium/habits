@@ -17,6 +17,7 @@ struct HabitFormView: View {
     @Binding var streakGoalType: StreakGoalType
     @Binding var streakTarget: Int
     @State private var showIconPicker = false
+    @State private var showingTargetEditor = false
 
     let palette: [(String, String)]
     let submitTitle: String
@@ -101,8 +102,42 @@ struct HabitFormView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    Stepper(value: $streakTarget, in: 1...999) {
-                        Text("Target: \(streakTarget) per \(streakGoalType.unit)")
+                    HStack(spacing: 8) {
+
+                        Text("Target:")
+
+                        Text("\(streakTarget)")
+                            .font(.headline)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(Color.secondary.opacity(0.15))
+                            )
+                            .onTapGesture {
+                                showingTargetEditor = true
+                            }
+
+                        Text("per \(streakGoalType.unit)")
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        HStack(spacing: 14) {
+
+                            Button {
+                                streakTarget = max(1, streakTarget - 1)
+                            } label: {
+                                Image(systemName: "minus")
+                            }
+
+                            Button {
+                                streakTarget += 1
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Text("Streak counts when you hit the target for the period.")
@@ -123,6 +158,14 @@ struct HabitFormView: View {
                 iconName = newIcon
             }
             .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showingTargetEditor) {
+            TargetNumberSheet(
+                initialValue: streakTarget,
+                goalType: streakGoalType
+            ) { newValue in
+                streakTarget = newValue
+            }
         }
     }
 }

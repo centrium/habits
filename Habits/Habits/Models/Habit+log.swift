@@ -14,7 +14,9 @@ extension Habit {
     }
 
     func totalCount(in interval: DateInterval) -> Int {
-        logs.filter { interval.contains($0.day) }
+        logs.filter { log in
+            log.day >= interval.start && log.day < interval.end
+        }
             .reduce(0) { $0 + $1.count }
     }
 
@@ -41,4 +43,3 @@ extension Habit {
         return logsByDay[normalized]?.count ?? 0
     }
 }
-

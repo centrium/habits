@@ -13,6 +13,11 @@ struct CalendarMonthView: View {
         case right
     }
 
+    private struct AdjustingDate: Identifiable {
+        let id: Date
+        let date: Date
+    }
+
     @Binding var month: Date
     let habit: Habit
     let service: HabitLogService
@@ -21,10 +26,11 @@ struct CalendarMonthView: View {
 
     @State private var slideDirection: SlideDirection?
     @State private var slideResetToken = UUID()
+    @State private var adjustingDate: AdjustingDate? = nil
 
     private let swipeIntentLock: CGFloat = 20
     private let swipeCommitThreshold: CGFloat = 44
-    private let horizontalSpacing: CGFloat = 8
+    private let horizontalSpacing: CGFloat = 4
     private let verticalSpacing: CGFloat = 8
     private let weekdayRowHeight: CGFloat = 18
     private let headerHeight: CGFloat = 44
@@ -36,6 +42,7 @@ struct CalendarMonthView: View {
 
     var body: some View {
         let days = service.daysForMonth(displayedMonth)
+
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
             count: 7
@@ -60,10 +67,12 @@ struct CalendarMonthView: View {
                         ForEach(days.indices, id: \.self) { index in
                             let day = days[index]
                             let isInDisplayedMonth = isDisplayedMonth(day)
+                            let count = service.count(for: habit, on: day )
 
                             CalendarDayCell(
                                 date: day,
                                 intensity: service.intensity(for: habit, on: day),
+                                count: count,
                                 accent: Color(hex: habit.colorHex),
                                 isInDisplayedMonth: isInDisplayedMonth,
                                 isDisabled: !isInDisplayedMonth || isFutureDate(day),
@@ -72,6 +81,9 @@ struct CalendarMonthView: View {
                                 onTap: {
                                     onSelectDay(day)
                                     service.increment(for: habit, on: day)
+                                },
+                                onLongPress: {
+                                    adjustingDate = AdjustingDate(id: day, date: day)
                                 }
                             )
                         }
@@ -79,6 +91,13 @@ struct CalendarMonthView: View {
                 }
                 .id(monthIdentity)
                 .transition(calendarTransition)
+            }
+            .sheet(item: $adjustingDate) { date in
+                AdjustCountSheet(
+                    date: date.date,
+                    habit: habit,
+                    service: service
+                )
             }
             .clipped()
             .contentShape(Rectangle())
