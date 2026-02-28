@@ -167,6 +167,90 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(progress, 1.0)
     }
 
+    func testDailyProgressUsesProvidedDateContext() {
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+        let firstDay = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let secondDay = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logs = [
+            HabitLog(day: firstDay, count: 1, calendar: Fixtures.calendar),
+            HabitLog(day: secondDay, count: 3, calendar: Fixtures.calendar)
+        ]
+
+        let firstProgress = try! XCTUnwrap(habit.progress(for: firstDay, calendar: Fixtures.calendar))
+        let secondProgress = try! XCTUnwrap(habit.progress(for: secondDay, calendar: Fixtures.calendar))
+
+        XCTAssertEqual(firstProgress, 1.0 / 3.0, accuracy: 0.0001)
+        XCTAssertEqual(secondProgress, 1.0, accuracy: 0.0001)
+    }
+
+    func testGoalStateHasGoalIsFalseForOpenEndedHabit() {
+        let habit = makeOpenEndedHabit()
+
+        XCTAssertFalse(habit.hasGoal)
+    }
+
+    func testGoalStateHasGoalIsTrueForConfiguredGoal() {
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+
+        XCTAssertTrue(habit.hasGoal)
+    }
+
+    func testGoalStateProgressFractionIsNilForOpenEndedHabit() {
+        let habit = makeOpenEndedHabit()
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+
+        XCTAssertNil(habit.progressFraction(for: day, calendar: Fixtures.calendar))
+    }
+
+    func testGoalStateBinaryGoalCompletesAfterFirstLog() {
+        let habit = makeGoalHabit(goalType: .daily, target: 1)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: day, count: 1, calendar: Fixtures.calendar)]
+
+        XCTAssertEqual(habit.progressFraction(for: day, calendar: Fixtures.calendar), 1.0)
+        XCTAssertTrue(habit.isComplete(for: day, calendar: Fixtures.calendar))
+    }
+
+    func testGoalStateRemovingGoalClearsProgressFraction() {
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: day, count: 2, calendar: Fixtures.calendar)]
+
+        let progress = try! XCTUnwrap(habit.progressFraction(for: day, calendar: Fixtures.calendar))
+
+        XCTAssertEqual(progress, 2.0 / 3.0, accuracy: 0.0001)
+
+        habit.hasStreakGoal = false
+
+        XCTAssertNil(habit.progressFraction(for: day, calendar: Fixtures.calendar))
+        XCTAssertFalse(habit.isComplete(for: day, calendar: Fixtures.calendar))
+    }
+
+    func testGoalStateCompletionUsesProvidedDate() {
+        let habit = makeGoalHabit(goalType: .daily, target: 2)
+        let completeDay = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let incompleteDay = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logs = [
+            HabitLog(day: completeDay, count: 2, calendar: Fixtures.calendar),
+            HabitLog(day: incompleteDay, count: 1, calendar: Fixtures.calendar)
+        ]
+
+        XCTAssertTrue(habit.isComplete(for: completeDay, calendar: Fixtures.calendar))
+        XCTAssertFalse(habit.isComplete(for: incompleteDay, calendar: Fixtures.calendar))
+    }
+
+    func testGoalStateFutureDateWithoutLogsReturnsZeroProgress() {
+        let habit = makeGoalHabit(goalType: .daily, target: 2)
+        let futureDay = Fixtures.makeDate(year: 2025, month: 6, day: 20)
+
+        let progress = try! XCTUnwrap(habit.progress(for: futureDay, calendar: Fixtures.calendar))
+
+        XCTAssertEqual(progress, 0.0)
+        XCTAssertFalse(habit.isComplete(for: futureDay, calendar: Fixtures.calendar))
+    }
+
     func testDailyHasHitTargetWhenCountMeetsTarget() {
         let habit = makeGoalHabit(goalType: .daily, target: 3)
         let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
@@ -224,6 +308,21 @@ final class HabitBehaviorTests: XCTestCase {
         let habit = makeGoalHabit(goalType: .daily, target: 2)
         let reference = Fixtures.makeDate(year: 2025, month: 6, day: 10)
         habit.logs = [HabitLog(day: reference, count: 2, calendar: Fixtures.calendar)]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(streak, 1)
+    }
+
+    func testDailyCurrentStreakStopsImmediatelyWhenPreviousDayHasNoLogs() {
+        let habit = makeGoalHabit(goalType: .daily, target: 2)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let olderCompletedDay = Fixtures.calendar.date(byAdding: .day, value: -2, to: reference)!
+
+        habit.logs = [
+            HabitLog(day: olderCompletedDay, count: 2, calendar: Fixtures.calendar),
+            HabitLog(day: reference, count: 2, calendar: Fixtures.calendar)
+        ]
 
         let streak = habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar)
 
@@ -306,6 +405,27 @@ final class HabitBehaviorTests: XCTestCase {
         let progress = habit.progress(for: day2, calendar: Fixtures.calendar)
 
         XCTAssertEqual(progress, 1.0)
+    }
+
+    func testMonthlyProgressFractionUsesCurrentMonthTotal() {
+        let habit = makeGoalHabit(goalType: .monthly, target: 10)
+        let jan = Fixtures.makeDate(year: 2025, month: 1, day: 30)
+        let feb1 = Fixtures.makeDate(year: 2025, month: 2, day: 5)
+        let feb2 = Fixtures.makeDate(year: 2025, month: 2, day: 12)
+
+        habit.logs = [
+            HabitLog(day: jan, count: 8, calendar: Fixtures.calendar),
+            HabitLog(day: feb1, count: 2, calendar: Fixtures.calendar),
+            HabitLog(day: feb2, count: 3, calendar: Fixtures.calendar)
+        ]
+
+        let progress = try! XCTUnwrap(habit.progressFraction(for: feb2, calendar: Fixtures.calendar))
+
+        XCTAssertEqual(
+            progress,
+            0.5,
+            accuracy: 0.0001
+        )
     }
 
     func testMonthlyCurrentStreakCountsConsecutiveCompletedMonths() {
@@ -391,6 +511,27 @@ final class HabitBehaviorTests: XCTestCase {
         let progress = habit.progress(for: day2, calendar: Fixtures.calendar)
 
         XCTAssertEqual(progress, 1.0)
+    }
+
+    func testYearlyProgressFractionUsesCurrentYearTotal() {
+        let habit = makeGoalHabit(goalType: .yearly, target: 10)
+        let year2024 = Fixtures.makeDate(year: 2024, month: 5, day: 5)
+        let year2025a = Fixtures.makeDate(year: 2025, month: 2, day: 5)
+        let year2025b = Fixtures.makeDate(year: 2025, month: 7, day: 5)
+
+        habit.logs = [
+            HabitLog(day: year2024, count: 9, calendar: Fixtures.calendar),
+            HabitLog(day: year2025a, count: 2, calendar: Fixtures.calendar),
+            HabitLog(day: year2025b, count: 5, calendar: Fixtures.calendar)
+        ]
+
+        let progress = try! XCTUnwrap(habit.progressFraction(for: year2025b, calendar: Fixtures.calendar))
+
+        XCTAssertEqual(
+            progress,
+            0.7,
+            accuracy: 0.0001
+        )
     }
 
     func testYearlyCurrentStreakCountsConsecutiveCompletedYears() {

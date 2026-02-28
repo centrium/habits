@@ -9,13 +9,11 @@ import SwiftUI
 
 extension Habit {
 
-    func isCurrentPeriodComplete(today: Date = .now) -> Bool {
-        guard hasStreakGoal else { return false }
-        let interval = periodRange(for: today)
-        return hasHitTarget(in: interval)
+    func isCurrentPeriodComplete(for date: Date, calendar: Calendar = .current) -> Bool {
+        isComplete(for: date, calendar: calendar)
     }
-    
-    func isComplete(for date: Date = .now) -> Bool {
-        progress(for: date) == 1.0
+
+    func isComplete(for date: Date, calendar: Calendar = .current) -> Bool {
+        progressFraction(for: date, calendar: calendar) == 1.0
     }
 }

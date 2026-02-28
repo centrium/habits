@@ -15,6 +15,7 @@ struct HeatCell: View {
     let size: CGFloat
     let isSelected: Bool
     let isToday: Bool
+    let isInteractive: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -27,7 +28,11 @@ struct HeatCell: View {
             )
             .overlay(selectionOverlay)
             .contentShape(Rectangle())
-            .onTapGesture(perform: onTap)
+            .allowsHitTesting(isInteractive)
+            .onTapGesture {
+                guard isInteractive else { return }
+                onTap()
+            }
             .accessibilityLabel(Text(formatted(date)))
     }
 

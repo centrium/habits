@@ -14,50 +14,44 @@ struct HabitCard: View {
     @State private var isDetailPresented = false
     @State private var service: HabitLogService?
     @State private var selectedDetent: PresentationDetent = .large
-    @State private var selectedDate = Date()
+    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
 
-    // Layout tuning
-    private let cellSize: CGFloat = 10
-    private let cellSpacing: CGFloat = 4
-    private let monthLabelHeight: CGFloat = 14
     private let headerHeight: CGFloat = 40
 
-    private var accent: Color {
-        Color(hex: habit.colorHex)
-    }
-
     var body: some View {
-        Button {
-            isDetailPresented = true
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                HabitHeader(
+        VStack(alignment: .leading, spacing: 12) {
+            HabitHeader(
+                habit: habit,
+                selectedDate: selectedDate,
+                showsQuickLogButton: true,
+                onQuickLog: { date in
+                    service?.increment(for: habit, on: date)
+                }
+            )
+            .frame(height: headerHeight)
+
+            if let service = service {
+                HabitHeatmap(
                     habit: habit,
-                    showsQuickLogButton: true,
-                    onQuickLog: {
-                        service?.increment(for: habit, on: Date())
+                    service: service,
+                    selectedDate: selectedDate,
+                    isInteractive: false,
+                    onSelectDay: { day in
+                        selectedDate = day
                     }
                 )
-                .frame(height: headerHeight)
-
-                if let service = service {
-                    HabitHeatmap(
-                        habit: habit,
-                        service: service,
-                        selectedDate: selectedDate,
-                        onSelectDay: { day in
-                            selectedDate = day
-                        }
-                    )
-                }
             }
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color(.secondarySystemBackground))
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isDetailPresented = true
+        }
         .sheet(isPresented: $isDetailPresented) {
             HabitDetailSheet(habit: habit, modelContext: modelContext)
                 .presentationDetents([.medium, .large], selection: $selectedDetent)

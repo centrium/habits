@@ -14,6 +14,7 @@ struct GitHubHeatmapGrid: View {
     let cellSize: CGFloat = 10
     let cellSpacing: CGFloat = 4
     let selectedDate: Date
+    let isInteractive: Bool
     let intensityFor: (Date) -> Double
     let onTapDay: (Date) -> Void
 
@@ -33,6 +34,7 @@ struct GitHubHeatmapGrid: View {
                 }
             }
         }
+        .allowsHitTesting(isInteractive)
     }
 
     private var dayLabels: some View {
@@ -100,6 +102,7 @@ struct GitHubHeatmapGrid: View {
                                 size: cellSize,
                                 isSelected: Calendar.current.isDate(day, inSameDayAs: selectedDate),
                                 isToday: Calendar.current.isDateInToday(day),
+                                isInteractive: isInteractive,
                                 onTap: { onTapDay(day) }
                             )
                         } else {

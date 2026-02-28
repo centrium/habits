@@ -12,6 +12,7 @@ struct HabitHeatmap: View {
     let habit: Habit
     let service: HabitLogService
     let selectedDate: Date
+    let isInteractive: Bool
     let onSelectDay: (Date) -> Void
 
     // 🔒 Locked design constants
@@ -46,6 +47,7 @@ struct HabitHeatmap: View {
                 accent: accent,
                 weeks: weeks,
                 selectedDate: selectedDate,
+                isInteractive: isInteractive,
                 intensityFor: { day in
                     service.intensity(for: habit, on: day)
                 },

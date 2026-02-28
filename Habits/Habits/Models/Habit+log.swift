@@ -25,7 +25,7 @@ extension Habit {
         return totalCount(in: interval) >= streakTarget
     }
     
-    func log(on date: Date = .now, amount: Int = 1, calendar: Calendar = .current) {
+    func log(on date: Date, amount: Int = 1, calendar: Calendar = .current) {
         guard amount > 0 else { return }
 
         let normalized = calendar.startOfDay(for: date)

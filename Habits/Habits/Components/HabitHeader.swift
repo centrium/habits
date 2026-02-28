@@ -9,19 +9,29 @@ import SwiftUI
 
 struct HabitHeader: View {
     let habit: Habit
+    let selectedDate: Date
     let showsQuickLogButton: Bool
-    let onQuickLog: () -> Void
+    let onQuickLog: (Date) -> Void
 
     private var accent: Color { Color(hex: habit.colorHex) }
 
     private var subtitleText: String {
         let trimmed = habit.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "Tap today to log" : trimmed
+        return trimmed.isEmpty ? "Tap to log" : trimmed
     }
 
     private var iconName: String? {
         let trimmed = habit.iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var goalProgressFraction: Double {
+        habit.progressFraction(for: selectedDate) ?? 0
+    }
+
+    private var quickLogAccessibilityLabel: String {
+        let dateText = selectedDate.formatted(date: .abbreviated, time: .omitted)
+        return "Log \(habit.name) for \(dateText)"
     }
 
     var body: some View {
@@ -44,18 +54,16 @@ struct HabitHeader: View {
             Spacer()
 
             if showsQuickLogButton {
-                Button {
-                    onQuickLog()
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(accent)
-                        .frame(width: 32, height: 32)
-                        .contentShape(Circle())
-                }
-                .padding(6)
-                .buttonStyle(.plain)
-                .accessibilityLabel("Log today for \(habit.name)")
+                GoalProgressButton(
+                    accent: accent,
+                    hasGoal: habit.hasGoal,
+                    progressFraction: goalProgressFraction,
+                    isComplete: habit.isComplete(for: selectedDate),
+                    accessibilityLabel: quickLogAccessibilityLabel,
+                    action: {
+                        onQuickLog(selectedDate)
+                    }
+                )
             }
         }
     }

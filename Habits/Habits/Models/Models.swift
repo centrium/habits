@@ -141,26 +141,26 @@ extension Color {
 extension Habit {
     func isGoalMet(
         calendar: Calendar = .current,
-        referenceDate: Date = .now
+        referenceDate: Date
     ) -> Bool {
-        let today = calendar.startOfDay(for: referenceDate)
+        let referenceDay = calendar.startOfDay(for: referenceDate)
 
         switch streakGoalType {
         case .daily:
             let count = logs.first {
-                calendar.isDate($0.day, inSameDayAs: today)
+                calendar.isDate($0.day, inSameDayAs: referenceDay)
             }?.count ?? 0
             return count >= streakTarget
 
         case .monthly:
-            let components = calendar.dateComponents([.year, .month], from: today)
+            let components = calendar.dateComponents([.year, .month], from: referenceDay)
             let monthlyTotal = logs.filter {
                 calendar.dateComponents([.year, .month], from: $0.day) == components
             }.map(\.count).reduce(0, +)
             return monthlyTotal >= streakTarget
 
         case .yearly:
-            let year = calendar.component(.year, from: today)
+            let year = calendar.component(.year, from: referenceDay)
             let yearlyTotal = logs.filter {
                 calendar.component(.year, from: $0.day) == year
             }.map(\.count).reduce(0, +)
