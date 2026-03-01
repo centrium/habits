@@ -14,7 +14,7 @@ struct HabitFormView: View {
     @Binding var selectedHex: String
     @Binding var iconName: String?
     @Binding var hasStreakGoal: Bool
-    @Binding var streakGoalType: StreakGoalType
+    @Binding var streakGoalType: GoalPeriod
     @Binding var streakTarget: Int
     @State private var showIconPicker = false
     @State private var showingTargetEditor = false
@@ -96,7 +96,7 @@ struct HabitFormView: View {
 
                 if hasStreakGoal {
                     Picker("Cadence", selection: $streakGoalType) {
-                        ForEach(StreakGoalType.allCases) { type in
+                        ForEach(GoalPeriod.allCases) { type in
                             Text(type.label).tag(type)
                         }
                     }

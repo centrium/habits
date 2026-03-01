@@ -9,11 +9,9 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-import SwiftData
-import Foundation
-
-enum StreakGoalType: String, Codable, CaseIterable, Identifiable {
+enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
     case daily
+    case weekly
     case monthly
     case yearly
 
@@ -22,6 +20,7 @@ enum StreakGoalType: String, Codable, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .daily: return "Daily"
+        case .weekly: return "Weekly"
         case .monthly: return "Monthly"
         case .yearly: return "Yearly"
         }
@@ -30,8 +29,95 @@ enum StreakGoalType: String, Codable, CaseIterable, Identifiable {
     var unit: String {
         switch self {
         case .daily: return "day"
+        case .weekly: return "week"
         case .monthly: return "month"
         case .yearly: return "year"
+        }
+    }
+
+    var streakUnit: String {
+        unit
+    }
+
+    var heatmapAggregationUnit: Calendar.Component {
+        .day
+    }
+
+    func periodStart(for date: Date, calendar: Calendar = .current) -> Date {
+        periodRange(for: date, calendar: calendar).start
+    }
+
+    func periodEnd(for date: Date, calendar: Calendar = .current) -> Date {
+        periodRange(for: date, calendar: calendar).end
+    }
+
+    func nextPeriodStart(after date: Date, calendar: Calendar = .current) -> Date {
+        periodEnd(for: date, calendar: calendar)
+    }
+
+    func previousPeriodStart(before date: Date, calendar: Calendar = .current) -> Date {
+        let shiftedDate = calendar.date(byAdding: calendarComponent, value: -1, to: date) ?? date
+        return periodStart(for: shiftedDate, calendar: calendar)
+    }
+
+    func periodRange(for date: Date, calendar: Calendar = .current) -> DateInterval {
+        calendar.dateInterval(of: calendarComponent, for: date) ?? fallbackPeriodRange(for: date, calendar: calendar)
+    }
+
+    func displayLabel(for date: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = calendar.locale ?? .current
+        formatter.timeZone = calendar.timeZone
+
+        switch self {
+        case .daily:
+            formatter.dateStyle = .medium
+            return formatter.string(from: periodStart(for: date, calendar: calendar))
+        case .weekly:
+            let start = periodStart(for: date, calendar: calendar)
+            formatter.setLocalizedDateFormatFromTemplate("MMM d")
+            return "Week of \(formatter.string(from: start))"
+        case .monthly:
+            formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
+            return formatter.string(from: periodStart(for: date, calendar: calendar))
+        case .yearly:
+            formatter.setLocalizedDateFormatFromTemplate("yyyy")
+            return formatter.string(from: periodStart(for: date, calendar: calendar))
+        }
+    }
+
+    private var calendarComponent: Calendar.Component {
+        switch self {
+        case .daily:
+            return .day
+        case .weekly:
+            return .weekOfYear
+        case .monthly:
+            return .month
+        case .yearly:
+            return .year
+        }
+    }
+
+    private func fallbackPeriodRange(for date: Date, calendar: Calendar) -> DateInterval {
+        switch self {
+        case .daily:
+            let start = calendar.startOfDay(for: date)
+            return DateInterval(start: start, end: calendar.date(byAdding: .day, value: 1, to: start) ?? start)
+        case .weekly:
+            let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+            let start = calendar.date(from: components) ?? calendar.startOfDay(for: date)
+            let nextStart = calendar.date(byAdding: .weekOfYear, value: 1, to: start) ?? start
+            return DateInterval(start: start, end: nextStart)
+        case .monthly:
+            let components = calendar.dateComponents([.year, .month], from: date)
+            let start = calendar.date(from: components) ?? calendar.startOfDay(for: date)
+            return DateInterval(start: start, end: calendar.date(byAdding: .month, value: 1, to: start) ?? start)
+        case .yearly:
+            let components = calendar.dateComponents([.year], from: date)
+            let start = calendar.date(from: components) ?? calendar.startOfDay(for: date)
+            return DateInterval(start: start, end: calendar.date(byAdding: .year, value: 1, to: start) ?? start)
         }
     }
 }
@@ -59,9 +145,14 @@ final class Habit {
 
     // MARK: - Computed wrapper
 
-    var streakGoalType: StreakGoalType {
-        get { StreakGoalType(rawValue: streakGoalTypeRaw) ?? .daily }
+    var goalPeriod: GoalPeriod {
+        get { GoalPeriod(rawValue: streakGoalTypeRaw) ?? .daily }
         set { streakGoalTypeRaw = newValue.rawValue }
+    }
+
+    var streakGoalType: GoalPeriod {
+        get { goalPeriod }
+        set { goalPeriod = newValue }
     }
 
     // MARK: - Init
@@ -72,7 +163,7 @@ final class Habit {
         subtitle: String? = nil,
         iconName: String? = nil,
         hasStreakGoal: Bool = false,
-        streakGoalType: StreakGoalType = .daily,
+        goalPeriod: GoalPeriod = .daily,
         streakTarget: Int = 1,
         createdAt: Date = .now
     ) {
@@ -83,7 +174,7 @@ final class Habit {
         self.colorHex = colorHex
 
         self.hasStreakGoal = hasStreakGoal
-        self.streakGoalTypeRaw = streakGoalType.rawValue
+        self.streakGoalTypeRaw = goalPeriod.rawValue
         self.streakTarget = max(1, streakTarget)
 
         self.createdAt = createdAt
@@ -143,28 +234,6 @@ extension Habit {
         calendar: Calendar = .current,
         referenceDate: Date
     ) -> Bool {
-        let referenceDay = calendar.startOfDay(for: referenceDate)
-
-        switch streakGoalType {
-        case .daily:
-            let count = logs.first {
-                calendar.isDate($0.day, inSameDayAs: referenceDay)
-            }?.count ?? 0
-            return count >= streakTarget
-
-        case .monthly:
-            let components = calendar.dateComponents([.year, .month], from: referenceDay)
-            let monthlyTotal = logs.filter {
-                calendar.dateComponents([.year, .month], from: $0.day) == components
-            }.map(\.count).reduce(0, +)
-            return monthlyTotal >= streakTarget
-
-        case .yearly:
-            let year = calendar.component(.year, from: referenceDay)
-            let yearlyTotal = logs.filter {
-                calendar.component(.year, from: $0.day) == year
-            }.map(\.count).reduce(0, +)
-            return yearlyTotal >= streakTarget
-        }
+        hasHitTarget(in: periodRange(for: referenceDate, calendar: calendar))
     }
 }

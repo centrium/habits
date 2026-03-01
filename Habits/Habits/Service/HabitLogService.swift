@@ -66,12 +66,8 @@ extension HabitLogService {
 
         if habit.hasStreakGoal {
 
-            let period = habit.periodRange(for: date)
-            let totalInPeriod = habit.totalCount(in: period)
+            let period = habit.periodRange(for: date, calendar: calendar)
             let target = max(1, habit.streakTarget)
-
-            // How much of the goal has been completed so far
-            _ = min(Double(totalInPeriod) / Double(target), 1.0)
 
             // Daily contribution weighting
             let dailyContribution = Double(dayCount) / Double(target)

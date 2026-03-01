@@ -20,7 +20,7 @@ struct EditHabitSheet: View {
     @State private var selectedHex: String
     @State private var iconName: String?
     @State private var hasStreakGoal: Bool
-    @State private var streakGoalType: StreakGoalType
+    @State private var streakGoalType: GoalPeriod
     @State private var streakTarget: Int
 
     private let palette: [(String, String)] = [
@@ -41,7 +41,7 @@ struct EditHabitSheet: View {
         _iconName = State(initialValue: habit.iconName)
 
         _hasStreakGoal = State(initialValue: habit.hasStreakGoal)
-        _streakGoalType = State(initialValue: habit.streakGoalType)
+        _streakGoalType = State(initialValue: habit.goalPeriod)
         _streakTarget = State(initialValue: habit.streakTarget)
     }
 
@@ -87,7 +87,7 @@ struct EditHabitSheet: View {
                selectedHex == habit.colorHex &&
                iconName == habit.iconName &&
                hasStreakGoal == habit.hasStreakGoal &&
-               streakGoalType == habit.streakGoalType &&
+               streakGoalType == habit.goalPeriod &&
                streakTarget == habit.streakTarget
     }
 
@@ -107,7 +107,7 @@ struct EditHabitSheet: View {
         habit.colorHex = selectedHex
 
         habit.hasStreakGoal = hasStreakGoal
-        habit.streakGoalType = streakGoalType
+        habit.goalPeriod = streakGoalType
         habit.streakTarget = streakTarget
 
         try? modelContext.save()

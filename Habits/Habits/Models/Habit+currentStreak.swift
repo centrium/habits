@@ -33,17 +33,7 @@ extension Habit {
     }
 
     private func previousPeriod(from interval: DateInterval, calendar: Calendar) -> DateInterval {
-        let component: Calendar.Component
-        switch streakGoalType {
-        case .daily:
-            component = .day
-        case .monthly:
-            component = .month
-        case .yearly:
-            component = .year
-        }
-
-        let previousDate = calendar.date(byAdding: component, value: -1, to: interval.start)!
+        let previousDate = goalPeriod.previousPeriodStart(before: interval.start, calendar: calendar)
         return periodRange(for: previousDate, calendar: calendar)
     }
 }

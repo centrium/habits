@@ -10,6 +10,16 @@ final class HabitBehaviorTests: XCTestCase {
             return cal
         }()
 
+        static func makeCalendar(
+            firstWeekday: Int,
+            timeZone: TimeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        ) -> Calendar {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = timeZone
+            cal.firstWeekday = firstWeekday
+            return cal
+        }
+
         static func makeDate(year: Int, month: Int, day: Int) -> Date {
             calendar.date(from: DateComponents(year: year, month: month, day: day)) ?? Date(timeIntervalSince1970: 0)
         }
@@ -24,12 +34,12 @@ final class HabitBehaviorTests: XCTestCase {
         }
     }
 
-    private func makeGoalHabit(goalType: StreakGoalType, target: Int) -> Habit {
+    private func makeGoalHabit(goalType: GoalPeriod, target: Int) -> Habit {
         Habit(
             name: "Test",
             colorHex: "#FFFFFF",
             hasStreakGoal: true,
-            streakGoalType: goalType,
+            goalPeriod: goalType,
             streakTarget: target,
             createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
         )
@@ -40,7 +50,7 @@ final class HabitBehaviorTests: XCTestCase {
             name: "Open",
             colorHex: "#FFFFFF",
             hasStreakGoal: false,
-            streakGoalType: .daily,
+            goalPeriod: .daily,
             streakTarget: 1,
             createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
         )
@@ -372,6 +382,262 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(streak, 2)
     }
 
+    // MARK: - Weekly Goal Behavior
+
+    func testWeeklyPeriodRangeReturnsMondayStartedWeekForMondayFirstCalendar() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        let interval = habit.periodRange(for: day, calendar: calendar)
+
+        XCTAssertEqual(interval.start, Fixtures.makeDate(year: 2025, month: 6, day: 9))
+        XCTAssertEqual(interval.end, Fixtures.makeDate(year: 2025, month: 6, day: 16))
+    }
+
+    func testWeeklyPeriodRangeReturnsSundayStartedWeekForSundayFirstCalendar() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 1)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        let interval = habit.periodRange(for: day, calendar: calendar)
+
+        XCTAssertEqual(interval.start, Fixtures.makeDate(year: 2025, month: 6, day: 8))
+        XCTAssertEqual(interval.end, Fixtures.makeDate(year: 2025, month: 6, day: 15))
+    }
+
+    func testWeeklyPeriodRangeIsStableForMultipleDatesInSameWeek() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let friday = Fixtures.makeDate(year: 2025, month: 6, day: 13)
+
+        let mondayInterval = habit.periodRange(for: monday, calendar: calendar)
+        let fridayInterval = habit.periodRange(for: friday, calendar: calendar)
+
+        XCTAssertEqual(mondayInterval.start, fridayInterval.start)
+        XCTAssertEqual(mondayInterval.end, fridayInterval.end)
+    }
+
+    func testWeeklyProgressAccumulatesAcrossDaysInWeek() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 5)
+        let tuesday = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let thursday = Fixtures.makeDate(year: 2025, month: 6, day: 12)
+
+        habit.logs = [
+            HabitLog(day: tuesday, count: 2, calendar: calendar),
+            HabitLog(day: thursday, count: 1, calendar: calendar)
+        ]
+
+        let progress = habit.progress(for: thursday, calendar: calendar)
+
+        XCTAssertEqual(progress, 3.0 / 5.0, accuracy: 0.0001)
+    }
+
+    func testWeeklyProgressIgnoresLogsOutsideWeek() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 5)
+        let previousWeek = Fixtures.makeDate(year: 2025, month: 6, day: 8)
+        let currentWeek = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+
+        habit.logs = [
+            HabitLog(day: previousWeek, count: 4, calendar: calendar),
+            HabitLog(day: currentWeek, count: 2, calendar: calendar)
+        ]
+
+        let progress = habit.progress(for: currentWeek, calendar: calendar)
+
+        XCTAssertEqual(progress, 2.0 / 5.0, accuracy: 0.0001)
+    }
+
+    func testWeeklyProgressClampsAtOneAndPreservesOverflowInDetails() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let wednesday = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logs = [
+            HabitLog(day: monday, count: 2, calendar: calendar),
+            HabitLog(day: wednesday, count: 3, calendar: calendar)
+        ]
+
+        let progress = habit.progress(for: wednesday, calendar: calendar)
+        let details = try! XCTUnwrap(habit.progressDetails(for: wednesday, calendar: calendar))
+
+        XCTAssertEqual(progress, 1.0)
+        XCTAssertEqual(details.current, 5)
+        XCTAssertEqual(details.target, 3)
+    }
+
+    func testWeeklyHasHitTargetWhenWeekTotalMeetsTarget() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let thursday = Fixtures.makeDate(year: 2025, month: 6, day: 12)
+
+        habit.logs = [
+            HabitLog(day: monday, count: 1, calendar: calendar),
+            HabitLog(day: thursday, count: 2, calendar: calendar)
+        ]
+
+        let interval = habit.periodRange(for: thursday, calendar: calendar)
+
+        XCTAssertTrue(habit.hasHitTarget(in: interval))
+    }
+
+    func testWeeklyCurrentStreakCountsConsecutiveCompletedWeeks() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logs = [
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 10), count: 3, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 17), count: 3, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 23), count: 3, calendar: calendar)
+        ]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: calendar)
+
+        XCTAssertEqual(streak, 3)
+    }
+
+    func testWeeklyCurrentStreakBreaksWhenPreviousWeekMissesTarget() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logs = [
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 10), count: 3, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 17), count: 2, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 23), count: 3, calendar: calendar)
+        ]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: calendar)
+
+        XCTAssertEqual(streak, 1)
+    }
+
+    func testWeeklyCurrentStreakIsZeroWhenCurrentWeekIncomplete() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logs = [
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 16), count: 3, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 23), count: 2, calendar: calendar)
+        ]
+
+        let streak = habit.currentStreak(referenceDate: reference, calendar: calendar)
+
+        XCTAssertEqual(streak, 0)
+    }
+
+    func testWeeklyCurrentStreakUsesProvidedCalendarBoundaries() {
+        let mondayCalendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let sundayCalendar = Fixtures.makeCalendar(firstWeekday: 1)
+        let habit = makeGoalHabit(goalType: .weekly, target: 2)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+
+        habit.logs = [
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 8), count: 1, calendar: mondayCalendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 9), count: 1, calendar: mondayCalendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 15), count: 1, calendar: mondayCalendar)
+        ]
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: mondayCalendar), 0)
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: sundayCalendar), 1)
+    }
+
+    func testWeeklyRetroactiveLogIntoPreviousWeekRecalculatesCurrentStreak() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logs = [
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 10), count: 3, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 17), count: 2, calendar: calendar),
+            HabitLog(day: Fixtures.makeDate(year: 2025, month: 6, day: 23), count: 3, calendar: calendar)
+        ]
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: calendar), 1)
+
+        habit.log(on: Fixtures.makeDate(year: 2025, month: 6, day: 18), amount: 1, calendar: calendar)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: calendar), 3)
+    }
+
+    func testWeeklyDeletingPastWeekLogRecalculatesCurrentStreak() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+        context.insert(habit)
+
+        _ = service.setCount(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 10), to: 3)
+        _ = service.setCount(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 17), to: 3)
+        _ = service.setCount(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 23), to: 3)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: calendar), 3)
+
+        _ = service.setCount(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 17), to: 0)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: calendar), 1)
+    }
+
+    func testWeeklyIncreasingTargetRecalculatesCompletion() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logs = [HabitLog(day: day, count: 3, calendar: calendar)]
+
+        XCTAssertTrue(habit.isComplete(for: day, calendar: calendar))
+
+        habit.streakTarget = 4
+
+        XCTAssertEqual(habit.progress(for: day, calendar: calendar), 0.75, accuracy: 0.0001)
+        XCTAssertFalse(habit.isComplete(for: day, calendar: calendar))
+    }
+
+    func testWeeklyDecreasingTargetRecalculatesCompletion() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .weekly, target: 4)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logs = [HabitLog(day: day, count: 3, calendar: calendar)]
+
+        XCTAssertFalse(habit.isComplete(for: day, calendar: calendar))
+
+        habit.streakTarget = 3
+
+        XCTAssertEqual(habit.progress(for: day, calendar: calendar), 1.0)
+        XCTAssertTrue(habit.isComplete(for: day, calendar: calendar))
+    }
+
+    func testChangingHabitPeriodFromDailyToWeeklyReinterpretsExistingLogsWithoutMigration() {
+        let calendar = Fixtures.makeCalendar(firstWeekday: 2)
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let tuesday = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let wednesday = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logs = [
+            HabitLog(day: monday, count: 1, calendar: calendar),
+            HabitLog(day: tuesday, count: 1, calendar: calendar),
+            HabitLog(day: wednesday, count: 1, calendar: calendar)
+        ]
+
+        XCTAssertEqual(habit.progress(for: wednesday, calendar: calendar), 1.0 / 3.0, accuracy: 0.0001)
+
+        habit.goalPeriod = .weekly
+
+        XCTAssertEqual(habit.progress(for: wednesday, calendar: calendar), 1.0, accuracy: 0.0001)
+        XCTAssertTrue(habit.isComplete(for: wednesday, calendar: calendar))
+    }
+
     // MARK: - Monthly Goal Behavior
 
     func testMonthlyProgressAccumulatesAcrossDaysInMonth() {
@@ -651,7 +917,7 @@ final class HabitBehaviorTests: XCTestCase {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
-        let habit = makeGoalHabit(goalType: .daily, target: 3)
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
         context.insert(habit)
 
         let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
@@ -660,6 +926,24 @@ final class HabitBehaviorTests: XCTestCase {
         let intensity = service.intensity(for: habit, on: day)
 
         XCTAssertEqual(intensity, 1.0, accuracy: 0.0001)
+    }
+
+    func testWeeklyGoalBasedIntensityUsesDailyCountNotWeeklyAggregate() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeGoalHabit(goalType: .weekly, target: 4)
+        context.insert(habit)
+
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let tuesday = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+
+        _ = service.setCount(for: habit, on: monday, to: 3)
+        _ = service.setCount(for: habit, on: tuesday, to: 2)
+
+        let intensity = service.intensity(for: habit, on: tuesday)
+
+        XCTAssertEqual(intensity, 0.20 + (0.80 * 0.5), accuracy: 0.0001)
     }
 
     func testOpenEndedIntensityCapsAtDefinedMaximum() {
@@ -675,5 +959,62 @@ final class HabitBehaviorTests: XCTestCase {
         let intensity = service.intensity(for: habit, on: day)
 
         XCTAssertEqual(intensity, 1.0, accuracy: 0.0001)
+    }
+
+    // MARK: - Persistence and Query Behavior
+
+    func testGoalPeriodFallsBackToDailyForUnknownPersistedValue() {
+        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+
+        habit.streakGoalTypeRaw = "mystery"
+
+        XCTAssertEqual(habit.goalPeriod, .daily)
+    }
+
+    func testGoalPeriodReadsWeeklyPersistedValue() {
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+
+        habit.streakGoalTypeRaw = GoalPeriod.weekly.rawValue
+
+        XCTAssertEqual(habit.goalPeriod, .weekly)
+    }
+
+    func testHabitsListOrderRemainsCreatedAtDescendingWhenWeeklyHabitExists() throws {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+
+        let oldest = Habit(
+            name: "Oldest",
+            colorHex: "#FFFFFF",
+            hasStreakGoal: true,
+            goalPeriod: .daily,
+            streakTarget: 1,
+            createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
+        )
+        let middle = Habit(
+            name: "Middle",
+            colorHex: "#FFFFFF",
+            hasStreakGoal: true,
+            goalPeriod: .weekly,
+            streakTarget: 3,
+            createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 2)
+        )
+        let newest = Habit(
+            name: "Newest",
+            colorHex: "#FFFFFF",
+            hasStreakGoal: true,
+            goalPeriod: .monthly,
+            streakTarget: 5,
+            createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 3)
+        )
+
+        context.insert(oldest)
+        context.insert(middle)
+        context.insert(newest)
+
+        let descriptor = FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.createdAt, order: .reverse)])
+        let fetched = try context.fetch(descriptor)
+
+        XCTAssertEqual(fetched.map(\.name), ["Newest", "Middle", "Oldest"])
     }
 }

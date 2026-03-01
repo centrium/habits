@@ -18,7 +18,7 @@ struct AddHabitSheet: View {
     @State private var selectedHex: String = "#7C3AED"
     @State private var iconName: String? = nil
     @State private var hasStreakGoal: Bool = false
-    @State private var streakGoalType: StreakGoalType = .daily
+    @State private var streakGoalType: GoalPeriod = .daily
     @State private var streakTarget: Int = 1
 
     private let palette: [(String, String)] = [
@@ -85,7 +85,7 @@ struct AddHabitSheet: View {
             subtitle: finalSubtitle,
             iconName: finalIcon,
             hasStreakGoal: hasStreakGoal,
-            streakGoalType: streakGoalType,
+            goalPeriod: streakGoalType,
             streakTarget: streakTarget
         )
 

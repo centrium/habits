@@ -40,11 +40,11 @@ struct HabitDetailSheet: View {
                             let streak = habit.currentStreak(referenceDate: selectedDate)
 
                             HabitProgressSummary(
-                                progressText: "\(capped) / \(target) this \(habit.streakGoalType.unit)",
+                                progressText: "\(capped) / \(target) this \(habit.goalPeriod.unit)",
                                 progress: progress,
                                 surplus: surplus,
                                 streak: streak,
-                                streakUnit: habit.streakGoalType.unit,
+                                streakUnit: habit.goalPeriod.streakUnit,
                                 accent: Color(hex: habit.colorHex)
                             )
                             Divider().opacity(0.2)

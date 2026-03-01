@@ -13,7 +13,7 @@ struct TargetNumberSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let initialValue: Int
-    let goalType: StreakGoalType
+    let goalType: GoalPeriod
     let onSave: (Int) -> Void
 
     @State private var valueString: String
@@ -21,7 +21,7 @@ struct TargetNumberSheet: View {
 
     init(
         initialValue: Int,
-        goalType: StreakGoalType,
+        goalType: GoalPeriod,
         onSave: @escaping (Int) -> Void
     ) {
         self.initialValue = initialValue
