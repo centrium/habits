@@ -70,24 +70,23 @@ extension Habit {
 
         let interval = periodRange(for: date, calendar: calendar)
         let current = progressTotal(in: interval)
+        let metricKind = MetricKindResolver.resolve(self)
 
         return HabitProgressDetails(
             current: current,
             target: target,
             currentText: formatProgressValue(current),
             targetText: formatProgressValue(target),
-            unitText: goalType == .cumulative ? trimmedUnit : nil,
+            unitText: metricKind == .genericValue ? trimmedUnit : nil,
             goalType: goalType
         )
     }
 
     func formatProgressValue(_ value: Double) -> String {
-        switch goalType {
-        case .frequency:
-            return "\(Int(value.rounded()))"
-        case .cumulative:
-            return Self.progressFormatter(allowsDecimals: allowsDecimals).string(from: NSNumber(value: value)) ?? "\(value)"
-        }
+        HabitValueFormatter.string(
+            for: value,
+            context: ValueFormattingContext(habit: self)
+        )
     }
 
     func inlineProgressText(for date: Date, calendar: Calendar = .current) -> String? {
@@ -116,13 +115,5 @@ extension Habit {
 
     func activePeriodText(for date: Date, calendar: Calendar = .current) -> String {
         goalPeriod.relativeLabel
-    }
-
-    private static func progressFormatter(allowsDecimals: Bool) -> NumberFormatter {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = allowsDecimals ? 2 : 0
-        formatter.minimumFractionDigits = 0
-        return formatter
     }
 }

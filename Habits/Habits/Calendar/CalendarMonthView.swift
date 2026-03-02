@@ -64,9 +64,9 @@ struct CalendarMonthView: View {
                     .frame(height: weekdayRowHeight)
 
                     LazyVGrid(columns: columns, spacing: verticalSpacing) {
-                        ForEach(days.indices, id: \.self) { index in
-                            let day = days[index]
+                        ForEach(days, id: \.self) { day in
                             let isInDisplayedMonth = isDisplayedMonth(day)
+                            let isDisabledDay = isFutureDate(day)
                             let count = service.count(for: habit, on: day)
                             let indicatorText = habit.goalType == .cumulative
                                 ? service.formattedValue(for: habit, on: day)
@@ -79,8 +79,8 @@ struct CalendarMonthView: View {
                                 indicatorText: indicatorText,
                                 accent: Color(hex: habit.colorHex),
                                 isInDisplayedMonth: isInDisplayedMonth,
-                                isDisabled: isFutureDate(day),
-                                isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
+                                isDisabled: isDisabledDay,
+                                isSelected: !isDisabledDay && calendar.isDate(day, inSameDayAs: selectedDate),
                                 isToday: calendar.isDateInToday(day),
                                 onTap: {
                                     selectDay(day)
@@ -260,7 +260,7 @@ struct CalendarMonthView: View {
 
     private var displayedMonthSummaryText: String {
         let totalText = service.formattedValue(for: habit, in: displayedMonthInterval) ?? habit.formatProgressValue(0)
-        let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
+        let unitSuffix = service.displayUnitSuffix(for: habit)
         return "\(totalText)\(unitSuffix) shown"
     }
 

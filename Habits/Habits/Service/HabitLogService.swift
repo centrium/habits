@@ -10,13 +10,19 @@ import QuartzCore
 import SwiftData
 
 final class HabitLogService {
+    private enum HeatmapConstants {
+        static let rollingWindowDays = 90
+    }
+
     private let modelContext: ModelContext
     private let calendar: Calendar
+    private let lastValueStore: any LastValueStore
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.1
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, lastValueStore: any LastValueStore = LogDerivedLastValueStore()) {
         self.modelContext = modelContext
+        self.lastValueStore = lastValueStore
         var cal = Calendar.current
         cal.firstWeekday = 1
         self.calendar = cal
@@ -55,9 +61,9 @@ final class HabitLogService {
         habit.logs.removeAll { $0.day == day }
     }
 
-    private func cumulativeIntensityWindow(for endDate: Date) -> DateInterval {
+    private func heatmapWindow(for endDate: Date) -> DateInterval {
         let end = calendar.startOfDay(for: endDate)
-        let start = calendar.date(byAdding: .day, value: -89, to: end) ?? end
+        let start = calendar.date(byAdding: .day, value: -(HeatmapConstants.rollingWindowDays - 1), to: end) ?? end
         let intervalEnd = calendar.date(byAdding: .day, value: 1, to: end) ?? end
         return DateInterval(start: start, end: intervalEnd)
     }
@@ -67,42 +73,83 @@ final class HabitLogService {
         try? modelContext.save()
     }
 
-    private func cumulativeScaleReference(for habit: Habit, endingAt date: Date) -> Double {
-        let grouped = habit.dailyValueTotals(in: cumulativeIntensityWindow(for: date))
-        let totals = grouped.values
-            .map { max(0, $0) }
-            .filter { $0 > 0 }
-            .sorted()
-
-        guard !totals.isEmpty else {
-            return 1
+    private func dailyHeatmapValue(for habit: Habit, on date: Date) -> Double {
+        switch habit.goalType {
+        case .frequency:
+            let count = Double(habit.count(on: date, calendar: calendar))
+            if habit.hasGoal, let target = habit.effectiveTargetValue, target > 0 {
+                return min(count, target)
+            }
+            return count
+        case .cumulative:
+            return max(0, habit.value(on: date, calendar: calendar))
         }
-
-        let percentileIndex = min(totals.count - 1, Int(Double(totals.count - 1) * 0.85))
-        return max(1, totals[percentileIndex])
     }
 
-    private func cumulativeTierIntensity(for value: Double, upperBound: Double) -> Double {
-        let normalized = min(max(value, 0) / max(upperBound, 1), 1)
+    private func windowDailyValues(for habit: Habit, endingAt date: Date) -> [Double] {
+        let interval = heatmapWindow(for: date)
+        let frequencyCap = habit.goalType == .frequency ? habit.effectiveTargetValue : nil
+        var grouped: [Date: Double] = [:]
 
-        switch normalized {
-        case ..<0.0001:
-            return 0
-        case ..<0.20:
-            return 0.24
-        case ..<0.45:
-            return 0.40
-        case ..<0.70:
-            return 0.56
-        case ..<1.00:
-            return 0.72
-        default:
-            return 0.86
+        for log in habit.logs where log.day >= interval.start && log.day < interval.end {
+            let contribution: Double
+
+            switch habit.goalType {
+            case .frequency:
+                contribution = Double(log.frequencyContribution)
+            case .cumulative:
+                contribution = log.numericValue
+            }
+
+            guard contribution > 0 else { continue }
+            grouped[log.day, default: 0] += contribution
         }
+
+        return grouped.values.map { total in
+            if let frequencyCap, frequencyCap > 0 {
+                return min(total, frequencyCap)
+            }
+            return total
+        }
+    }
+
+    private func heatmapReferenceDate(for habit: Habit, requested date: Date) -> Date {
+        let normalizedRequestedDate = calendar.startOfDay(for: date)
+        let latestLoggedDay = habit.logs.map(\.day).max() ?? normalizedRequestedDate
+        return max(normalizedRequestedDate, latestLoggedDay)
     }
 }
 
 extension HabitLogService {
+    func metricKind(for habit: Habit) -> MetricKind {
+        MetricKindResolver.resolve(habit)
+    }
+
+    func currencyDetection(for habit: Habit) -> CurrencyDetectionResult {
+        CurrencyDetection.detect(unit: habit.trimmedUnit)
+    }
+
+    func valueFormattingContext(for habit: Habit, locale: Locale = .current) -> ValueFormattingContext {
+        ValueFormattingContext(habit: habit, locale: locale)
+    }
+
+    func valueInputContext(for habit: Habit, locale: Locale = .current) -> ValueInputContext {
+        ValueInputContext(habit: habit, locale: locale)
+    }
+
+    func formatValue(_ value: Double, for habit: Habit, locale: Locale = .current) -> String {
+        HabitValueFormatter.string(
+            for: value,
+            context: valueFormattingContext(for: habit, locale: locale)
+        )
+    }
+
+    func displayUnitSuffix(for habit: Habit) -> String {
+        let context = valueFormattingContext(for: habit)
+        guard context.showsUnitSuffix, let unit = habit.trimmedUnit else { return "" }
+        return " \(unit)"
+    }
+
     func prepare(_ habit: Habit) {
         normalizeLogsIfNeeded(for: habit)
     }
@@ -137,13 +184,13 @@ extension HabitLogService {
     func formattedValue(for habit: Habit, on date: Date) -> String? {
         let total = value(for: habit, on: date)
         guard total > 0 else { return nil }
-        return habit.formatProgressValue(total)
+        return formatValue(total, for: habit)
     }
 
     func formattedValue(for habit: Habit, in interval: DateInterval) -> String? {
         let total = value(for: habit, in: interval)
         guard total > 0 else { return nil }
-        return habit.formatProgressValue(total)
+        return formatValue(total, for: habit)
     }
 
     func entries(for habit: Habit, on date: Date) -> [HabitLog] {
@@ -156,14 +203,12 @@ extension HabitLogService {
 
         guard habit.goalType == .cumulative else { return 1 }
 
-        let lastValue = recentEntryLogs(for: habit)
-            .first?
-            .numericValue
-
-        guard let lastValue else { return nil }
-
-        let suggestedValue = max(lastValue, 1)
-        return habit.allowsDecimals ? suggestedValue : Double(Int(suggestedValue.rounded()))
+        let resolvedValue = lastValueStore.getLastValue(for: habit) ?? Decimal(1)
+        let suggestedValue = ValueInputParser.sanitizeForStorage(
+            resolvedValue,
+            context: valueInputContext(for: habit)
+        )
+        return max(suggestedValue, 1)
     }
 
     func hasSuggestedQuickEntryValue(for habit: Habit) -> Bool {
@@ -182,33 +227,21 @@ extension HabitLogService {
 extension HabitLogService {
     func intensity(for habit: Habit, on date: Date) -> Double {
         normalizeLogsIfNeeded(for: habit)
-        switch habit.goalType {
-        case .frequency:
-            let dayCount = count(for: habit, on: date)
+        let dayValue = dailyHeatmapValue(for: habit, on: date)
+        guard dayValue > 0 else { return HeatmapNormalizer.intensity(forTier: 0) }
 
-            if dayCount == 0 {
-                return 0.10
-            }
-
-            if habit.hasGoal, let target = habit.effectiveTargetValue, target > 0 {
-                let dailyContribution = Double(dayCount) / target
-                let intensity = min(dailyContribution, 1.0)
-                return 0.20 + (0.80 * intensity)
-            }
-
-            let scaled = min(Double(dayCount) / 10.0, 1.0)
-            return 0.20 + (0.80 * scaled)
-
-        case .cumulative:
-            let dayValue = value(for: habit, on: date)
-
-            if dayValue == 0 {
-                return 0
-            }
-
-            let reference = cumulativeScaleReference(for: habit, endingAt: Date())
-            return cumulativeTierIntensity(for: dayValue, upperBound: reference)
-        }
+        let referenceDate = heatmapReferenceDate(for: habit, requested: date)
+        let tier = HeatmapNormalizer.tier(
+            for: HeatmapNormalizationContext(
+                goalType: habit.goalType,
+                hasTarget: habit.hasGoal,
+                targetValue: habit.effectiveTargetValue,
+                metricKind: metricKind(for: habit),
+                dailyValue: dayValue,
+                recentDailyValues: windowDailyValues(for: habit, endingAt: referenceDate)
+            )
+        )
+        return HeatmapNormalizer.intensity(forTier: tier)
     }
 }
 

@@ -58,7 +58,7 @@ struct CumulativeDayEntriesSheet: View {
                             } label: {
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(habit.formatProgressValue(entry.numericValue))
+                                        Text(service.formatValue(entry.numericValue, for: habit))
                                             .foregroundStyle(.primary)
 
                                         Text(entrySubtitle(for: entry))
@@ -109,21 +109,21 @@ struct CumulativeDayEntriesSheet: View {
             NumericValueSheet(
                 title: session.entry == nil ? "Add Entry" : "Edit Entry",
                 initialValue: session.initialValue,
-                allowsDecimals: habit.allowsDecimals,
+                formattingContext: service.valueFormattingContext(for: habit),
+                inputContext: service.valueInputContext(for: habit),
                 unitLabel: habit.trimmedUnit
             ) { newValue in
-                let sanitizedValue = habit.allowsDecimals ? newValue : Double(Int(newValue.rounded()))
                 if let entry = session.entry {
-                    _ = service.updateEntry(entry, for: habit, on: date, value: max(0, sanitizedValue))
+                    _ = service.updateEntry(entry, for: habit, on: date, value: max(0, newValue))
                 } else {
-                    _ = service.addLog(for: habit, on: date, value: max(0, sanitizedValue))
+                    _ = service.addLog(for: habit, on: date, value: max(0, newValue))
                 }
             }
         }
     }
 
     private var totalLineText: String {
-        let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
+        let unitSuffix = service.displayUnitSuffix(for: habit)
         return "\(dayTotalText)\(unitSuffix)"
     }
 

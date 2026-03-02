@@ -12,7 +12,8 @@ struct NumericValueSheet: View {
 
     let title: String
     let initialValue: Double
-    let allowsDecimals: Bool
+    let formattingContext: ValueFormattingContext
+    let inputContext: ValueInputContext
     let unitLabel: String?
     let onSave: (Double) -> Void
 
@@ -22,16 +23,23 @@ struct NumericValueSheet: View {
     init(
         title: String,
         initialValue: Double,
-        allowsDecimals: Bool,
+        formattingContext: ValueFormattingContext,
+        inputContext: ValueInputContext,
         unitLabel: String? = nil,
         onSave: @escaping (Double) -> Void
     ) {
         self.title = title
         self.initialValue = initialValue
-        self.allowsDecimals = allowsDecimals
+        self.formattingContext = formattingContext
+        self.inputContext = inputContext
         self.unitLabel = unitLabel
         self.onSave = onSave
-        _valueString = State(initialValue: Self.format(initialValue, allowsDecimals: allowsDecimals))
+        _valueString = State(
+            initialValue: HabitValueFormatter.inputString(
+                for: NSDecimalNumber(value: initialValue).decimalValue,
+                context: formattingContext
+            )
+        )
     }
 
     var body: some View {
@@ -41,7 +49,7 @@ struct NumericValueSheet: View {
 
             VStack(spacing: 10) {
                 TextField("", text: $valueString)
-                    .keyboardType(allowsDecimals ? .decimalPad : .numberPad)
+                    .keyboardType(inputContext.metricKind == .count ? .numberPad : .decimalPad)
                     .multilineTextAlignment(.center)
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .focused($isFocused)
@@ -67,8 +75,9 @@ struct NumericValueSheet: View {
                 Spacer()
 
                 Button("Done") {
-                    let parsed = Self.parse(valueString, allowsDecimals: allowsDecimals) ?? initialValue
-                    onSave(parsed)
+                    let fallback = NSDecimalNumber(value: initialValue).decimalValue
+                    let parsed = ValueInputParser.parse(valueString, context: inputContext) ?? fallback
+                    onSave(ValueInputParser.sanitizeForStorage(parsed, context: inputContext))
                     dismiss()
                 }
                 .fontWeight(.semibold)
@@ -78,25 +87,5 @@ struct NumericValueSheet: View {
         .padding(.top, 32)
         .onAppear { isFocused = true }
         .presentationDetents([.height(280)])
-    }
-
-    private static func format(_ value: Double, allowsDecimals: Bool) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = allowsDecimals ? 2 : 0
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
-    }
-
-    private static func parse(_ text: String, allowsDecimals: Bool) -> Double? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        if allowsDecimals {
-            return Double(trimmed.replacingOccurrences(of: ",", with: "."))
-        }
-
-        guard let intValue = Int(trimmed) else { return nil }
-        return Double(intValue)
     }
 }

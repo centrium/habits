@@ -132,11 +132,11 @@ struct HabitDetailSheet: View {
                 goalName: habit.name,
                 unitLabel: habit.trimmedUnit,
                 initialValue: manualLogValue,
-                allowsDecimals: habit.allowsDecimals,
+                formattingContext: service.valueFormattingContext(for: habit),
+                inputContext: service.valueInputContext(for: habit)
             ) { newValue in
-                let sanitizedValue = habit.allowsDecimals ? newValue : Double(Int(newValue.rounded()))
-                _ = service.addLog(for: habit, on: selectedDate, value: max(0, sanitizedValue))
-                manualLogValue = sanitizedValue
+                _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
+                manualLogValue = newValue
             }
         }
         .onAppear {
@@ -168,7 +168,7 @@ struct HabitDetailSheet: View {
 
         let interval = Calendar.current.dateInterval(of: .month, for: month) ?? DateInterval(start: month, end: month)
         let totalText = service.formattedValue(for: habit, in: interval) ?? habit.formatProgressValue(0)
-        let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
+        let unitSuffix = service.displayUnitSuffix(for: habit)
 
         let formatter = DateFormatter()
         formatter.dateFormat = "LLLL yyyy"

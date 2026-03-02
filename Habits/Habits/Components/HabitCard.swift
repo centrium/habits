@@ -72,10 +72,10 @@ struct HabitCard: View {
                     goalName: habit.name,
                     unitLabel: habit.trimmedUnit,
                     initialValue: service.suggestedQuickEntryValue(for: habit),
-                    allowsDecimals: habit.allowsDecimals
+                    formattingContext: service.valueFormattingContext(for: habit),
+                    inputContext: service.valueInputContext(for: habit)
                 ) { newValue in
-                    let sanitizedValue = habit.allowsDecimals ? newValue : Double(Int(newValue.rounded()))
-                    _ = service.addLog(for: habit, on: selectedDate, value: max(0, sanitizedValue))
+                    _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
                 }
             }
         }

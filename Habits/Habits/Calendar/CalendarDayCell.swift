@@ -31,6 +31,9 @@ struct CalendarDayCell: View {
         static let intensityOpacityMultiplier: Double = 0.45
         static let selectedBackgroundOpacity: Double = 0.85
         static let outOfMonthBackgroundOpacity: Double = 0.05
+        static let disabledBackgroundOpacity: Double = 0.06
+        static let disabledOutOfMonthBackgroundOpacity: Double = 0.03
+        static let disabledContentOpacity: Double = 0.55
 
         static let selectedStrokeOpacity: Double = 0.60
         static let todayStrokeOpacity: Double = 0.32
@@ -50,7 +53,19 @@ struct CalendarDayCell: View {
     let onTap: () -> Void
     let onLongPress: () -> Void
     
+    private var backgroundFill: Color {
+        if isDisabled {
+            return Color.primary.opacity(isInDisplayedMonth ? Layout.disabledBackgroundOpacity : Layout.disabledOutOfMonthBackgroundOpacity)
+        }
+
+        return accent.opacity(backgroundOpacity)
+    }
+
     private var backgroundOpacity: Double {
+        if isDisabled {
+            return 0
+        }
+
         if !isInDisplayedMonth {
             return Layout.outOfMonthBackgroundOpacity
         }
@@ -67,6 +82,10 @@ struct CalendarDayCell: View {
     }
 
     private var dayNumberColor: Color {
+        if isDisabled {
+            return Color.primary.opacity(isInDisplayedMonth ? 0.38 : 0.24)
+        }
+
         if isSelected {
             return .white.opacity(0.95)
         }
@@ -77,11 +96,19 @@ struct CalendarDayCell: View {
 
         return Color.primary.opacity(0.5)
     }
+
+    private var contentOpacity: Double {
+        isDisabled ? Layout.disabledContentOpacity : 1
+    }
+
+    private var showsIndicator: Bool {
+        !isDisabled && (count > 0 || indicatorText != nil)
+    }
     
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
-                .fill(accent.opacity(backgroundOpacity))
+                .fill(backgroundFill)
 
             VStack(spacing: 0) {
                 Text(dayNumber)
@@ -93,25 +120,35 @@ struct CalendarDayCell: View {
 
                 Spacer(minLength: Layout.middleMinHeight)
 
-                indicatorContainer
-                    .frame(height: Layout.indicatorAreaHeight, alignment: .bottom)
+                if showsIndicator {
+                    indicatorContainer
+                        .frame(height: Layout.indicatorAreaHeight, alignment: .bottom)
+                } else {
+                    Spacer()
+                        .frame(height: Layout.indicatorAreaHeight)
+                }
             }
         }
+        .opacity(contentOpacity)
         .frame(width: Layout.cellWidth, height: Layout.cellHeight)
         .overlay(selectionOverlay)
         .contentShape(Rectangle())
         .gesture(dayGesture)
+        .allowsHitTesting(!isDisabled)
         .contextMenu {
-            Button("Open Day Actions") {
-                onLongPress()
+            if !isDisabled {
+                Button("Open Day Actions") {
+                    onLongPress()
+                }
             }
         }
         .accessibilityAction(named: Text("Open Day Actions")) {
+            guard !isDisabled else { return }
             onLongPress()
         }
-        .animation(.easeInOut(duration: 0.18), value: intensity)
-        .animation(.easeInOut(duration: 0.18), value: count)
-        .animation(.easeInOut(duration: 0.18), value: indicatorText)
+        .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: intensity)
+        .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: count)
+        .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: indicatorText)
         .disabled(isDisabled)
     }
 
@@ -133,6 +170,11 @@ struct CalendarDayCell: View {
     }
 
     private var selectionOverlay: some View {
+        if isDisabled {
+            return RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
+                .strokeBorder(.clear, lineWidth: 0)
+        }
+
         let strokeColor: Color?
         let lineWidth: CGFloat
 
@@ -153,7 +195,7 @@ struct CalendarDayCell: View {
     
     @ViewBuilder
     private var indicatorContainer: some View {
-        if count > 0 || indicatorText != nil {
+        if showsIndicator {
             indicatorContent
                 .frame(height: Layout.indicatorCapsuleHeight, alignment: .center)
                 .padding(.horizontal, Layout.indicatorHorizontalPadding)
@@ -173,7 +215,8 @@ struct CalendarDayCell: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .allowsTightening(true)
+                .minimumScaleFactor(0.5)
         } else if count <= 5 {
             HStack(spacing: Layout.dotSpacing) {
                 ForEach(0..<count, id: \.self) { _ in

@@ -152,7 +152,15 @@ struct HabitFormView: View {
             NumericValueSheet(
                 title: "Set \(goalPeriod.unit.capitalized) Target",
                 initialValue: targetValue,
-                allowsDecimals: allowsDecimals,
+                formattingContext: ValueFormattingContext(
+                    metricKind: MetricKindResolver.resolve(goalType: .cumulative, unit: trimmedUnit),
+                    allowsDecimals: allowsDecimals,
+                    currencyCode: CurrencyDetection.detect(unit: trimmedUnit).currencyCode
+                ),
+                inputContext: ValueInputContext(
+                    metricKind: MetricKindResolver.resolve(goalType: .cumulative, unit: trimmedUnit),
+                    allowsDecimals: allowsDecimals
+                ),
                 unitLabel: trimmedUnit
             ) { newValue in
                 targetValue = max(newValue, allowsDecimals ? 0.1 : 1)
@@ -229,11 +237,14 @@ struct HabitFormView: View {
     }
 
     private var cumulativeTargetLabel: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = allowsDecimals ? 2 : 0
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: targetValue)) ?? "\(targetValue)"
+        HabitValueFormatter.string(
+            for: targetValue,
+            context: ValueFormattingContext(
+                metricKind: MetricKindResolver.resolve(goalType: .cumulative, unit: trimmedUnit),
+                allowsDecimals: allowsDecimals,
+                currencyCode: CurrencyDetection.detect(unit: trimmedUnit).currencyCode
+            )
+        )
     }
 
     private var goalDescription: String {
