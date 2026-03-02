@@ -3,31 +3,40 @@ import SwiftUI
 
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var month = Date()
-    @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
+    @StateObject private var selectionState: HabitSelectionState
     @State private var service: HabitLogService
     @State private var showEdit = false
     @State private var showValueEntry = false
     @State private var manualLogValue: Double? = nil
 
     let habit: Habit
+    private let progressService = ProgressAsOfService()
 
     init(habit: Habit, modelContext: ModelContext) {
         self.habit = habit
+        _selectionState = StateObject(wrappedValue: HabitSelectionState())
         _service = State(initialValue: HabitLogService(modelContext: modelContext))
     }
 
     var body: some View {
+        let progressSnapshot = progressService.snapshot(
+            for: habit,
+            visibleMonth: selectionState.visibleMonth,
+            selectedDate: selectionState.selectedDate
+        )
+
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 12) {
                         HabitHeader(
                             habit: habit,
-                            selectedDate: selectedDate,
+                            selectedDate: selectionState.selectedDate,
                             showsQuickLogButton: true,
                             showsInlineProgressText: false,
                             secondaryTextOverride: loggingContextText,
+                            progressFractionOverride: progressSnapshot?.progressFraction,
+                            isCompleteOverride: progressSnapshot?.isComplete,
                             onQuickLog: { date in
                                 if habit.goalType == .frequency {
                                     _ = service.quickLog(for: habit, on: date)
@@ -40,16 +49,15 @@ struct HabitDetailSheet: View {
                             } : nil
                         )
 
-                        if let details = habit.progressDetails(for: selectedDate),
-                           let progress = habit.progress(for: selectedDate) {
+                        if let progressSnapshot {
                             HabitProgressSummary(
-                                headline: habit.detailProgressText(for: selectedDate) ?? "",
-                                contextText: habit.activePeriodText(for: selectedDate),
-                                visibleRangeText: visibleRangeText,
-                                percentText: percentText(progress),
-                                progress: progress,
-                                overflowText: overflowText(details),
-                                streak: habit.currentStreak(referenceDate: selectedDate),
+                                headline: progressSnapshot.headlineText,
+                                contextText: progressSnapshot.contextText,
+                                visibleRangeText: progressSnapshot.visibleMonthText,
+                                percentText: percentText(progressSnapshot.progressFraction),
+                                progress: progressSnapshot.progressFraction,
+                                overflowText: progressSnapshot.overflowText,
+                                streak: progressSnapshot.streak,
                                 streakUnit: habit.goalPeriod.streakUnit,
                                 accent: Color(hex: habit.colorHex)
                             )
@@ -66,22 +74,26 @@ struct HabitDetailSheet: View {
                         HabitHeatmap(
                             habit: habit,
                             service: service,
-                            selectedDate: selectedDate,
+                            selectedDate: selectionState.selectedDate,
                             isInteractive: true,
                             onSelectDay: { day in
-                                selectedDate = day
+                                selectionState.select(heatmapDate: day)
                             }
                         )
 
                         Divider().opacity(0.2)
 
                         CalendarMonthView(
-                            month: $month,
+                            month: Binding(
+                                get: { selectionState.visibleMonth },
+                                set: { selectionState.selectCalendarMonth($0) }
+                            ),
                             habit: habit,
                             service: service,
-                            selectedDate: selectedDate,
+                            selectedDate: selectionState.selectedDate,
+                            monthSummaryText: progressSnapshot?.visibleMonthText,
                             onSelectDay: { day in
-                                selectedDate = day
+                                selectionState.select(date: day)
                             }
                         )
                     }
@@ -135,22 +147,12 @@ struct HabitDetailSheet: View {
                 formattingContext: service.valueFormattingContext(for: habit),
                 inputContext: service.valueInputContext(for: habit)
             ) { newValue in
-                _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
+                _ = service.addLog(for: habit, on: selectionState.selectedDate, value: max(0, newValue))
                 manualLogValue = newValue
             }
         }
         .onAppear {
             service.prepare(habit)
-        }
-        .onChange(of: month) { _, newMonth in
-            let calendar = Calendar.current
-            guard !calendar.isDate(selectedDate, equalTo: newMonth, toGranularity: .month) else {
-                return
-            }
-
-            if let firstVisibleDay = calendar.date(from: calendar.dateComponents([.year, .month], from: newMonth)) {
-                selectedDate = firstVisibleDay
-            }
         }
     }
 
@@ -160,25 +162,7 @@ struct HabitDetailSheet: View {
     }
 
     private var loggingContextText: String {
-        "Logging for \(selectedDate.formatted(date: .abbreviated, time: .omitted))"
-    }
-
-    private var visibleRangeText: String? {
-        guard habit.goalType == .cumulative else { return nil }
-
-        let interval = Calendar.current.dateInterval(of: .month, for: month) ?? DateInterval(start: month, end: month)
-        let totalText = service.formattedValue(for: habit, in: interval) ?? habit.formatProgressValue(0)
-        let unitSuffix = service.displayUnitSuffix(for: habit)
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "LLLL yyyy"
-        return "\(formatter.string(from: month)): \(totalText)\(unitSuffix)"
-    }
-
-    private func overflowText(_ details: HabitProgressDetails) -> String? {
-        let overflow = max(0, details.current - details.target)
-        guard overflow > 0 else { return nil }
-        return "+\(habit.formatProgressValue(overflow)) extra"
+        "Logging for \(selectionState.selectedDate.formatted(date: .abbreviated, time: .omitted))"
     }
 
     private func presentManualEntry() {

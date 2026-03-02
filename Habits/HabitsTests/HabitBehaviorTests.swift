@@ -1352,12 +1352,14 @@ final class HabitBehaviorTests: XCTestCase {
         context.insert(habit)
 
         let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
+        let seededValues: [Double] =
+            Array(repeating: 0.0, count: 40) +
+            Array(repeating: 1.0, count: 20) +
+            Array(repeating: 2.0, count: 18) +
+            Array(repeating: 3.0, count: 8) +
+            Array(repeating: 5.0, count: 4)
         seedCumulativeValues(
-            Array(repeating: 0, count: 40) +
-            Array(repeating: 1, count: 20) +
-            Array(repeating: 2, count: 18) +
-            Array(repeating: 3, count: 8) +
-            Array(repeating: 5, count: 4),
+            seededValues,
             endingAt: endDate,
             into: habit
         )
@@ -1380,22 +1382,26 @@ final class HabitBehaviorTests: XCTestCase {
         context.insert(booksHabit)
 
         let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
+        let moneySeededValues: [Double] =
+            Array(repeating: 0.0, count: 38) +
+            Array(repeating: 25.0, count: 16) +
+            Array(repeating: 50.0, count: 18) +
+            Array(repeating: 100.0, count: 12) +
+            Array(repeating: 150.0, count: 4) +
+            Array(repeating: 300.0, count: 2)
         seedCumulativeValues(
-            Array(repeating: 0, count: 38) +
-            Array(repeating: 25, count: 16) +
-            Array(repeating: 50, count: 18) +
-            Array(repeating: 100, count: 12) +
-            Array(repeating: 150, count: 4) +
-            Array(repeating: 300, count: 2),
+            moneySeededValues,
             endingAt: endDate,
             into: moneyHabit
         )
+        let booksSeededValues: [Double] =
+            Array(repeating: 0.0, count: 40) +
+            Array(repeating: 1.0, count: 20) +
+            Array(repeating: 2.0, count: 18) +
+            Array(repeating: 3.0, count: 8) +
+            Array(repeating: 5.0, count: 4)
         seedCumulativeValues(
-            Array(repeating: 0, count: 40) +
-            Array(repeating: 1, count: 20) +
-            Array(repeating: 2, count: 18) +
-            Array(repeating: 3, count: 8) +
-            Array(repeating: 5, count: 4),
+            booksSeededValues,
             endingAt: endDate,
             into: booksHabit
         )
@@ -1419,13 +1425,15 @@ final class HabitBehaviorTests: XCTestCase {
         context.insert(habit)
 
         let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
+        let seededValues: [Double] =
+            Array(repeating: 0.0, count: 35) +
+            Array(repeating: 10.0, count: 22) +
+            Array(repeating: 20.0, count: 15) +
+            Array(repeating: 35.0, count: 10) +
+            Array(repeating: 50.0, count: 6) +
+            Array(repeating: 80.0, count: 2)
         seedCumulativeValues(
-            Array(repeating: 0, count: 35) +
-            Array(repeating: 10, count: 22) +
-            Array(repeating: 20, count: 15) +
-            Array(repeating: 35, count: 10) +
-            Array(repeating: 50, count: 6) +
-            Array(repeating: 80, count: 2),
+            seededValues,
             endingAt: endDate,
             into: habit
         )

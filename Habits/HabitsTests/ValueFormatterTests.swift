@@ -10,7 +10,7 @@ final class ValueFormatterTests: XCTestCase {
             locale: Locale(identifier: "en_GB")
         )
 
-        XCTAssertEqual(HabitValueFormatter.string(for: 1234, context: context), "1,234")
+        XCTAssertEqual(HabitValueFormatter.string(for: 1234.0, context: context), "1,234")
     }
 
     func testGenericValueFormattingRespectsDecimalRules() {

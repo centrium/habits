@@ -22,6 +22,7 @@ struct CalendarMonthView: View {
     let habit: Habit
     let service: HabitLogService
     let selectedDate: Date
+    let monthSummaryText: String?
     let onSelectDay: (Date) -> Void
 
     @State private var slideDirection: SlideDirection?
@@ -39,6 +40,22 @@ struct CalendarMonthView: View {
     private let navVisualSize: CGFloat = 34
     private let monthAnimationDuration: Double = 0.22
     private let weekdays = ["S", "M", "T", "W", "T", "F", "S"]
+
+    init(
+        month: Binding<Date>,
+        habit: Habit,
+        service: HabitLogService,
+        selectedDate: Date,
+        monthSummaryText: String? = nil,
+        onSelectDay: @escaping (Date) -> Void
+    ) {
+        self._month = month
+        self.habit = habit
+        self.service = service
+        self.selectedDate = selectedDate
+        self.monthSummaryText = monthSummaryText
+        self.onSelectDay = onSelectDay
+    }
 
     var body: some View {
         let days = service.daysForMonth(displayedMonth)
@@ -131,7 +148,7 @@ struct CalendarMonthView: View {
                         .font(.headline)
 
                     if habit.goalType == .cumulative {
-                        Text(displayedMonthSummaryText)
+                        Text(monthSummaryText ?? displayedMonthSummaryText)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

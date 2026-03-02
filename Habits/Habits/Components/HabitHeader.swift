@@ -13,8 +13,32 @@ struct HabitHeader: View {
     let showsQuickLogButton: Bool
     let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
+    let progressFractionOverride: Double?
+    let isCompleteOverride: Bool?
     let onQuickLog: (Date) -> Void
     let onQuickLogLongPress: ((Date) -> Void)?
+
+    init(
+        habit: Habit,
+        selectedDate: Date,
+        showsQuickLogButton: Bool,
+        showsInlineProgressText: Bool,
+        secondaryTextOverride: String?,
+        progressFractionOverride: Double? = nil,
+        isCompleteOverride: Bool? = nil,
+        onQuickLog: @escaping (Date) -> Void,
+        onQuickLogLongPress: ((Date) -> Void)? = nil
+    ) {
+        self.habit = habit
+        self.selectedDate = selectedDate
+        self.showsQuickLogButton = showsQuickLogButton
+        self.showsInlineProgressText = showsInlineProgressText
+        self.secondaryTextOverride = secondaryTextOverride
+        self.progressFractionOverride = progressFractionOverride
+        self.isCompleteOverride = isCompleteOverride
+        self.onQuickLog = onQuickLog
+        self.onQuickLogLongPress = onQuickLogLongPress
+    }
 
     private var accent: Color { Color(hex: habit.colorHex) }
 
@@ -39,7 +63,11 @@ struct HabitHeader: View {
     }
 
     private var goalProgressFraction: Double {
-        habit.progressFraction(for: selectedDate) ?? 0
+        progressFractionOverride ?? habit.progressFraction(for: selectedDate) ?? 0
+    }
+
+    private var isComplete: Bool {
+        isCompleteOverride ?? habit.isComplete(for: selectedDate)
     }
 
     private var quickLogAccessibilityLabel: String {
@@ -71,7 +99,7 @@ struct HabitHeader: View {
                     accent: accent,
                     hasGoal: habit.hasGoal,
                     progressFraction: goalProgressFraction,
-                    isComplete: habit.isComplete(for: selectedDate),
+                    isComplete: isComplete,
                     accessibilityLabel: quickLogAccessibilityLabel,
                     action: {
                         onQuickLog(selectedDate)

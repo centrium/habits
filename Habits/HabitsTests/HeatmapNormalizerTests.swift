@@ -3,10 +3,11 @@ import XCTest
 
 final class HeatmapNormalizerTests: XCTestCase {
     func testOutlierSpikeDoesNotCollapseRemainingDistribution() {
-        let recentValues = Array(repeating: 1.0, count: 16) +
+        let recentValues =
+            Array(repeating: 1.0, count: 16) +
             Array(repeating: 2.0, count: 12) +
             Array(repeating: 3.0, count: 8) +
-            [40, 60, 120, 250]
+            [40.0, 60.0, 120.0, 250.0]
 
         let mediumTier = HeatmapNormalizer.tier(
             for: HeatmapNormalizationContext(
@@ -24,11 +25,14 @@ final class HeatmapNormalizerTests: XCTestCase {
     }
 
     func testTopTierRemainsReachableForLargeCurrencyValues() {
-        let recentValues = Array(repeating: 25.0, count: 16) +
-            Array(repeating: 50.0, count: 18) +
+        let baseValues =
+            Array(repeating: 25.0, count: 16) +
+            Array(repeating: 50.0, count: 18)
+        let recentValues =
+            baseValues +
             Array(repeating: 100.0, count: 12) +
             Array(repeating: 150.0, count: 4) +
-            [300, 400]
+            [300.0, 400.0]
 
         let brightTier = HeatmapNormalizer.tier(
             for: HeatmapNormalizationContext(
@@ -45,7 +49,7 @@ final class HeatmapNormalizerTests: XCTestCase {
     }
 
     func testSmallValuesStillShowVariation() {
-        let recentValues = [0, 1, 1, 2, 2, 3, 3, 4, 5, 6]
+        let recentValues = [0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 5.0, 6.0]
 
         let lowTier = HeatmapNormalizer.tier(
             for: HeatmapNormalizationContext(
