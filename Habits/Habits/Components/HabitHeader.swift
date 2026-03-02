@@ -11,12 +11,25 @@ struct HabitHeader: View {
     let habit: Habit
     let selectedDate: Date
     let showsQuickLogButton: Bool
+    let showsInlineProgressText: Bool
+    let secondaryTextOverride: String?
     let onQuickLog: (Date) -> Void
+    let onQuickLogLongPress: ((Date) -> Void)?
 
     private var accent: Color { Color(hex: habit.colorHex) }
 
     private var subtitleText: String {
+        if let secondaryTextOverride, !secondaryTextOverride.isEmpty {
+            return secondaryTextOverride
+        }
+
         let trimmed = habit.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let progressText = showsInlineProgressText ? (habit.inlineProgressText(for: selectedDate) ?? "") : ""
+
+        if !progressText.isEmpty {
+            return progressText
+        }
+
         return trimmed.isEmpty ? "Tap to log" : trimmed
     }
 
@@ -62,6 +75,9 @@ struct HabitHeader: View {
                     accessibilityLabel: quickLogAccessibilityLabel,
                     action: {
                         onQuickLog(selectedDate)
+                    },
+                    longPressAction: onQuickLogLongPress.map { action in
+                        { action(selectedDate) }
                     }
                 )
             }

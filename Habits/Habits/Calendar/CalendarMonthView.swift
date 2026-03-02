@@ -67,23 +67,26 @@ struct CalendarMonthView: View {
                         ForEach(days.indices, id: \.self) { index in
                             let day = days[index]
                             let isInDisplayedMonth = isDisplayedMonth(day)
-                            let count = service.count(for: habit, on: day )
+                            let count = service.count(for: habit, on: day)
+                            let indicatorText = habit.goalType == .cumulative
+                                ? service.formattedValue(for: habit, on: day)
+                                : nil
 
                             CalendarDayCell(
                                 date: day,
                                 intensity: service.intensity(for: habit, on: day),
                                 count: count,
+                                indicatorText: indicatorText,
                                 accent: Color(hex: habit.colorHex),
                                 isInDisplayedMonth: isInDisplayedMonth,
-                                isDisabled: !isInDisplayedMonth || isFutureDate(day),
+                                isDisabled: isFutureDate(day),
                                 isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
                                 isToday: calendar.isDateInToday(day),
                                 onTap: {
-                                    onSelectDay(day)
-                                    service.increment(for: habit, on: day)
+                                    selectDay(day)
                                 },
                                 onLongPress: {
-                                    adjustingDate = AdjustingDate(id: day, date: day)
+                                    openDayActions(for: day)
                                 }
                             )
                         }
@@ -93,11 +96,19 @@ struct CalendarMonthView: View {
                 .transition(calendarTransition)
             }
             .sheet(item: $adjustingDate) { date in
-                AdjustCountSheet(
-                    date: date.date,
-                    habit: habit,
-                    service: service
-                )
+                if habit.goalType == .frequency {
+                    AdjustCountSheet(
+                        date: date.date,
+                        habit: habit,
+                        service: service
+                    )
+                } else {
+                    CumulativeDayEntriesSheet(
+                        habit: habit,
+                        date: date.date,
+                        service: service
+                    )
+                }
             }
             .clipped()
             .contentShape(Rectangle())
@@ -115,8 +126,16 @@ struct CalendarMonthView: View {
             Spacer()
 
             HStack(spacing: 8) {
-                Text(monthLabel)
-                    .font(.headline)
+                VStack(spacing: 2) {
+                    Text(monthLabel)
+                        .font(.headline)
+
+                    if habit.goalType == .cumulative {
+                        Text(displayedMonthSummaryText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 if shouldShowToday {
                     Button("Today") {
@@ -233,6 +252,46 @@ struct CalendarMonthView: View {
 
     private var displayedMonth: Date {
         normalizedMonth(month)
+    }
+
+    private var displayedMonthInterval: DateInterval {
+        calendar.dateInterval(of: .month, for: displayedMonth) ?? DateInterval(start: displayedMonth, end: displayedMonth)
+    }
+
+    private var displayedMonthSummaryText: String {
+        let totalText = service.formattedValue(for: habit, in: displayedMonthInterval) ?? habit.formatProgressValue(0)
+        let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
+        return "\(totalText)\(unitSuffix) shown"
+    }
+
+    private func selectDay(_ day: Date) {
+        onSelectDay(day)
+        focusMonthIfNeeded(for: day)
+    }
+
+    private func openDayActions(for day: Date) {
+        selectDay(day)
+        adjustingDate = AdjustingDate(id: day, date: day)
+    }
+
+    private func focusMonthIfNeeded(for day: Date) {
+        guard !isDisplayedMonth(day) else { return }
+
+        let targetMonth = normalizedMonth(day)
+        let targetComponents = calendar.dateComponents([.year, .month], from: targetMonth)
+
+        switch compareMonth(targetComponents, monthComponents) {
+        case let comparison where comparison < 0:
+            slideDirection = .left
+        case let comparison where comparison > 0:
+            slideDirection = .right
+        default:
+            slideDirection = nil
+        }
+
+        withAnimation(monthAnimation) {
+            month = targetMonth
+        }
     }
 
     private var canGoForward: Bool {

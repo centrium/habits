@@ -15,6 +15,7 @@ struct HabitCard: View {
     @State private var service: HabitLogService?
     @State private var selectedDetent: PresentationDetent = .large
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var showQuickEntry = false
 
     private let headerHeight: CGFloat = 40
 
@@ -24,9 +25,16 @@ struct HabitCard: View {
                 habit: habit,
                 selectedDate: selectedDate,
                 showsQuickLogButton: true,
+                showsInlineProgressText: true,
+                secondaryTextOverride: nil,
                 onQuickLog: { date in
-                    service?.increment(for: habit, on: date)
-                }
+                    if habit.goalType == .frequency {
+                        _ = service?.quickLog(for: habit, on: date)
+                    } else {
+                        showQuickEntry = true
+                    }
+                },
+                onQuickLogLongPress: nil
             )
             .frame(height: headerHeight)
 
@@ -58,10 +66,25 @@ struct HabitCard: View {
                 .presentationDragIndicator(.visible)
                 
         }
+        .sheet(isPresented: $showQuickEntry) {
+            if let service {
+                CumulativeQuickEntrySheet(
+                    goalName: habit.name,
+                    unitLabel: habit.trimmedUnit,
+                    initialValue: service.suggestedQuickEntryValue(for: habit),
+                    allowsDecimals: habit.allowsDecimals
+                ) { newValue in
+                    let sanitizedValue = habit.allowsDecimals ? newValue : Double(Int(newValue.rounded()))
+                    _ = service.addLog(for: habit, on: selectedDate, value: max(0, sanitizedValue))
+                }
+            }
+        }
         .onAppear {
             if service == nil {
                 service = HabitLogService(modelContext: modelContext)
             }
+
+            service?.prepare(habit)
         }
     }
 }

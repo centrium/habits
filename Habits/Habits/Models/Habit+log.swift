@@ -8,38 +8,88 @@
 import SwiftUI
 
 extension Habit {
-    
-    private var logsByDay: [Date: HabitLog] {
-        Dictionary(uniqueKeysWithValues: logs.map { ($0.day, $0) })
-    }
-
-    func totalCount(in interval: DateInterval) -> Int {
+    private func logs(in interval: DateInterval) -> [HabitLog] {
         logs.filter { log in
             log.day >= interval.start && log.day < interval.end
         }
-            .reduce(0) { $0 + $1.count }
+    }
+
+    private func aggregatedNumericValue(for logs: [HabitLog]) -> Double {
+        logs.reduce(0) { $0 + $1.numericValue }
+    }
+
+    private func aggregatedFrequencyCount(for logs: [HabitLog]) -> Int {
+        logs.reduce(0) { $0 + $1.frequencyContribution }
+    }
+
+    func totalCount(in interval: DateInterval) -> Int {
+        aggregatedFrequencyCount(for: logs(in: interval))
+    }
+
+    func totalValue(in interval: DateInterval) -> Double {
+        aggregatedNumericValue(for: logs(in: interval))
+    }
+
+    func dailyValueTotals(in interval: DateInterval) -> [Date: Double] {
+        Dictionary(grouping: logs(in: interval), by: \.day)
+            .mapValues { aggregatedNumericValue(for: $0) }
     }
 
     func hasHitTarget(in interval: DateInterval) -> Bool {
-        guard hasStreakGoal else { return false }
-        return totalCount(in: interval) >= streakTarget
+        guard hasGoal, let target = effectiveTargetValue else { return false }
+        return progressTotal(in: interval) >= target
     }
-    
+
     func log(on date: Date, amount: Int = 1, calendar: Calendar = .current) {
         guard amount > 0 else { return }
-
-        let normalized = calendar.startOfDay(for: date)
-
-        if let existing = logs.first(where: { $0.day == normalized }) {
-            existing.count += amount
-        } else {
-            let newLog = HabitLog(day: normalized, count: amount)
-            logs.append(newLog)
-        }
+        logValue(on: date, value: Double(amount), calendar: calendar)
     }
-    
-    func count(on date: Date, calendar: Calendar = .current) -> Int {
+
+    func logValue(on date: Date, value: Double, calendar: Calendar = .current) {
+        guard value > 0 else { return }
+        logs.append(HabitLog(timestamp: date, value: value, calendar: calendar))
+    }
+
+    func logs(on date: Date, calendar: Calendar = .current) -> [HabitLog] {
         let normalized = calendar.startOfDay(for: date)
-        return logsByDay[normalized]?.count ?? 0
+        return logs
+            .filter { $0.day == normalized }
+            .sorted {
+                if $0.effectiveTimestamp == $1.effectiveTimestamp {
+                    return $0.createdAt < $1.createdAt
+                }
+                return $0.effectiveTimestamp < $1.effectiveTimestamp
+            }
+    }
+
+    func count(on date: Date, calendar: Calendar = .current) -> Int {
+        aggregatedFrequencyCount(for: logs(on: date, calendar: calendar))
+    }
+
+    func value(on date: Date, calendar: Calendar = .current) -> Double {
+        aggregatedNumericValue(for: logs(on: date, calendar: calendar))
+    }
+
+    @discardableResult
+    func normalizeCumulativeLogs(calendar: Calendar = .current) -> Bool {
+        guard goalType == .cumulative else { return false }
+
+        let legacyLogs = logs.filter { $0.kind == .legacyDailyTotal && $0.count > 0 }
+        guard !legacyLogs.isEmpty else { return false }
+
+        for legacyLog in legacyLogs {
+            logs.removeAll { $0.id == legacyLog.id }
+            let timestamp = legacyLog.effectiveTimestamp
+            logs.append(
+                HabitLog(
+                    timestamp: timestamp,
+                    value: Double(legacyLog.count),
+                    createdAt: legacyLog.createdAt,
+                    calendar: calendar
+                )
+            )
+        }
+
+        return true
     }
 }

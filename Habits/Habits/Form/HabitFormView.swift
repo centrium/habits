@@ -5,7 +5,6 @@
 //  Created by Matt Adams on 26/02/2026.
 //
 
-
 import SwiftUI
 
 struct HabitFormView: View {
@@ -14,18 +13,20 @@ struct HabitFormView: View {
     @Binding var selectedHex: String
     @Binding var iconName: String?
     @Binding var hasStreakGoal: Bool
-    @Binding var streakGoalType: GoalPeriod
+    @Binding var goalType: GoalType
+    @Binding var goalPeriod: GoalPeriod
     @Binding var streakTarget: Int
-    @State private var showIconPicker = false
-    @State private var showingTargetEditor = false
-
+    @Binding var targetValue: Double
+    @Binding var unit: String
+    @Binding var allowsDecimals: Bool
     let palette: [(String, String)]
-    let submitTitle: String
-    let onSubmit: () -> Void
+
+    @State private var showIconPicker = false
+    @State private var showingFrequencyTargetEditor = false
+    @State private var showingCumulativeTargetEditor = false
 
     var body: some View {
         Form {
-            // Live preview
             Section {
                 HabitHeaderPreview(
                     name: name,
@@ -90,57 +91,37 @@ struct HabitFormView: View {
                 }
                 .buttonStyle(.plain)
             }
-            
+
             Section("Goal") {
                 Toggle("Set a goal", isOn: $hasStreakGoal)
 
                 if hasStreakGoal {
-                    Picker("Cadence", selection: $streakGoalType) {
+                    Picker("Goal Type", selection: $goalType) {
+                        ForEach(GoalType.allCases) { type in
+                            Text(type.label).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Cadence", selection: $goalPeriod) {
                         ForEach(GoalPeriod.allCases) { type in
                             Text(type.label).tag(type)
                         }
                     }
                     .pickerStyle(.segmented)
 
-                    HStack(spacing: 8) {
+                    if goalType == .frequency {
+                        frequencyTargetRow
+                    } else {
+                        cumulativeTargetRow
 
-                        Text("Target:")
+                        TextField("Unit", text: $unit)
+                            .textInputAutocapitalization(.never)
 
-                        Text("\(streakTarget)")
-                            .font(.headline)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule()
-                                    .fill(Color.secondary.opacity(0.15))
-                            )
-                            .onTapGesture {
-                                showingTargetEditor = true
-                            }
-
-                        Text("per \(streakGoalType.unit)")
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
-                        HStack(spacing: 14) {
-
-                            Button {
-                                streakTarget = max(1, streakTarget - 1)
-                            } label: {
-                                Image(systemName: "minus")
-                            }
-
-                            Button {
-                                streakTarget += 1
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                        }
-                        .buttonStyle(.plain)
+                        Toggle("Allow decimals", isOn: $allowsDecimals)
                     }
 
-                    Text("Streak counts when you hit the target for the period.")
+                    Text(goalDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -159,13 +140,108 @@ struct HabitFormView: View {
             }
             .presentationDetents([.medium])
         }
-        .sheet(isPresented: $showingTargetEditor) {
+        .sheet(isPresented: $showingFrequencyTargetEditor) {
             TargetNumberSheet(
                 initialValue: streakTarget,
-                goalType: streakGoalType
+                goalType: goalPeriod
             ) { newValue in
                 streakTarget = newValue
             }
+        }
+        .sheet(isPresented: $showingCumulativeTargetEditor) {
+            NumericValueSheet(
+                title: "Set \(goalPeriod.unit.capitalized) Target",
+                initialValue: targetValue,
+                allowsDecimals: allowsDecimals,
+                unitLabel: trimmedUnit
+            ) { newValue in
+                targetValue = max(newValue, allowsDecimals ? 0.1 : 1)
+            }
+        }
+    }
+
+    private var frequencyTargetRow: some View {
+        HStack(spacing: 8) {
+            Text("Target:")
+
+            Text("\(streakTarget)")
+                .font(.headline)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.15))
+                )
+                .onTapGesture {
+                    showingFrequencyTargetEditor = true
+                }
+
+            Text("per \(goalPeriod.unit)")
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            HStack(spacing: 14) {
+                Button {
+                    streakTarget = max(1, streakTarget - 1)
+                } label: {
+                    Image(systemName: "minus")
+                }
+
+                Button {
+                    streakTarget += 1
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var cumulativeTargetRow: some View {
+        HStack(spacing: 8) {
+            Text("Target:")
+
+            Text(cumulativeTargetLabel)
+                .font(.headline)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.15))
+                )
+                .onTapGesture {
+                    showingCumulativeTargetEditor = true
+                }
+
+            if let trimmedUnit {
+                Text(trimmedUnit)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+    }
+
+    private var trimmedUnit: String? {
+        let trimmed = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var cumulativeTargetLabel: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = allowsDecimals ? 2 : 0
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: targetValue)) ?? "\(targetValue)"
+    }
+
+    private var goalDescription: String {
+        switch goalType {
+        case .frequency:
+            return "Streak counts when you hit the target for the period."
+        case .cumulative:
+            return "Progress is the total amount logged within the period."
         }
     }
 }

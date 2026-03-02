@@ -41,6 +41,7 @@ struct CalendarDayCell: View {
     let date: Date
     let intensity: Double
     let count: Int
+    let indicatorText: String?
     let accent: Color
     let isInDisplayedMonth: Bool
     let isDisabled: Bool
@@ -64,36 +65,71 @@ struct CalendarDayCell: View {
     private var dayNumber: String {
         "\(Calendar.current.component(.day, from: date))"
     }
+
+    private var dayNumberColor: Color {
+        if isSelected {
+            return .white.opacity(0.95)
+        }
+
+        if isInDisplayedMonth {
+            return .primary
+        }
+
+        return Color.primary.opacity(0.5)
+    }
     
     var body: some View {
-        Button(action: onTap) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
-                    .fill(accent.opacity(backgroundOpacity))
+        ZStack {
+            RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
+                .fill(accent.opacity(backgroundOpacity))
 
-                VStack(spacing: 0) {
-                    Text(dayNumber)
-                        .font(.subheadline.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, Layout.dayTopPadding)
-                        .frame(height: Layout.dayNumberAreaHeight, alignment: .top)
+            VStack(spacing: 0) {
+                Text(dayNumber)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(dayNumberColor)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Layout.dayTopPadding)
+                    .frame(height: Layout.dayNumberAreaHeight, alignment: .top)
 
-                    Spacer(minLength: Layout.middleMinHeight)
+                Spacer(minLength: Layout.middleMinHeight)
 
-                    indicatorContainer
-                        .frame(height: Layout.indicatorAreaHeight, alignment: .bottom)
+                indicatorContainer
+                    .frame(height: Layout.indicatorAreaHeight, alignment: .bottom)
+            }
+        }
+        .frame(width: Layout.cellWidth, height: Layout.cellHeight)
+        .overlay(selectionOverlay)
+        .contentShape(Rectangle())
+        .gesture(dayGesture)
+        .contextMenu {
+            Button("Open Day Actions") {
+                onLongPress()
+            }
+        }
+        .accessibilityAction(named: Text("Open Day Actions")) {
+            onLongPress()
+        }
+        .animation(.easeInOut(duration: 0.18), value: intensity)
+        .animation(.easeInOut(duration: 0.18), value: count)
+        .animation(.easeInOut(duration: 0.18), value: indicatorText)
+        .disabled(isDisabled)
+    }
+
+    private var dayGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .exclusively(before: TapGesture())
+            .onEnded { value in
+                guard !isDisabled else { return }
+
+                switch value {
+                case .first(true):
+                    onLongPress()
+                case .second:
+                    onTap()
+                default:
+                    break
                 }
             }
-            .frame(width: Layout.cellWidth, height: Layout.cellHeight)
-            .opacity(isInDisplayedMonth ? 1.0 : 0.45)
-            .overlay(selectionOverlay)
-        }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.35)
-                .onEnded { _ in onLongPress() }
-        )
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
     }
 
     private var selectionOverlay: some View {
@@ -117,7 +153,7 @@ struct CalendarDayCell: View {
     
     @ViewBuilder
     private var indicatorContainer: some View {
-        if count > 0 {
+        if count > 0 || indicatorText != nil {
             indicatorContent
                 .frame(height: Layout.indicatorCapsuleHeight, alignment: .center)
                 .padding(.horizontal, Layout.indicatorHorizontalPadding)
@@ -132,7 +168,13 @@ struct CalendarDayCell: View {
     
     @ViewBuilder
     private var indicatorContent: some View {
-        if count <= 5 {
+        if let indicatorText {
+            Text(indicatorText)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        } else if count <= 5 {
             HStack(spacing: Layout.dotSpacing) {
                 ForEach(0..<count, id: \.self) { _ in
                     Circle()

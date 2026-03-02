@@ -14,6 +14,7 @@ struct GoalProgressButton: View {
     let isComplete: Bool
     let accessibilityLabel: String
     let action: () -> Void
+    let longPressAction: (() -> Void)?
 
     private enum Metrics {
         static let iconSize: CGFloat = 32
@@ -54,6 +55,12 @@ struct GoalProgressButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(isComplete ? [.isSelected] : [])
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35)
+                .onEnded { _ in
+                    longPressAction?()
+                }
+        )
         .animation(.easeInOut(duration: Metrics.animationDuration), value: clampedProgress)
         .animation(.easeInOut(duration: Metrics.animationDuration), value: isComplete)
     }
@@ -85,7 +92,8 @@ struct GoalProgressButton: View {
         progressFraction: 0.45,
         isComplete: false,
         accessibilityLabel: "Log Read for Mar 1, 2026",
-        action: {}
+        action: {},
+        longPressAction: nil
     )
 }
 
@@ -96,7 +104,8 @@ struct GoalProgressButton: View {
         progressFraction: 1,
         isComplete: true,
         accessibilityLabel: "Log Read for Mar 1, 2026",
-        action: {}
+        action: {},
+        longPressAction: nil
     )
 }
 
@@ -107,6 +116,7 @@ struct GoalProgressButton: View {
         progressFraction: 0,
         isComplete: false,
         accessibilityLabel: "Log Read for Mar 1, 2026",
-        action: {}
+        action: {},
+        longPressAction: nil
     )
 }

@@ -10,7 +10,7 @@ import SwiftUI
 extension Habit {
 
     func currentStreak(referenceDate: Date, calendar: Calendar = .current) -> Int {
-        guard hasStreakGoal else { return 0 }
+        guard hasGoal else { return 0 }
 
         var streak = 0
         var interval = periodRange(for: referenceDate, calendar: calendar)

@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -7,6 +7,8 @@ struct HabitDetailSheet: View {
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var service: HabitLogService
     @State private var showEdit = false
+    @State private var showValueEntry = false
+    @State private var manualLogValue: Double? = nil
 
     let habit: Habit
 
@@ -19,43 +21,55 @@ struct HabitDetailSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-
-                    // Card container
                     VStack(alignment: .leading, spacing: 12) {
-
                         HabitHeader(
                             habit: habit,
                             selectedDate: selectedDate,
-                            showsQuickLogButton: false,
-                            onQuickLog: { _ in }
+                            showsQuickLogButton: true,
+                            showsInlineProgressText: false,
+                            secondaryTextOverride: loggingContextText,
+                            onQuickLog: { date in
+                                if habit.goalType == .frequency {
+                                    _ = service.quickLog(for: habit, on: date)
+                                } else {
+                                    presentManualEntry()
+                                }
+                            },
+                            onQuickLogLongPress: habit.goalType == .cumulative ? { _ in
+                                presentManualEntry()
+                            } : nil
                         )
-                        
+
                         if let details = habit.progressDetails(for: selectedDate),
                            let progress = habit.progress(for: selectedDate) {
-
-                            let target = details.target
-                            let current = details.current
-                            let capped = min(current, target)
-                            let surplus = max(0, current - target)
-                            let streak = habit.currentStreak(referenceDate: selectedDate)
-
                             HabitProgressSummary(
-                                progressText: "\(capped) / \(target) this \(habit.goalPeriod.unit)",
+                                headline: habit.detailProgressText(for: selectedDate) ?? "",
+                                contextText: habit.activePeriodText(for: selectedDate),
+                                visibleRangeText: visibleRangeText,
+                                percentText: percentText(progress),
                                 progress: progress,
-                                surplus: surplus,
-                                streak: streak,
+                                overflowText: overflowText(details),
+                                streak: habit.currentStreak(referenceDate: selectedDate),
                                 streakUnit: habit.goalPeriod.streakUnit,
                                 accent: Color(hex: habit.colorHex)
                             )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if habit.goalType == .cumulative {
+                                    presentManualEntry()
+                                }
+                            }
+
                             Divider().opacity(0.2)
                         }
+
                         HabitHeatmap(
                             habit: habit,
                             service: service,
                             selectedDate: selectedDate,
                             isInteractive: true,
                             onSelectDay: { day in
-                               selectedDate = day
+                                selectedDate = day
                             }
                         )
 
@@ -66,9 +80,9 @@ struct HabitDetailSheet: View {
                             habit: habit,
                             service: service,
                             selectedDate: selectedDate,
-                               onSelectDay: { day in
-                                   selectedDate = day
-                               }
+                            onSelectDay: { day in
+                                selectedDate = day
+                            }
                         )
                     }
                     .padding(14)
@@ -79,7 +93,6 @@ struct HabitDetailSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 
-                    // Intentional breathing room / future expansion
                     Color.clear
                         .frame(height: 200)
                         .allowsHitTesting(false)
@@ -96,14 +109,12 @@ struct HabitDetailSheet: View {
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // X dismiss (left)
                 ToolbarItem(placement: .navigationBarLeading) {
                     DismissButton()
                 }
 
-                // Edit (right)
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button() {
+                    Button {
                         showEdit = true
                     } label: {
                         Text("Edit")
@@ -116,133 +127,143 @@ struct HabitDetailSheet: View {
         .sheet(isPresented: $showEdit) {
             EditHabitSheet(habit: habit)
         }
+        .sheet(isPresented: $showValueEntry) {
+            CumulativeQuickEntrySheet(
+                goalName: habit.name,
+                unitLabel: habit.trimmedUnit,
+                initialValue: manualLogValue,
+                allowsDecimals: habit.allowsDecimals,
+            ) { newValue in
+                let sanitizedValue = habit.allowsDecimals ? newValue : Double(Int(newValue.rounded()))
+                _ = service.addLog(for: habit, on: selectedDate, value: max(0, sanitizedValue))
+                manualLogValue = sanitizedValue
+            }
+        }
+        .onAppear {
+            service.prepare(habit)
+        }
+        .onChange(of: month) { _, newMonth in
+            let calendar = Calendar.current
+            guard !calendar.isDate(selectedDate, equalTo: newMonth, toGranularity: .month) else {
+                return
+            }
+
+            if let firstVisibleDay = calendar.date(from: calendar.dateComponents([.year, .month], from: newMonth)) {
+                selectedDate = firstVisibleDay
+            }
+        }
+    }
+
+    private func percentText(_ progress: Double) -> String {
+        let percent = Int((progress * 100).rounded())
+        return "\(percent)%"
+    }
+
+    private var loggingContextText: String {
+        "Logging for \(selectedDate.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    private var visibleRangeText: String? {
+        guard habit.goalType == .cumulative else { return nil }
+
+        let interval = Calendar.current.dateInterval(of: .month, for: month) ?? DateInterval(start: month, end: month)
+        let totalText = service.formattedValue(for: habit, in: interval) ?? habit.formatProgressValue(0)
+        let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "LLLL yyyy"
+        return "\(formatter.string(from: month)): \(totalText)\(unitSuffix)"
+    }
+
+    private func overflowText(_ details: HabitProgressDetails) -> String? {
+        let overflow = max(0, details.current - details.target)
+        guard overflow > 0 else { return nil }
+        return "+\(habit.formatProgressValue(overflow)) extra"
+    }
+
+    private func presentManualEntry() {
+        manualLogValue = service.suggestedQuickEntryValue(for: habit)
+        showValueEntry = true
     }
 }
 
 private struct HabitProgressSummary: View {
-    let progressText: String
+    let headline: String
+    let contextText: String
+    let visibleRangeText: String?
+    let percentText: String
     let progress: Double
-    let surplus: Int
+    let overflowText: String?
     let streak: Int
     let streakUnit: String
     let accent: Color
 
-    private enum LayoutMetrics {
-        static let verticalSpacing: CGFloat = 8
-        static let inlineSpacing: CGFloat = 12
-        static let inlineBarTopSpacing: CGFloat = 8
-        static let metaSpacing: CGFloat = 8
-        static let streakIconSpacing: CGFloat = 6
-        static let badgeHorizontalPadding: CGFloat = 10
-        static let badgeVerticalPadding: CGFloat = 6
-    }
+    private let ringSize: CGFloat = 104
+    private let ringLineWidth: CGFloat = 8
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            inlineLayout
-            stackedLayout
+        HStack(alignment: .center, spacing: 16) {
+            ZStack {
+                Circle()
+                    .stroke(accent.opacity(0.15), lineWidth: ringLineWidth)
+
+                Circle()
+                    .trim(from: 0, to: min(max(progress, 0), 1))
+                    .stroke(
+                        accent,
+                        style: StrokeStyle(lineWidth: ringLineWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+
+                Text(percentText)
+                    .font(.headline.weight(.semibold))
+                    .monospacedDigit()
+            }
+            .frame(width: ringSize, height: ringSize)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(headline)
+                    .font(.title3.weight(.semibold))
+
+                Text(contextText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if let visibleRangeText {
+                    Text(visibleRangeText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let overflowText {
+                    Text(overflowText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if streak > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "flame.fill")
+                            .font(.caption)
+                            .foregroundStyle(accent)
+
+                        Text("\(streak) \(streakUnit) streak")
+                            .font(.caption.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(accent.opacity(0.15))
+                    )
+                }
+            }
+
+            Spacer()
         }
         .transaction { transaction in
             transaction.animation = nil
         }
-    }
-
-    private var inlineLayout: some View {
-        VStack(alignment: .leading, spacing: LayoutMetrics.inlineBarTopSpacing) {
-            HStack(alignment: .top, spacing: LayoutMetrics.inlineSpacing) {
-                progressTextLabel
-                    .layoutPriority(1)
-
-                Spacer(minLength: LayoutMetrics.inlineSpacing)
-
-                inlineMetaGroup
-                    .fixedSize(horizontal: true, vertical: true)
-            }
-
-            progressBar
-        }
-    }
-
-    private var stackedLayout: some View {
-        VStack(alignment: .leading, spacing: LayoutMetrics.verticalSpacing) {
-            primaryGroup
-
-            if hasVisibleMeta {
-                metaGroup
-            }
-        }
-    }
-
-    private var hasVisibleMeta: Bool {
-        surplus > 0 || streak > 0
-    }
-
-    private var primaryGroup: some View {
-        VStack(alignment: .leading, spacing: LayoutMetrics.verticalSpacing) {
-            progressTextLabel
-            progressBar
-        }
-    }
-
-    private var progressTextLabel: some View {
-        Text(progressText)
-            .font(.headline)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var progressBar: some View {
-        ProgressView(value: progress)
-            .tint(accent)
-            .animation(.easeInOut(duration: 0.25), value: progress)
-    }
-
-    @ViewBuilder
-    private var metaGroup: some View {
-        HStack(spacing: LayoutMetrics.metaSpacing) {
-            if surplus > 0 {
-                extraLabel(value: surplus)
-            }
-
-            if streak > 0 {
-                streakBadge(value: streak)
-            }
-        }
-    }
-
-    private var inlineMetaGroup: some View {
-        HStack(spacing: LayoutMetrics.metaSpacing) {
-            extraLabel(value: max(surplus, 1))
-                .opacity(surplus > 0 ? 1 : 0)
-                .accessibilityHidden(surplus <= 0)
-
-            streakBadge(value: max(streak, 1))
-                .opacity(streak > 0 ? 1 : 0)
-                .accessibilityHidden(streak <= 0)
-        }
-    }
-
-    private func extraLabel(value: Int) -> some View {
-        Text("+\(max(value, 1)) extra")
-            .font(.subheadline)
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-    }
-
-    private func streakBadge(value: Int) -> some View {
-        HStack(spacing: LayoutMetrics.streakIconSpacing) {
-            Image(systemName: "flame.fill")
-                .font(.caption)
-                .foregroundStyle(accent)
-
-            Text("\(max(value, 1)) \(streakUnit) streak")
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-        }
-        .padding(.horizontal, LayoutMetrics.badgeHorizontalPadding)
-        .padding(.vertical, LayoutMetrics.badgeVerticalPadding)
-        .background(
-            Capsule()
-                .fill(accent.opacity(0.15))
-        )
     }
 }

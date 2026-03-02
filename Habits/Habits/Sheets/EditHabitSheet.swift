@@ -20,8 +20,12 @@ struct EditHabitSheet: View {
     @State private var selectedHex: String
     @State private var iconName: String?
     @State private var hasStreakGoal: Bool
-    @State private var streakGoalType: GoalPeriod
+    @State private var goalType: GoalType
+    @State private var goalPeriod: GoalPeriod
     @State private var streakTarget: Int
+    @State private var targetValue: Double
+    @State private var unit: String
+    @State private var allowsDecimals: Bool
 
     private let palette: [(String, String)] = [
         ("Violet", "#7C3AED"),
@@ -41,8 +45,12 @@ struct EditHabitSheet: View {
         _iconName = State(initialValue: habit.iconName)
 
         _hasStreakGoal = State(initialValue: habit.hasStreakGoal)
-        _streakGoalType = State(initialValue: habit.goalPeriod)
+        _goalType = State(initialValue: habit.goalType)
+        _goalPeriod = State(initialValue: habit.goalPeriod)
         _streakTarget = State(initialValue: habit.streakTarget)
+        _targetValue = State(initialValue: habit.targetValue ?? 1)
+        _unit = State(initialValue: habit.unit ?? "")
+        _allowsDecimals = State(initialValue: habit.allowsDecimals)
     }
 
     var body: some View {
@@ -53,14 +61,14 @@ struct EditHabitSheet: View {
                 selectedHex: $selectedHex,
                 iconName: $iconName,
                 hasStreakGoal: $hasStreakGoal,
-                streakGoalType: $streakGoalType,
+                goalType: $goalType,
+                goalPeriod: $goalPeriod,
                 streakTarget: $streakTarget,
-                palette: palette,
-                submitTitle: "Save"
-            ) {
-                saveChanges()
-                dismiss()
-            }
+                targetValue: $targetValue,
+                unit: $unit,
+                allowsDecimals: $allowsDecimals,
+                palette: palette
+            )
             .navigationTitle("Edit Habit")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -72,7 +80,7 @@ struct EditHabitSheet: View {
                         saveChanges()
                         dismiss()
                     }
-                    .disabled(isUnchanged)
+                    .disabled(isUnchanged || !canSave)
                 }
             }
         }
@@ -87,8 +95,26 @@ struct EditHabitSheet: View {
                selectedHex == habit.colorHex &&
                iconName == habit.iconName &&
                hasStreakGoal == habit.hasStreakGoal &&
-               streakGoalType == habit.goalPeriod &&
-               streakTarget == habit.streakTarget
+               goalType == habit.goalType &&
+               goalPeriod == habit.goalPeriod &&
+               streakTarget == habit.streakTarget &&
+               targetValue == (habit.targetValue ?? 1) &&
+               unit == (habit.unit ?? "") &&
+               allowsDecimals == habit.allowsDecimals
+    }
+
+    private var canSave: Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return false }
+
+        guard hasStreakGoal else { return true }
+
+        switch goalType {
+        case .frequency:
+            return streakTarget >= 1
+        case .cumulative:
+            return targetValue > 0 && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     private func saveChanges() {
@@ -100,6 +126,8 @@ struct EditHabitSheet: View {
 
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
+        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalUnit = trimmedUnit.isEmpty ? nil : trimmedUnit
 
         habit.name = trimmedName
         habit.subtitle = finalSubtitle
@@ -107,8 +135,16 @@ struct EditHabitSheet: View {
         habit.colorHex = selectedHex
 
         habit.hasStreakGoal = hasStreakGoal
-        habit.goalPeriod = streakGoalType
+        habit.goalType = goalType
+        habit.goalPeriod = goalPeriod
         habit.streakTarget = streakTarget
+        habit.targetValue = finalUnit == nil ? nil : targetValue
+        habit.unit = finalUnit
+        habit.allowsDecimals = allowsDecimals
+
+        if habit.goalType == .cumulative {
+            _ = habit.normalizeCumulativeLogs()
+        }
 
         try? modelContext.save()
     }

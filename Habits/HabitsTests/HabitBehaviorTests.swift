@@ -40,7 +40,28 @@ final class HabitBehaviorTests: XCTestCase {
             colorHex: "#FFFFFF",
             hasStreakGoal: true,
             goalPeriod: goalType,
+            goalType: .frequency,
             streakTarget: target,
+            createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
+        )
+    }
+
+    private func makeCumulativeHabit(
+        goalPeriod: GoalPeriod,
+        target: Double,
+        unit: String = "books",
+        allowsDecimals: Bool = false
+    ) -> Habit {
+        Habit(
+            name: "Cumulative",
+            colorHex: "#FFFFFF",
+            hasStreakGoal: true,
+            goalPeriod: goalPeriod,
+            goalType: .cumulative,
+            streakTarget: 1,
+            targetValue: target,
+            unit: unit,
+            allowsDecimals: allowsDecimals,
             createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
         )
     }
@@ -70,7 +91,8 @@ final class HabitBehaviorTests: XCTestCase {
 
         XCTAssertEqual(count, 1)
         XCTAssertEqual(habit.logs.count, 1)
-        XCTAssertEqual(habit.logs.first?.count, 1)
+        XCTAssertEqual(habit.logs.first?.kind, .entry)
+        XCTAssertEqual(habit.logs.first?.numericValue, 1)
     }
 
     func testIncrementIncreasesCountForExistingDay() {
@@ -85,8 +107,8 @@ final class HabitBehaviorTests: XCTestCase {
         let count = service.increment(for: habit, on: day)
 
         XCTAssertEqual(count, 2)
-        XCTAssertEqual(habit.logs.count, 1)
-        XCTAssertEqual(habit.logs.first?.count, 2)
+        XCTAssertEqual(habit.logs.count, 2)
+        XCTAssertEqual(habit.count(on: day, calendar: Fixtures.calendar), 2)
     }
 
     func testDecrementReducesCount() {
@@ -102,7 +124,7 @@ final class HabitBehaviorTests: XCTestCase {
         let count = service.decrement(for: habit, on: day)
 
         XCTAssertEqual(count, 2)
-        XCTAssertEqual(habit.logs.first?.count, 2)
+        XCTAssertEqual(habit.count(on: day, calendar: Fixtures.calendar), 2)
     }
 
     func testDecrementRemovesLogWhenCountReachesZero() {
@@ -134,8 +156,8 @@ final class HabitBehaviorTests: XCTestCase {
         let count = service.setCount(for: habit, on: day, to: 5)
 
         XCTAssertEqual(count, 5)
-        XCTAssertEqual(habit.logs.count, 1)
-        XCTAssertEqual(habit.logs.first?.count, 5)
+        XCTAssertEqual(habit.logs.count, 5)
+        XCTAssertEqual(habit.count(on: day, calendar: Fixtures.calendar), 5)
     }
 
     func testSetCountRemovesLogWhenValueIsZero() {
@@ -430,7 +452,7 @@ final class HabitBehaviorTests: XCTestCase {
             HabitLog(day: thursday, count: 1, calendar: calendar)
         ]
 
-        let progress = habit.progress(for: thursday, calendar: calendar)
+        let progress = try! XCTUnwrap(habit.progress(for: thursday, calendar: calendar))
 
         XCTAssertEqual(progress, 3.0 / 5.0, accuracy: 0.0001)
     }
@@ -446,7 +468,7 @@ final class HabitBehaviorTests: XCTestCase {
             HabitLog(day: currentWeek, count: 2, calendar: calendar)
         ]
 
-        let progress = habit.progress(for: currentWeek, calendar: calendar)
+        let progress = try! XCTUnwrap(habit.progress(for: currentWeek, calendar: calendar))
 
         XCTAssertEqual(progress, 2.0 / 5.0, accuracy: 0.0001)
     }
@@ -598,7 +620,7 @@ final class HabitBehaviorTests: XCTestCase {
 
         habit.streakTarget = 4
 
-        XCTAssertEqual(habit.progress(for: day, calendar: calendar), 0.75, accuracy: 0.0001)
+        XCTAssertEqual(try! XCTUnwrap(habit.progress(for: day, calendar: calendar)), 0.75, accuracy: 0.0001)
         XCTAssertFalse(habit.isComplete(for: day, calendar: calendar))
     }
 
@@ -630,11 +652,11 @@ final class HabitBehaviorTests: XCTestCase {
             HabitLog(day: wednesday, count: 1, calendar: calendar)
         ]
 
-        XCTAssertEqual(habit.progress(for: wednesday, calendar: calendar), 1.0 / 3.0, accuracy: 0.0001)
+        XCTAssertEqual(try! XCTUnwrap(habit.progress(for: wednesday, calendar: calendar)), 1.0 / 3.0, accuracy: 0.0001)
 
         habit.goalPeriod = .weekly
 
-        XCTAssertEqual(habit.progress(for: wednesday, calendar: calendar), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(try! XCTUnwrap(habit.progress(for: wednesday, calendar: calendar)), 1.0, accuracy: 0.0001)
         XCTAssertTrue(habit.isComplete(for: wednesday, calendar: calendar))
     }
 
@@ -961,6 +983,342 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(intensity, 1.0, accuracy: 0.0001)
     }
 
+    // MARK: - Cumulative Goal Behavior
+
+    func testCumulativeGoalStoresConfiguration() {
+        let habit = makeCumulativeHabit(goalPeriod: .monthly, target: 20, unit: "books")
+
+        XCTAssertEqual(habit.goalType, .cumulative)
+        XCTAssertEqual(habit.targetValue, 20)
+        XCTAssertEqual(habit.unit, "books")
+        XCTAssertFalse(habit.allowsDecimals)
+    }
+
+    func testCumulativeQuickLogCreatesValueEntry() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 5, unit: "km", allowsDecimals: true)
+        context.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let total = service.quickLog(for: habit, on: day)
+
+        XCTAssertEqual(total, 1)
+        XCTAssertEqual(habit.logs.count, 1)
+        XCTAssertEqual(habit.logs.first?.kind, .entry)
+        XCTAssertEqual(habit.logs.first?.numericValue, 1)
+    }
+
+    func testCumulativeProgressSumsValuesWithinPeriod() {
+        let habit = makeCumulativeHabit(goalPeriod: .weekly, target: 10, unit: "km", allowsDecimals: true)
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let wednesday = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+
+        habit.logValue(on: monday, value: 2.5, calendar: Fixtures.calendar)
+        habit.logValue(on: wednesday, value: 3.0, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.progressTotal(for: wednesday, calendar: Fixtures.calendar), 5.5, accuracy: 0.0001)
+        XCTAssertEqual(try! XCTUnwrap(habit.progress(for: wednesday, calendar: Fixtures.calendar)), 0.55, accuracy: 0.0001)
+    }
+
+    func testCumulativeProgressExcludesOtherPeriods() {
+        let habit = makeCumulativeHabit(goalPeriod: .monthly, target: 10, unit: "km", allowsDecimals: true)
+        let may = Fixtures.makeDate(year: 2025, month: 5, day: 30)
+        let june = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+
+        habit.logValue(on: may, value: 4, calendar: Fixtures.calendar)
+        habit.logValue(on: june, value: 3.5, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.progressTotal(for: june, calendar: Fixtures.calendar), 3.5, accuracy: 0.0001)
+    }
+
+    func testCumulativeDailyTotalsReconcileWithPeriodTotal() {
+        let habit = makeCumulativeHabit(goalPeriod: .monthly, target: 20, unit: "books", allowsDecimals: true)
+        let june10 = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let june12 = Fixtures.makeDate(year: 2025, month: 6, day: 12)
+        let june16 = Fixtures.makeDate(year: 2025, month: 6, day: 16)
+
+        habit.logValue(on: june10, value: 2.5, calendar: Fixtures.calendar)
+        habit.logValue(on: june12, value: 4, calendar: Fixtures.calendar)
+        habit.logValue(on: june16, value: 1.5, calendar: Fixtures.calendar)
+
+        let interval = habit.periodRange(for: june16, calendar: Fixtures.calendar)
+        let dailyTotals = habit.dailyValueTotals(in: interval)
+        let visibleSum = dailyTotals.values.reduce(0, +)
+
+        XCTAssertEqual(visibleSum, habit.progressTotal(for: june16, calendar: Fixtures.calendar), accuracy: 0.0001)
+    }
+
+    func testCumulativeCompletionPreservesOverflowInDetails() {
+        let habit = makeCumulativeHabit(goalPeriod: .weekly, target: 5, unit: "books")
+        let monday = Fixtures.makeDate(year: 2025, month: 6, day: 9)
+        let tuesday = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+
+        habit.logValue(on: monday, value: 3, calendar: Fixtures.calendar)
+        habit.logValue(on: tuesday, value: 4, calendar: Fixtures.calendar)
+
+        let details = try! XCTUnwrap(habit.progressDetails(for: tuesday, calendar: Fixtures.calendar))
+
+        XCTAssertTrue(habit.isComplete(for: tuesday, calendar: Fixtures.calendar))
+        XCTAssertEqual(habit.progress(for: tuesday, calendar: Fixtures.calendar), 1.0)
+        XCTAssertEqual(details.current, 7, accuracy: 0.0001)
+        XCTAssertEqual(details.target, 5, accuracy: 0.0001)
+    }
+
+    func testCumulativeCurrentStreakCountsCompletedPeriods() {
+        let habit = makeCumulativeHabit(goalPeriod: .weekly, target: 5, unit: "km")
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 10), value: 5, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 17), value: 5, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 23), value: 5, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar), 3)
+    }
+
+    func testCumulativeCurrentStreakBreaksWhenPeriodMissesTarget() {
+        let habit = makeCumulativeHabit(goalPeriod: .weekly, target: 5, unit: "km")
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 10), value: 5, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 17), value: 4, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 23), value: 5, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar), 1)
+    }
+
+    func testCumulativeRetroactiveLogAdjustsCurrentStreak() {
+        let habit = makeCumulativeHabit(goalPeriod: .weekly, target: 5, unit: "km")
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 10), value: 5, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 17), value: 4, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 23), value: 5, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar), 1)
+
+        habit.logValue(on: Fixtures.makeDate(year: 2025, month: 6, day: 18), value: 1, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar), 3)
+    }
+
+    func testCumulativeIntensityUsesDailyValue() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "km", allowsDecimals: true)
+        context.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = service.addLog(for: habit, on: day, value: 4.5)
+
+        let intensity = service.intensity(for: habit, on: day)
+
+        XCTAssertGreaterThan(intensity, 0.10)
+    }
+
+    func testCumulativeSuggestedQuickEntryIsNilWithoutHistory() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "pages", allowsDecimals: false)
+        context.insert(habit)
+
+        XCTAssertNil(service.suggestedQuickEntryValue(for: habit))
+    }
+
+    func testCumulativeSuggestedQuickEntryUsesMostRecentValue() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "km", allowsDecimals: true)
+        context.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = service.addLog(for: habit, on: day, value: 2.5)
+        _ = service.addLog(for: habit, on: day, value: 4.25)
+
+        XCTAssertEqual(try! XCTUnwrap(service.suggestedQuickEntryValue(for: habit)), 4.25, accuracy: 0.0001)
+    }
+
+    func testCumulativeSuggestedQuickEntryPersistsFromStoredLogs() throws {
+        let container = Fixtures.makeContainer()
+        let writeContext = ModelContext(container)
+        let writeService = HabitLogService(modelContext: writeContext)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "km", allowsDecimals: true)
+        writeContext.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = writeService.addLog(for: habit, on: day, value: 2.5)
+        _ = writeService.addLog(for: habit, on: day, value: 4.25)
+        try writeContext.save()
+
+        let readContext = ModelContext(container)
+        let descriptor = FetchDescriptor<Habit>()
+        let storedHabit = try XCTUnwrap(readContext.fetch(descriptor).first)
+        let readService = HabitLogService(modelContext: readContext)
+
+        XCTAssertEqual(try XCTUnwrap(readService.suggestedQuickEntryValue(for: storedHabit)), 4.25, accuracy: 0.0001)
+    }
+
+    func testEditingEntryUpdatesSuggestedQuickEntryValue() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "km", allowsDecimals: true)
+        context.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = service.addLog(for: habit, on: day, value: 2.5)
+        let entry = try! XCTUnwrap(service.entries(for: habit, on: day).first)
+
+        _ = service.updateEntry(entry, for: habit, on: day, value: 3.75)
+
+        XCTAssertEqual(try! XCTUnwrap(service.suggestedQuickEntryValue(for: habit)), 3.75, accuracy: 0.0001)
+    }
+
+    func testCumulativeIntensityUsesTieredScalingForSmallValues() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "books", allowsDecimals: false)
+        context.insert(habit)
+
+        let day1 = Fixtures.makeDate(year: 2025, month: 6, day: 1)
+        let day2 = Fixtures.makeDate(year: 2025, month: 6, day: 2)
+        let day3 = Fixtures.makeDate(year: 2025, month: 6, day: 3)
+
+        _ = service.addLog(for: habit, on: day1, value: 1)
+        _ = service.addLog(for: habit, on: day2, value: 2)
+        _ = service.addLog(for: habit, on: day3, value: 3)
+
+        let low = service.intensity(for: habit, on: day1)
+        let high = service.intensity(for: habit, on: day3)
+
+        XCTAssertEqual(service.intensity(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 10)), 0)
+        XCTAssertLessThan(low, high)
+        XCTAssertLessThan(high, 1.0)
+    }
+
+    func testCumulativeIntensityForLargeValuesDoesNotOversaturateOtherGoals() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let moneyHabit = makeCumulativeHabit(goalPeriod: .daily, target: 5000, unit: "usd", allowsDecimals: false)
+        let booksHabit = makeCumulativeHabit(goalPeriod: .daily, target: 10, unit: "books", allowsDecimals: false)
+        context.insert(moneyHabit)
+        context.insert(booksHabit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = service.addLog(for: moneyHabit, on: day, value: 1200)
+        _ = service.addLog(for: moneyHabit, on: Fixtures.makeDate(year: 2025, month: 6, day: 9), value: 2000)
+        _ = service.addLog(for: booksHabit, on: day, value: 2)
+        _ = service.addLog(for: booksHabit, on: Fixtures.makeDate(year: 2025, month: 6, day: 9), value: 3)
+
+        let moneyIntensity = service.intensity(for: moneyHabit, on: day)
+        let booksIntensity = service.intensity(for: booksHabit, on: day)
+
+        XCTAssertLessThan(moneyIntensity, 1.0)
+        XCTAssertGreaterThan(moneyIntensity, 0)
+        XCTAssertGreaterThan(booksIntensity, 0)
+    }
+
+    func testUpdatingCumulativeEntryUpdatesDayAndPeriodTotals() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .monthly, target: 10, unit: "km", allowsDecimals: true)
+        context.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = service.addLog(for: habit, on: day, value: 2.5)
+        let entry = try! XCTUnwrap(service.entries(for: habit, on: day).first)
+
+        _ = service.updateEntry(entry, for: habit, on: day, value: 4.25)
+
+        XCTAssertEqual(service.value(for: habit, on: day), 4.25, accuracy: 0.0001)
+        XCTAssertEqual(habit.progressTotal(for: day, calendar: Fixtures.calendar), 4.25, accuracy: 0.0001)
+    }
+
+    func testClearingCumulativeDayUpdatesTotalsAndStreak() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeCumulativeHabit(goalPeriod: .weekly, target: 5, unit: "km", allowsDecimals: true)
+        context.insert(habit)
+
+        let june17 = Fixtures.makeDate(year: 2025, month: 6, day: 17)
+        let june23 = Fixtures.makeDate(year: 2025, month: 6, day: 23)
+        let reference = Fixtures.makeDate(year: 2025, month: 6, day: 24)
+
+        _ = service.addLog(for: habit, on: june17, value: 5)
+        _ = service.addLog(for: habit, on: june23, value: 5)
+
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar), 2)
+
+        _ = service.clearEntries(for: habit, on: june23)
+
+        XCTAssertEqual(service.value(for: habit, on: june23), 0, accuracy: 0.0001)
+        XCTAssertEqual(habit.progressTotal(for: june23, calendar: Fixtures.calendar), 0, accuracy: 0.0001)
+        XCTAssertEqual(habit.currentStreak(referenceDate: reference, calendar: Fixtures.calendar), 0)
+    }
+
+    func testEditingLegacyFrequencyLogAfterSwitchingToCumulativeConvertsItToValueEntry() {
+        let container = Fixtures.makeContainer()
+        let context = ModelContext(container)
+        let service = HabitLogService(modelContext: context)
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+        context.insert(habit)
+
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: day, count: 3, calendar: Fixtures.calendar)]
+        habit.goalType = .cumulative
+        habit.targetValue = 5
+        habit.unit = "books"
+        habit.allowsDecimals = true
+
+        let legacyEntry = try! XCTUnwrap(service.entries(for: habit, on: day).first)
+
+        _ = service.updateEntry(legacyEntry, for: habit, on: day, value: 2.5)
+
+        let updatedEntry = try! XCTUnwrap(service.entries(for: habit, on: day).first)
+        XCTAssertEqual(updatedEntry.kind, .entry)
+        XCTAssertEqual(updatedEntry.numericValue, 2.5, accuracy: 0.0001)
+        XCTAssertEqual(habit.progressTotal(for: day, calendar: Fixtures.calendar), 2.5, accuracy: 0.0001)
+    }
+
+    func testFrequencyInlineProgressTextRemainsUnchanged() {
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: day, count: 2, calendar: Fixtures.calendar)]
+
+        XCTAssertEqual(habit.inlineProgressText(for: day, calendar: Fixtures.calendar), "2 / 3")
+    }
+
+    func testCumulativeInlineProgressTextIncludesUnit() {
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 20, unit: "books")
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logValue(on: day, value: 6, calendar: Fixtures.calendar)
+
+        XCTAssertEqual(habit.inlineProgressText(for: day, calendar: Fixtures.calendar), "6 / 20 books")
+    }
+
+    func testSwitchingFromFrequencyToCumulativeReinterpretsExistingLogsWithoutDataLoss() {
+        let habit = makeGoalHabit(goalType: .daily, target: 4)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: day, count: 3, calendar: Fixtures.calendar)]
+
+        XCTAssertEqual(try! XCTUnwrap(habit.progress(for: day, calendar: Fixtures.calendar)), 0.75, accuracy: 0.0001)
+
+        habit.goalType = .cumulative
+        habit.targetValue = 5
+        habit.unit = "books"
+
+        XCTAssertEqual(try! XCTUnwrap(habit.progress(for: day, calendar: Fixtures.calendar)), 0.6, accuracy: 0.0001)
+        XCTAssertEqual(habit.inlineProgressText(for: day, calendar: Fixtures.calendar), "3 / 5 books")
+    }
+
     // MARK: - Persistence and Query Behavior
 
     func testGoalPeriodFallsBackToDailyForUnknownPersistedValue() {
@@ -977,6 +1335,14 @@ final class HabitBehaviorTests: XCTestCase {
         habit.streakGoalTypeRaw = GoalPeriod.weekly.rawValue
 
         XCTAssertEqual(habit.goalPeriod, .weekly)
+    }
+
+    func testGoalTypeFallsBackToFrequencyForUnknownPersistedValue() {
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
+
+        habit.goalTypeRaw = "mystery"
+
+        XCTAssertEqual(habit.goalType, .frequency)
     }
 
     func testHabitsListOrderRemainsCreatedAtDescendingWhenWeeklyHabitExists() throws {

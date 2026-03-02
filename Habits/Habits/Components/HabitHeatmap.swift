@@ -53,7 +53,6 @@ struct HabitHeatmap: View {
                 },
                 onTapDay: { day in
                     onSelectDay(day)
-                    service.increment(for: habit, on: day)
                 }
             )
         }

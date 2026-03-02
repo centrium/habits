@@ -9,6 +9,22 @@ import Foundation
 import SwiftData
 import SwiftUI
 
+enum GoalType: String, Codable, CaseIterable, Identifiable {
+    case frequency
+    case cumulative
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .frequency:
+            return "Frequency"
+        case .cumulative:
+            return "Cumulative"
+        }
+    }
+}
+
 enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
     case daily
     case weekly
@@ -37,6 +53,15 @@ enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
 
     var streakUnit: String {
         unit
+    }
+
+    var relativeLabel: String {
+        switch self {
+        case .daily: return "today"
+        case .weekly: return "this week"
+        case .monthly: return "this month"
+        case .yearly: return "this year"
+        }
     }
 
     var heatmapAggregationUnit: Calendar.Component {
@@ -122,6 +147,11 @@ enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum HabitLogKind: String, Codable {
+    case legacyDailyTotal
+    case entry
+}
+
 @Model
 final class Habit {
     @Attribute(.unique) var id: UUID
@@ -136,6 +166,10 @@ final class Habit {
     var hasStreakGoal: Bool               // NEW
     var streakGoalTypeRaw: String         // backed by enum
     var streakTarget: Int                 // target per period
+    var goalTypeRaw: String
+    var targetValue: Double?
+    var unit: String?
+    var allowsDecimals: Bool
 
     var createdAt: Date
 
@@ -155,6 +189,11 @@ final class Habit {
         set { goalPeriod = newValue }
     }
 
+    var goalType: GoalType {
+        get { GoalType(rawValue: goalTypeRaw) ?? .frequency }
+        set { goalTypeRaw = newValue.rawValue }
+    }
+
     // MARK: - Init
 
     init(
@@ -164,7 +203,11 @@ final class Habit {
         iconName: String? = nil,
         hasStreakGoal: Bool = false,
         goalPeriod: GoalPeriod = .daily,
+        goalType: GoalType = .frequency,
         streakTarget: Int = 1,
+        targetValue: Double? = nil,
+        unit: String? = nil,
+        allowsDecimals: Bool = false,
         createdAt: Date = .now
     ) {
         self.id = UUID()
@@ -176,6 +219,10 @@ final class Habit {
         self.hasStreakGoal = hasStreakGoal
         self.streakGoalTypeRaw = goalPeriod.rawValue
         self.streakTarget = max(1, streakTarget)
+        self.goalTypeRaw = goalType.rawValue
+        self.targetValue = targetValue
+        self.unit = unit
+        self.allowsDecimals = allowsDecimals
 
         self.createdAt = createdAt
     }
@@ -186,12 +233,54 @@ final class HabitLog {
     @Attribute(.unique) var id: UUID
     var day: Date   // Normalised to startOfDay
     var count: Int
+    var timestamp: Date?
+    var value: Double?
+    var logKindRaw: String?
     var createdAt: Date
-    
+
+    var kind: HabitLogKind {
+        HabitLogKind(rawValue: logKindRaw ?? "") ?? (value == nil ? .legacyDailyTotal : .entry)
+    }
+
+    var effectiveTimestamp: Date {
+        timestamp ?? day
+    }
+
+    var numericValue: Double {
+        switch kind {
+        case .legacyDailyTotal:
+            return Double(max(0, count))
+        case .entry:
+            return max(0, value ?? Double(max(0, count)))
+        }
+    }
+
+    var frequencyContribution: Int {
+        switch kind {
+        case .legacyDailyTotal:
+            return max(0, count)
+        case .entry:
+            return numericValue > 0 ? 1 : 0
+        }
+    }
+
     init(day: Date, count: Int = 1, createdAt: Date = .now, calendar: Calendar = .current) {
         self.id = UUID()
         self.day = calendar.startOfDay(for: day)
         self.count = count
+        self.timestamp = nil
+        self.value = nil
+        self.logKindRaw = HabitLogKind.legacyDailyTotal.rawValue
+        self.createdAt = createdAt
+    }
+
+    init(timestamp: Date, value: Double, createdAt: Date = .now, calendar: Calendar = .current) {
+        self.id = UUID()
+        self.day = calendar.startOfDay(for: timestamp)
+        self.count = 0
+        self.timestamp = timestamp
+        self.value = max(0, value)
+        self.logKindRaw = HabitLogKind.entry.rawValue
         self.createdAt = createdAt
     }
 }
