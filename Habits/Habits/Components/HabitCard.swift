@@ -10,11 +10,12 @@ import SwiftData
 
 struct HabitCard: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var userSettings: UserSettings
     @Bindable var habit: Habit
     @State private var isDetailPresented = false
     @State private var service: HabitLogService?
     @State private var selectedDetent: PresentationDetent = .large
-    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var selectedDate = Date()
     @State private var showQuickEntry = false
 
     private let headerHeight: CGFloat = 40
@@ -24,6 +25,8 @@ struct HabitCard: View {
             HabitHeader(
                 habit: habit,
                 selectedDate: selectedDate,
+                calendar: calculationCalendar,
+                weekStartPreference: userSettings.weekStartPreference,
                 showsQuickLogButton: true,
                 showsInlineProgressText: true,
                 secondaryTextOverride: nil,
@@ -42,6 +45,7 @@ struct HabitCard: View {
                 HabitHeatmap(
                     habit: habit,
                     service: service,
+                    calendarProvider: heatmapCalendarProvider,
                     selectedDate: selectedDate,
                     isInteractive: false,
                     onSelectDay: { day in
@@ -61,10 +65,13 @@ struct HabitCard: View {
             isDetailPresented = true
         }
         .sheet(isPresented: $isDetailPresented) {
-            HabitDetailSheet(habit: habit, modelContext: modelContext)
+            HabitDetailSheet(
+                habit: habit,
+                modelContext: modelContext,
+                initialCalendar: calculationCalendar
+            )
                 .presentationDetents([.medium, .large], selection: $selectedDetent)
                 .presentationDragIndicator(.visible)
-                
         }
         .sheet(isPresented: $showQuickEntry) {
             if let service {
@@ -81,10 +88,28 @@ struct HabitCard: View {
         }
         .onAppear {
             if service == nil {
-                service = HabitLogService(modelContext: modelContext)
+                service = HabitLogService(modelContext: modelContext, calendar: calculationCalendar)
             }
 
+            selectedDate = calculationCalendar.startOfDay(for: selectedDate)
+            service?.updateCalendar(calculationCalendar)
             service?.prepare(habit)
         }
+        .onChange(of: userSettings.weekStartPreference) { _, _ in
+            selectedDate = calculationCalendar.startOfDay(for: selectedDate)
+            service?.updateCalendar(calculationCalendar)
+        }
+    }
+
+    private var weekLayoutStrategy: WeekLayoutStrategy {
+        userSettings.weekLayoutStrategy()
+    }
+
+    private var calculationCalendar: Calendar {
+        weekLayoutStrategy.calendarForCalculations()
+    }
+
+    private var heatmapCalendarProvider: CalendarProvider {
+        weekLayoutStrategy.calendarProviderForHeatmap()
     }
 }

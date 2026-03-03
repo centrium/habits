@@ -9,16 +9,15 @@
 import Foundation
 
 struct CalendarGridHelper {
-
-    static func daysForMonth(_ month: Date, calendar: Calendar) -> [Date] {
+    static func daysForMonth(_ month: Date, calendarProvider: CalendarProvider) -> [Date] {
+        let calendar = calendarProvider.calendar
         guard
-            let monthInterval = calendar.dateInterval(of: .month, for: month),
-            let firstWeek = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start)
+            let monthInterval = calendar.dateInterval(of: .month, for: month)
         else { return [] }
 
         let totalCells = 42 // 6 rows x 7 columns for a stable calendar height.
         var days: [Date] = []
-        var date = firstWeek.start
+        var date = calendarProvider.startOfWeek(for: monthInterval.start)
 
         while days.count < totalCells {
             days.append(date)

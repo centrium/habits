@@ -10,12 +10,14 @@ import SwiftData
 
 @main
 struct HabitsApp: App {
-        var body: some Scene {
-            WindowGroup {
-                HabitsListView()
-                    .preferredColorScheme(.dark) // MVP: match the vibe
-            }
-            .modelContainer(for: [Habit.self, HabitLog.self])
-        }
-    }
+    @StateObject private var userSettings = UserSettings()
 
+    var body: some Scene {
+        WindowGroup {
+            HabitsListView()
+                .environmentObject(userSettings)
+                .preferredColorScheme(.dark) // MVP: match the vibe
+        }
+        .modelContainer(for: [Habit.self, HabitLog.self])
+    }
+}

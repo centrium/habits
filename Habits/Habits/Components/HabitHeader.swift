@@ -10,6 +10,8 @@ import SwiftUI
 struct HabitHeader: View {
     let habit: Habit
     let selectedDate: Date
+    let calendar: Calendar
+    let weekStartPreference: WeekStartPreference
     let showsQuickLogButton: Bool
     let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
@@ -21,6 +23,8 @@ struct HabitHeader: View {
     init(
         habit: Habit,
         selectedDate: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system,
         showsQuickLogButton: Bool,
         showsInlineProgressText: Bool,
         secondaryTextOverride: String?,
@@ -31,6 +35,8 @@ struct HabitHeader: View {
     ) {
         self.habit = habit
         self.selectedDate = selectedDate
+        self.calendar = calendar
+        self.weekStartPreference = weekStartPreference
         self.showsQuickLogButton = showsQuickLogButton
         self.showsInlineProgressText = showsInlineProgressText
         self.secondaryTextOverride = secondaryTextOverride
@@ -48,7 +54,13 @@ struct HabitHeader: View {
         }
 
         let trimmed = habit.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let progressText = showsInlineProgressText ? (habit.inlineProgressText(for: selectedDate) ?? "") : ""
+        let progressText = showsInlineProgressText
+            ? (habit.inlineProgressText(
+                for: selectedDate,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            ) ?? "")
+            : ""
 
         if !progressText.isEmpty {
             return progressText
@@ -63,11 +75,19 @@ struct HabitHeader: View {
     }
 
     private var goalProgressFraction: Double {
-        progressFractionOverride ?? habit.progressFraction(for: selectedDate) ?? 0
+        progressFractionOverride ?? habit.progressFraction(
+            for: selectedDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ) ?? 0
     }
 
     private var isComplete: Bool {
-        isCompleteOverride ?? habit.isComplete(for: selectedDate)
+        isCompleteOverride ?? habit.isComplete(
+            for: selectedDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
     }
 
     private var quickLogAccessibilityLabel: String {

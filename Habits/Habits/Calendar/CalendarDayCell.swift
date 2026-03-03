@@ -50,6 +50,7 @@ struct CalendarDayCell: View {
     let isDisabled: Bool
     let isSelected: Bool
     let isToday: Bool
+    let calendar: Calendar
     let onTap: () -> Void
     let onLongPress: () -> Void
     
@@ -78,7 +79,7 @@ struct CalendarDayCell: View {
     }
 
     private var dayNumber: String {
-        "\(Calendar.current.component(.day, from: date))"
+        "\(calendar.component(.day, from: date))"
     }
 
     private var dayNumberColor: Color {

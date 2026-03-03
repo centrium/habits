@@ -15,17 +15,23 @@ final class HabitLogService {
     }
 
     private let modelContext: ModelContext
-    private let calendar: Calendar
+    private(set) var calendar: Calendar
     private let lastValueStore: any LastValueStore
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.1
 
-    init(modelContext: ModelContext, lastValueStore: any LastValueStore = LogDerivedLastValueStore()) {
+    init(
+        modelContext: ModelContext,
+        calendar: Calendar = .current,
+        lastValueStore: any LastValueStore = LogDerivedLastValueStore()
+    ) {
         self.modelContext = modelContext
+        self.calendar = calendar
         self.lastValueStore = lastValueStore
-        var cal = Calendar.current
-        cal.firstWeekday = 1
-        self.calendar = cal
+    }
+
+    func updateCalendar(_ calendar: Calendar) {
+        self.calendar = calendar
     }
 
     private func playHaptic(becameComplete: Bool) {
@@ -121,6 +127,10 @@ final class HabitLogService {
 }
 
 extension HabitLogService {
+    var calendarProvider: CalendarProvider {
+        CalendarProvider(calendar: calendar)
+    }
+
     func metricKind(for habit: Habit) -> MetricKind {
         MetricKindResolver.resolve(habit)
     }
@@ -155,7 +165,7 @@ extension HabitLogService {
     }
 
     func daysForMonth(_ month: Date) -> [Date] {
-        CalendarGridHelper.daysForMonth(month, calendar: calendar)
+        CalendarGridHelper.daysForMonth(month, calendarProvider: calendarProvider)
     }
 }
 

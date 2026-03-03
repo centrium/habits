@@ -11,6 +11,7 @@ import SwiftData
 
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var userSettings: UserSettings
     @Query(sort: \Habit.createdAt, order: .reverse) private var habits: [Habit]
 
     @State private var showAddHabit = false
@@ -33,7 +34,14 @@ struct HabitsListView: View {
             .listStyle(.plain)
             .navigationTitle("Habits")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+
                     Button {
                         showAddHabit = true
                     } label: {
@@ -45,6 +53,7 @@ struct HabitsListView: View {
                 AddHabitSheet()
             }
         }
+        .environmentObject(userSettings)
     }
 }
 

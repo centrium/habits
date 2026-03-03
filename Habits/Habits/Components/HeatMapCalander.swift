@@ -13,40 +13,26 @@ struct Week: Identifiable {
     let month: Int
 }
 
-struct HeatmapCalendar {
-    static let calendar: Calendar = {
-        var cal = Calendar.current
-        cal.firstWeekday = 1 // Sunday
-        return cal
-    }()
+struct HeatmapLayoutService {
+    let calendarProvider: CalendarProvider
 
-    // Map weekday to row index for Sunday-first weeks.
-    // Sunday -> 0, Monday -> 1, ..., Saturday -> 6.
-    static func weekdayRowIndex(for date: Date, calendar: Calendar = HeatmapCalendar.calendar) -> Int {
-        let weekday = calendar.component(.weekday, from: date)
-        return (weekday - calendar.firstWeekday + 7) % 7
-    }
-
-    static func makeWeeks(
+    func makeWeeks(
         endingAt endDate: Date,
-        numberOfWeeks: Int,
-        calendar: Calendar = HeatmapCalendar.calendar
+        numberOfWeeks: Int
     ) -> [Week] {
+        let calendar = calendarProvider.calendar
         let end = calendar.startOfDay(for: endDate)
-
-        // Find the Sunday of the last week
-        let weekdayIndex = weekdayRowIndex(for: end, calendar: calendar)
-        let lastSunday = calendar.date(byAdding: .day, value: -weekdayIndex, to: end)!
+        let lastWeekStart = calendarProvider.startOfWeek(for: end)
 
         var weeks: [Week] = []
 
         for weekOffset in (0..<numberOfWeeks).reversed() {
-            let weekStart = calendar.date(byAdding: .day, value: -7 * weekOffset, to: lastSunday)!
+            let weekStart = calendar.date(byAdding: .day, value: -7 * weekOffset, to: lastWeekStart)!
 
             var days = Array<Date?>(repeating: nil, count: 7)
             for dayOffset in 0..<7 {
                 let day = calendar.date(byAdding: .day, value: dayOffset, to: weekStart)!
-                let rowIndex = weekdayRowIndex(for: day, calendar: calendar)
+                let rowIndex = calendarProvider.rowIndex(for: day)
                 days[rowIndex] = day <= end ? day : nil
             }
 
@@ -55,10 +41,10 @@ struct HeatmapCalendar {
         }
 
 #if DEBUG
-        let todayIndex = weekdayRowIndex(for: Date(), calendar: calendar)
+        let todayIndex = calendarProvider.rowIndex(for: Date())
         let todayWeekday = calendar.component(.weekday, from: Date())
         assert(
-            todayIndex == ((todayWeekday - calendar.firstWeekday + 7) % 7),
+            todayIndex == calendarProvider.rowIndex(forWeekdayNumber: todayWeekday),
             "weekdayRowIndex mapping mismatch for today"
         )
 #endif

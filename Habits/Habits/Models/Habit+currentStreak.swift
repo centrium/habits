@@ -8,12 +8,19 @@
 import SwiftUI
 
 extension Habit {
-
-    func currentStreak(referenceDate: Date, calendar: Calendar = .current) -> Int {
+    func currentStreak(
+        referenceDate: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Int {
         guard hasGoal else { return 0 }
 
         var streak = 0
-        var interval = periodRange(for: referenceDate, calendar: calendar)
+        var interval = periodRange(
+            for: referenceDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
 
         while true {
             if hasHitTarget(in: interval) {
@@ -22,18 +29,37 @@ extension Habit {
                 break
             }
 
-            interval = previousPeriod(from: interval, calendar: calendar)
+            interval = previousPeriod(
+                from: interval,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            )
         }
 
         return streak
     }
 
-    func currentStreak(calendar: Calendar = .current) -> Int {
-        currentStreak(referenceDate: .now, calendar: calendar)
+    func currentStreak(
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Int {
+        currentStreak(referenceDate: .now, calendar: calendar, weekStartPreference: weekStartPreference)
     }
 
-    private func previousPeriod(from interval: DateInterval, calendar: Calendar) -> DateInterval {
-        let previousDate = goalPeriod.previousPeriodStart(before: interval.start, calendar: calendar)
-        return periodRange(for: previousDate, calendar: calendar)
+    private func previousPeriod(
+        from interval: DateInterval,
+        calendar: Calendar,
+        weekStartPreference: WeekStartPreference
+    ) -> DateInterval {
+        let previousDate = goalPeriod.previousPeriodStart(
+            before: interval.start,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        return periodRange(
+            for: previousDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
     }
 }

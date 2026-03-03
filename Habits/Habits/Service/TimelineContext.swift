@@ -22,9 +22,18 @@ struct TimelineContext {
         return today
     }
 
-    func periodContextLabel(for goalPeriod: GoalPeriod, selectedDate: Date, today: Date) -> String {
+    func periodContextLabel(
+        for goalPeriod: GoalPeriod,
+        selectedDate: Date,
+        today: Date,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> String {
         if isViewingPast(selectedDate: selectedDate, today: today) {
-            return goalPeriod.displayLabel(for: selectedDate, calendar: calendar)
+            return goalPeriod.displayLabel(
+                for: selectedDate,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            )
         }
 
         return goalPeriod.relativeLabel

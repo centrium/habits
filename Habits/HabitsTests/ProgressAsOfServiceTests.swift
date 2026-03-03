@@ -139,4 +139,61 @@ final class ProgressAsOfServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.current, 4, accuracy: 0.0001)
         XCTAssertEqual(snapshot.visibleMonthText, "March 2026: 4 pages")
     }
+
+    func testWeeklySnapshotUsesConfiguredWeekStartForProgressTotals() throws {
+        let calendar = HabitDetailTestFixtures.makeCalendar()
+        let habit = HabitDetailTestFixtures.makeFrequencyHabit(goalPeriod: .weekly, target: 3, calendar: calendar)
+        let selectedDate = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 11, hour: 9, minute: 0, calendar: calendar)
+        let visibleMonth = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 1, calendar: calendar)
+        let now = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 15, hour: 9, minute: 0, calendar: calendar)
+
+        habit.logs = [
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 8, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 9, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 11, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar)
+        ]
+
+        let mondayService = ProgressAsOfService(calendar: calendar, weekStartPreference: .monday) { now }
+        let sundayService = ProgressAsOfService(calendar: calendar, weekStartPreference: .sunday) { now }
+
+        let mondaySnapshot = try XCTUnwrap(
+            mondayService.snapshot(for: habit, visibleMonth: visibleMonth, selectedDate: selectedDate)
+        )
+        let sundaySnapshot = try XCTUnwrap(
+            sundayService.snapshot(for: habit, visibleMonth: visibleMonth, selectedDate: selectedDate)
+        )
+
+        XCTAssertEqual(mondaySnapshot.current, 2, accuracy: 0.0001)
+        XCTAssertEqual(sundaySnapshot.current, 3, accuracy: 0.0001)
+        XCTAssertEqual(mondaySnapshot.contextText, "Week of Mar 9")
+        XCTAssertEqual(sundaySnapshot.contextText, "Week of Mar 8")
+    }
+
+    func testWeeklyStreakUsesConfiguredWeekStart() throws {
+        let calendar = HabitDetailTestFixtures.makeCalendar()
+        let habit = HabitDetailTestFixtures.makeFrequencyHabit(goalPeriod: .weekly, target: 2, calendar: calendar)
+        let selectedDate = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 11, hour: 9, minute: 0, calendar: calendar)
+        let visibleMonth = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 1, calendar: calendar)
+        let now = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 15, hour: 9, minute: 0, calendar: calendar)
+
+        habit.logs = [
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 2, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 8, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 9, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            HabitLog(timestamp: HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 10, hour: 8, minute: 0, calendar: calendar), value: 1, calendar: calendar)
+        ]
+
+        let mondayService = ProgressAsOfService(calendar: calendar, weekStartPreference: .monday) { now }
+        let sundayService = ProgressAsOfService(calendar: calendar, weekStartPreference: .sunday) { now }
+
+        let mondaySnapshot = try XCTUnwrap(
+            mondayService.snapshot(for: habit, visibleMonth: visibleMonth, selectedDate: selectedDate)
+        )
+        let sundaySnapshot = try XCTUnwrap(
+            sundayService.snapshot(for: habit, visibleMonth: visibleMonth, selectedDate: selectedDate)
+        )
+
+        XCTAssertEqual(mondaySnapshot.streak, 2)
+        XCTAssertEqual(sundaySnapshot.streak, 1)
+    }
 }

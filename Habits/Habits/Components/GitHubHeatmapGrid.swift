@@ -10,87 +10,74 @@ import SwiftUI
 
 struct GitHubHeatmapGrid: View {
     let accent: Color
+    let style: HeatmapStyleConfiguration
+    let calendarProvider: CalendarProvider
     let weeks: [Week]
-    let cellSize: CGFloat = 10
-    let cellSpacing: CGFloat = 4
     let selectedDate: Date
     let isInteractive: Bool
     let intensityFor: (Date) -> Double
     let onTapDay: (Date) -> Void
 
     private let rows: CGFloat = 7
-    private let monthLabelHeight: CGFloat = 14
-    private let dayLabelWidth: CGFloat = 14
-    private let dividerVerticalInset: CGFloat = 2
-    private let dividerHorizontalInset: CGFloat = 2
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             dayLabels
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    monthLabels
-                    gridColumns
-                }
-            }
+            scrollableGrid
         }
         .allowsHitTesting(isInteractive)
     }
 
     private var dayLabels: some View {
-        VStack(alignment: .leading, spacing: cellSpacing) {
+        VStack(alignment: .leading, spacing: style.verticalSpacing) {
             ForEach(0..<Int(rows), id: \.self) { index in
                 let label = dayLabel(for: index)
                 if let label {
                     Text(label)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: dayLabelWidth, height: cellSize, alignment: .center)
+                        .foregroundStyle(Color.secondary.opacity(style.rowLabelOpacity))
+                        .frame(width: style.dayLabelWidth, height: style.cellSize, alignment: .center)
                 } else {
                     Color.clear
-                        .frame(width: dayLabelWidth, height: cellSize)
+                        .frame(width: style.dayLabelWidth, height: style.cellSize)
                 }
             }
         }
-        .padding(.trailing, cellSpacing)
-        .frame(height: monthLabelHeight + gridHeight, alignment: .bottom)
+        .padding(.leading, style.rowLabelLeadingPadding)
+        .padding(.trailing, style.horizontalSpacing + 1)
+        .frame(
+            width: style.dayLabelWidth + style.rowLabelLeadingPadding + style.horizontalSpacing + 1,
+            height: style.monthLabelHeight + style.monthLabelToGridSpacing + gridHeight,
+            alignment: .bottomLeading
+        )
     }
 
     private var monthLabels: some View {
-        LazyHStack(alignment: .top, spacing: 0) {
+        LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
             ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
                 let isMonthBoundary = index == 0 || week.month != weeks[index - 1].month
-                let trailingGap = isMonthBoundary
-                    ? cellSpacing + (dividerHorizontalInset * 2)
-                    : cellSpacing
 
                 Color.clear
-                    .frame(width: cellSize, height: monthLabelHeight)
+                    .frame(width: style.cellSize, height: style.monthLabelHeight)
                     .overlay(alignment: .leading) {
                         if isMonthBoundary {
                             Text(monthLabel(for: week.id))
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.secondary.opacity(style.monthLabelOpacity))
+                                .tracking(style.monthLabelTracking)
                                 .fixedSize(horizontal: true, vertical: false)
-                                .offset(x: -1)
                         }
                     }
-                    .padding(.trailing, trailingGap)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: monthLabelHeight)
+        .frame(height: style.monthLabelHeight)
     }
 
     private var gridColumns: some View {
-        LazyHStack(alignment: .top, spacing: 0) {
-            ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
-                let isMonthBoundary = index > 0 && week.month != weeks[index - 1].month
-                let trailingGap = isMonthBoundary
-                    ? cellSpacing + (dividerHorizontalInset * 2)
-                    : cellSpacing
-
-                VStack(spacing: cellSpacing) {
+        LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
+            ForEach(weeks, id: \.id) { week in
+                VStack(spacing: style.verticalSpacing) {
                     ForEach(week.days.indices, id: \.self) { i in
                         let day = week.days[i]
 
@@ -99,35 +86,17 @@ struct GitHubHeatmapGrid: View {
                                 date: day,
                                 accent: accent,
                                 intensity: intensityFor(day),
-                                size: cellSize,
-                                isSelected: Calendar.current.isDate(day, inSameDayAs: selectedDate),
-                                isToday: Calendar.current.isDateInToday(day),
+                                size: style.cellSize,
+                                style: style,
+                                isSelected: calendarProvider.calendar.isDate(day, inSameDayAs: selectedDate),
+                                isToday: calendarProvider.calendar.isDateInToday(day),
                                 isInteractive: isInteractive,
                                 onTap: { onTapDay(day) }
                             )
                         } else {
                             Color.clear
-                                .frame(width: cellSize, height: cellSize)
+                                .frame(width: style.cellSize, height: style.cellSize)
                         }
-                    }
-                }
-                // Keep a consistent rhythm between weeks.
-                .padding(.trailing, trailingGap)
-                .overlay(alignment: .trailing) {
-                    if isMonthBoundary {
-                        ZStack {
-                            // Invisible container that owns horizontal air
-                            Color.clear
-                                .frame(width: trailingGap)
-
-                            // The actual divider, centred
-                            Rectangle()
-                                .fill(Color.white.opacity(0.08))
-                                .frame(width: 1)
-                        }
-                        .frame(height: gridHeight - (dividerVerticalInset * 2))
-                        .offset(x: -(trailingGap / 2) + dividerHorizontalInset + 2)
-                        .allowsHitTesting(false)
                     }
                 }
             }
@@ -136,27 +105,41 @@ struct GitHubHeatmapGrid: View {
         .frame(height: gridHeight)
     }
 
-    private func dayLabel(for index: Int) -> String? {
-        switch index {
-        case 1:
-            return "M"
-        case 3:
-            return "W"
-        case 5:
-            return "F"
-        default:
-            return nil
+    private var scrollableGrid: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: style.monthLabelToGridSpacing) {
+                monthLabels
+                gridColumns
+            }
+            .padding(.trailing, style.rightEdgeFadeWidth)
         }
+        .mask {
+            HStack(spacing: 0) {
+                Rectangle().fill(.white)
+                LinearGradient(
+                    colors: [.white, .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: style.rightEdgeFadeWidth)
+            }
+        }
+    }
+
+    private func dayLabel(for index: Int) -> String? {
+        calendarProvider.heatmapRowLabel(forRow: index)
     }
 
     private func monthLabel(for date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = .current
+        formatter.calendar = calendarProvider.calendar
+        formatter.locale = calendarProvider.calendar.locale ?? .current
+        formatter.timeZone = calendarProvider.calendar.timeZone
         formatter.dateFormat = "MMM"
         return formatter.string(from: date)
     }
 
     private var gridHeight: CGFloat {
-        (cellSize * rows) + (cellSpacing * (rows - 1))
+        (style.cellSize * rows) + (style.verticalSpacing * (rows - 1))
     }
 }

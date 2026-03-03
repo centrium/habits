@@ -8,8 +8,15 @@
 import SwiftUI
 
 extension Habit {
-
-    func periodRange(for date: Date, calendar: Calendar = .current) -> DateInterval {
-        goalPeriod.periodRange(for: date, calendar: calendar)
+    func periodRange(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> DateInterval {
+        goalPeriod.periodRange(
+            for: date,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
     }
 }

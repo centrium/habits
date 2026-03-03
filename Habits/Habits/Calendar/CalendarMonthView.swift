@@ -21,6 +21,7 @@ struct CalendarMonthView: View {
     @Binding var month: Date
     let habit: Habit
     let service: HabitLogService
+    let calendarProvider: CalendarProvider
     let selectedDate: Date
     let monthSummaryText: String?
     let onSelectDay: (Date) -> Void
@@ -39,12 +40,12 @@ struct CalendarMonthView: View {
     private let navHitSize: CGFloat = 44
     private let navVisualSize: CGFloat = 34
     private let monthAnimationDuration: Double = 0.22
-    private let weekdays = ["S", "M", "T", "W", "T", "F", "S"]
 
     init(
         month: Binding<Date>,
         habit: Habit,
         service: HabitLogService,
+        calendarProvider: CalendarProvider,
         selectedDate: Date,
         monthSummaryText: String? = nil,
         onSelectDay: @escaping (Date) -> Void
@@ -52,13 +53,14 @@ struct CalendarMonthView: View {
         self._month = month
         self.habit = habit
         self.service = service
+        self.calendarProvider = calendarProvider
         self.selectedDate = selectedDate
         self.monthSummaryText = monthSummaryText
         self.onSelectDay = onSelectDay
     }
 
     var body: some View {
-        let days = service.daysForMonth(displayedMonth)
+        let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
 
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
@@ -71,7 +73,7 @@ struct CalendarMonthView: View {
             ZStack {
                 VStack(spacing: verticalSpacing) {
                     LazyVGrid(columns: columns, spacing: horizontalSpacing) {
-                        ForEach(Array(weekdays.enumerated()), id: \.offset) { _, label in
+                        ForEach(Array(calendarProvider.orderedVeryShortStandaloneWeekdaySymbols.enumerated()), id: \.offset) { _, label in
                             Text(label)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -99,6 +101,7 @@ struct CalendarMonthView: View {
                                 isDisabled: isDisabledDay,
                                 isSelected: !isDisabledDay && calendar.isDate(day, inSameDayAs: selectedDate),
                                 isToday: calendar.isDateInToday(day),
+                                calendar: calendar,
                                 onTap: {
                                     selectDay(day)
                                 },
@@ -247,6 +250,9 @@ struct CalendarMonthView: View {
 
     private var monthLabel: String {
         let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = calendar.locale ?? .current
+        formatter.timeZone = calendar.timeZone
         formatter.dateFormat = "LLL yyyy"
         return formatter.string(from: displayedMonth)
     }
@@ -256,7 +262,7 @@ struct CalendarMonthView: View {
     }
 
     private var calendar: Calendar {
-        Calendar.current
+        calendarProvider.calendar
     }
 
     private var currentMonthComponents: DateComponents {

@@ -8,12 +8,19 @@
 import SwiftUI
 
 extension Habit {
-
-    func isCurrentPeriodComplete(for date: Date, calendar: Calendar = .current) -> Bool {
-        isComplete(for: date, calendar: calendar)
+    func isCurrentPeriodComplete(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Bool {
+        isComplete(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
     }
 
-    func isComplete(for date: Date, calendar: Calendar = .current) -> Bool {
-        progressFraction(for: date, calendar: calendar) == 1.0
+    func isComplete(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Bool {
+        progressFraction(for: date, calendar: calendar, weekStartPreference: weekStartPreference) == 1.0
     }
 }

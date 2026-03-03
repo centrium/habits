@@ -1,0 +1,99 @@
+import Combine
+import Foundation
+import SwiftUI
+
+enum WeekStartPreference: String, CaseIterable, Codable, Identifiable {
+    case system
+    case monday
+    case sunday
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system:
+            return "System"
+        case .monday:
+            return "Monday"
+        case .sunday:
+            return "Sunday"
+        }
+    }
+
+    func resolvedFirstWeekday(in calendar: Calendar) -> Int {
+        switch self {
+        case .system:
+            return calendar.firstWeekday
+        case .monday:
+            return 2
+        case .sunday:
+            return 1
+        }
+    }
+}
+
+protocol SettingsKeyValueStore {
+    func string(forKey key: String) -> String?
+    func set(_ value: String?, forKey key: String)
+}
+
+struct UserDefaultsSettingsStore: SettingsKeyValueStore {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func string(forKey key: String) -> String? {
+        defaults.string(forKey: key)
+    }
+
+    func set(_ value: String?, forKey key: String) {
+        defaults.set(value, forKey: key)
+    }
+}
+
+@MainActor
+final class UserSettings: ObservableObject {
+    private enum Keys {
+        static let weekStart = "settings.weekStart"
+    }
+
+    private let store: any SettingsKeyValueStore
+
+    @Published var weekStartPreference: WeekStartPreference {
+        didSet {
+            store.set(weekStartPreference.rawValue, forKey: Keys.weekStart)
+        }
+    }
+
+    convenience init() {
+        self.init(store: UserDefaultsSettingsStore())
+    }
+
+    init(store: any SettingsKeyValueStore) {
+        self.store = store
+        self.weekStartPreference = WeekStartPreference(
+            rawValue: store.string(forKey: Keys.weekStart) ?? ""
+        ) ?? .system
+    }
+
+    func weekLayoutStrategy(base: Calendar = .autoupdatingCurrent) -> WeekLayoutStrategy {
+        WeekLayoutStrategy(
+            baseCalendar: base,
+            weekStartPreference: weekStartPreference
+        )
+    }
+
+    func effectiveFirstWeekday(in calendar: Calendar = .autoupdatingCurrent) -> Int {
+        weekLayoutStrategy(base: calendar).calendarForCalculations().firstWeekday
+    }
+
+    func resolvedCalendar(base: Calendar = .autoupdatingCurrent) -> Calendar {
+        weekLayoutStrategy(base: base).calendarForCalculations()
+    }
+
+    func calendarProvider(base: Calendar = .autoupdatingCurrent) -> CalendarProvider {
+        weekLayoutStrategy(base: base).calendarProviderForCalculations()
+    }
+}

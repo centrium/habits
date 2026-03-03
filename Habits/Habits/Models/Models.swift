@@ -68,28 +68,62 @@ enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
         .day
     }
 
-    func periodStart(for date: Date, calendar: Calendar = .current) -> Date {
-        periodRange(for: date, calendar: calendar).start
+    func periodStart(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Date {
+        periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference).start
     }
 
-    func periodEnd(for date: Date, calendar: Calendar = .current) -> Date {
-        periodRange(for: date, calendar: calendar).end
+    func periodEnd(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Date {
+        periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference).end
     }
 
-    func nextPeriodStart(after date: Date, calendar: Calendar = .current) -> Date {
-        periodEnd(for: date, calendar: calendar)
+    func nextPeriodStart(
+        after date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Date {
+        periodEnd(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
     }
 
-    func previousPeriodStart(before date: Date, calendar: Calendar = .current) -> Date {
+    func previousPeriodStart(
+        before date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Date {
         let shiftedDate = calendar.date(byAdding: calendarComponent, value: -1, to: date) ?? date
-        return periodStart(for: shiftedDate, calendar: calendar)
+        return periodStart(for: shiftedDate, calendar: calendar, weekStartPreference: weekStartPreference)
     }
 
-    func periodRange(for date: Date, calendar: Calendar = .current) -> DateInterval {
-        calendar.dateInterval(of: calendarComponent, for: date) ?? fallbackPeriodRange(for: date, calendar: calendar)
+    func periodRange(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> DateInterval {
+        switch self {
+        case .weekly:
+            return WeekBoundaryCalculator.weekInterval(
+                containing: date,
+                calendar: calendar,
+                weekStart: weekStartPreference
+            )
+        case .daily, .monthly, .yearly:
+            return calendar.dateInterval(of: calendarComponent, for: date)
+                ?? fallbackPeriodRange(for: date, calendar: calendar)
+        }
     }
 
-    func displayLabel(for date: Date, calendar: Calendar = .current) -> String {
+    func displayLabel(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.locale = calendar.locale ?? .current
@@ -98,17 +132,17 @@ enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .daily:
             formatter.dateStyle = .medium
-            return formatter.string(from: periodStart(for: date, calendar: calendar))
+            return formatter.string(from: periodStart(for: date, calendar: calendar, weekStartPreference: weekStartPreference))
         case .weekly:
-            let start = periodStart(for: date, calendar: calendar)
+            let start = periodStart(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
             formatter.setLocalizedDateFormatFromTemplate("MMM d")
             return "Week of \(formatter.string(from: start))"
         case .monthly:
             formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
-            return formatter.string(from: periodStart(for: date, calendar: calendar))
+            return formatter.string(from: periodStart(for: date, calendar: calendar, weekStartPreference: weekStartPreference))
         case .yearly:
             formatter.setLocalizedDateFormatFromTemplate("yyyy")
-            return formatter.string(from: periodStart(for: date, calendar: calendar))
+            return formatter.string(from: periodStart(for: date, calendar: calendar, weekStartPreference: weekStartPreference))
         }
     }
 
@@ -321,8 +355,13 @@ extension Color {
 extension Habit {
     func isGoalMet(
         calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system,
         referenceDate: Date
     ) -> Bool {
-        hasHitTarget(in: periodRange(for: referenceDate, calendar: calendar))
+        hasHitTarget(in: periodRange(
+            for: referenceDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ))
     }
 }

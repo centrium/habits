@@ -9,31 +9,39 @@
 import SwiftUI
 
 struct HeatCell: View {
+    @Environment(\.displayScale) private var displayScale
+
     let date: Date
     let accent: Color
     let intensity: Double
     let size: CGFloat
+    let style: HeatmapStyleConfiguration
     let isSelected: Bool
     let isToday: Bool
     let isInteractive: Bool
     let onTap: () -> Void
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(accent.opacity(intensity * 0.6))
+        cellShape
+            .fill(fillColor)
             .frame(width: size, height: size)
             .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                cellShape
+                    .strokeBorder(borderColor, lineWidth: pixelLineWidth)
             )
             .overlay(selectionOverlay)
-            .contentShape(Rectangle())
+            .scaleEffect(isActive ? 1 : 0.96)
+            .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
             .onTapGesture {
                 guard isInteractive else { return }
                 onTap()
             }
             .accessibilityLabel(Text(formatted(date)))
+            .animation(style.activationSpring, value: isActive)
+            .animation(.easeInOut(duration: style.intensityFadeDuration), value: visualIntensity)
+            .animation(style.animationStyle, value: isSelected)
+            .animation(style.animationStyle, value: isToday)
     }
 
     private var selectionOverlay: some View {
@@ -41,18 +49,50 @@ struct HeatCell: View {
         let lineWidth: CGFloat
 
         if isSelected {
-            strokeColor = Color.white.opacity(0.6)
-            lineWidth = 2
+            strokeColor = Color.white.opacity(style.selectedStrokeOpacity)
+            lineWidth = style.selectedStrokeWidth
         } else if isToday {
-            strokeColor = Color.primary.opacity(0.35)
-            lineWidth = 1
+            strokeColor = Color.primary.opacity(style.todayStrokeOpacity)
+            lineWidth = style.todayStrokeWidth
         } else {
             strokeColor = nil
             lineWidth = 0
         }
 
-        return RoundedRectangle(cornerRadius: 2)
+        return cellShape
             .strokeBorder(strokeColor ?? .clear, lineWidth: lineWidth)
+    }
+
+    private var cellShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+    }
+
+    private var visualIntensity: Double {
+        style.visualIntensity(for: intensity)
+    }
+
+    private var isActive: Bool {
+        visualIntensity > 0
+    }
+
+    private var fillColor: Color {
+        guard isActive else {
+            return style.inactiveStrokeColor.opacity(style.inactiveFillOpacity)
+        }
+
+        return accent.opacity(visualIntensity)
+    }
+
+    private var borderColor: Color {
+        guard isActive else {
+            return style.inactiveStrokeColor.opacity(style.inactiveStrokeOpacity)
+        }
+
+        return accent.opacity(style.activeBorderOpacity(for: intensity))
+    }
+
+    private var pixelLineWidth: CGFloat {
+        1 / max(displayScale, 1)
     }
 
     private func formatted(_ date: Date) -> String {

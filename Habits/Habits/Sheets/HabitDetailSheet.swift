@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var userSettings: UserSettings
     @StateObject private var selectionState: HabitSelectionState
     @State private var service: HabitLogService
     @State private var showEdit = false
@@ -10,15 +11,22 @@ struct HabitDetailSheet: View {
     @State private var manualLogValue: Double? = nil
 
     let habit: Habit
-    private let progressService = ProgressAsOfService()
 
-    init(habit: Habit, modelContext: ModelContext) {
+    init(
+        habit: Habit,
+        modelContext: ModelContext,
+        initialCalendar: Calendar = .autoupdatingCurrent
+    ) {
         self.habit = habit
-        _selectionState = StateObject(wrappedValue: HabitSelectionState())
-        _service = State(initialValue: HabitLogService(modelContext: modelContext))
+        _selectionState = StateObject(wrappedValue: HabitSelectionState(calendar: initialCalendar))
+        _service = State(initialValue: HabitLogService(modelContext: modelContext, calendar: initialCalendar))
     }
 
     var body: some View {
+        let progressService = ProgressAsOfService(
+            calendar: service.calendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
         let progressSnapshot = progressService.snapshot(
             for: habit,
             visibleMonth: selectionState.visibleMonth,
@@ -32,6 +40,8 @@ struct HabitDetailSheet: View {
                         HabitHeader(
                             habit: habit,
                             selectedDate: selectionState.selectedDate,
+                            calendar: service.calendar,
+                            weekStartPreference: userSettings.weekStartPreference,
                             showsQuickLogButton: true,
                             showsInlineProgressText: false,
                             secondaryTextOverride: loggingContextText,
@@ -74,6 +84,7 @@ struct HabitDetailSheet: View {
                         HabitHeatmap(
                             habit: habit,
                             service: service,
+                            calendarProvider: heatmapCalendarProvider,
                             selectedDate: selectionState.selectedDate,
                             isInteractive: true,
                             onSelectDay: { day in
@@ -90,6 +101,7 @@ struct HabitDetailSheet: View {
                             ),
                             habit: habit,
                             service: service,
+                            calendarProvider: calendarViewProvider,
                             selectedDate: selectionState.selectedDate,
                             monthSummaryText: progressSnapshot?.visibleMonthText,
                             onSelectDay: { day in
@@ -152,7 +164,11 @@ struct HabitDetailSheet: View {
             }
         }
         .onAppear {
+            service.updateCalendar(calculationCalendar)
             service.prepare(habit)
+        }
+        .onChange(of: userSettings.weekStartPreference) { _, _ in
+            service.updateCalendar(calculationCalendar)
         }
     }
 
@@ -168,6 +184,22 @@ struct HabitDetailSheet: View {
     private func presentManualEntry() {
         manualLogValue = service.suggestedQuickEntryValue(for: habit)
         showValueEntry = true
+    }
+
+    private var weekLayoutStrategy: WeekLayoutStrategy {
+        userSettings.weekLayoutStrategy(base: service.calendar)
+    }
+
+    private var calculationCalendar: Calendar {
+        weekLayoutStrategy.calendarForCalculations()
+    }
+
+    private var calendarViewProvider: CalendarProvider {
+        weekLayoutStrategy.calendarProviderForCalendarView()
+    }
+
+    private var heatmapCalendarProvider: CalendarProvider {
+        weekLayoutStrategy.calendarProviderForHeatmap()
     }
 }
 

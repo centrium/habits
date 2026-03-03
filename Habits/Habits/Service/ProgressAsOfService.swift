@@ -15,14 +15,17 @@ struct ProgressAsOfSnapshot {
 struct ProgressAsOfService {
     private let calendar: Calendar
     private let timelineContext: TimelineContext
+    private let weekStartPreference: WeekStartPreference
     private let now: () -> Date
 
     init(
         calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system,
         now: @escaping () -> Date = Date.init
     ) {
         self.calendar = calendar
         self.timelineContext = TimelineContext(calendar: calendar)
+        self.weekStartPreference = weekStartPreference
         self.now = now
     }
 
@@ -30,7 +33,11 @@ struct ProgressAsOfService {
         guard let target = habit.effectiveTargetValue else { return nil }
 
         let today = now()
-        let selectedPeriod = habit.periodRange(for: selectedDate, calendar: calendar)
+        let selectedPeriod = habit.periodRange(
+            for: selectedDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
         let current = total(for: habit, in: selectedPeriod, asOf: selectedDate, today: today)
         let progressFraction = min(max(current / target, 0), 1)
         let details = HabitProgressDetails(
@@ -50,7 +57,8 @@ struct ProgressAsOfService {
             contextText: timelineContext.periodContextLabel(
                 for: habit.goalPeriod,
                 selectedDate: selectedDate,
-                today: today
+                today: today,
+                weekStartPreference: weekStartPreference
             ),
             overflowText: overflowText(for: habit, current: current, target: target),
             streak: streak(for: habit, selectedDate: selectedDate, today: today),
@@ -68,7 +76,11 @@ struct ProgressAsOfService {
         guard let target = habit.effectiveTargetValue else { return nil }
 
         let today = now()
-        let interval = habit.periodRange(for: selectedDate, calendar: calendar)
+        let interval = habit.periodRange(
+            for: selectedDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
         let current = total(for: habit, in: interval, asOf: selectedDate, today: today)
         let percent = min(max(current / target, 0), 1)
 
@@ -95,14 +107,26 @@ struct ProgressAsOfService {
         guard let target = habit.effectiveTargetValue else { return 0 }
 
         var streak = 0
-        var interval = habit.periodRange(for: selectedDate, calendar: calendar)
+        var interval = habit.periodRange(
+            for: selectedDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
         var upperBound = min(interval.end, timelineContext.asOfExclusiveUpperBound(for: selectedDate, today: today))
 
         while total(for: habit, in: interval, upperBound: upperBound) >= target {
             streak += 1
 
-            let previousStart = habit.goalPeriod.previousPeriodStart(before: interval.start, calendar: calendar)
-            interval = habit.periodRange(for: previousStart, calendar: calendar)
+            let previousStart = habit.goalPeriod.previousPeriodStart(
+                before: interval.start,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            )
+            interval = habit.periodRange(
+                for: previousStart,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            )
             upperBound = interval.end
         }
 

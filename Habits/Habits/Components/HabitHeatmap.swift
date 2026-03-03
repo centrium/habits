@@ -11,40 +11,43 @@ import SwiftUI
 struct HabitHeatmap: View {
     let habit: Habit
     let service: HabitLogService
+    let calendarProvider: CalendarProvider
+    let style: HeatmapStyleConfiguration = .premiumDefault
     let selectedDate: Date
     let isInteractive: Bool
     let onSelectDay: (Date) -> Void
-
-    // 🔒 Locked design constants
-    private let cellSize: CGFloat = 10
-    private let cellSpacing: CGFloat = 4
-    private let monthLabelHeight: CGFloat = 14
 
     private var accent: Color {
         Color(hex: habit.colorHex)
     }
 
     private var gridHeight: CGFloat {
-        (cellSize * 7) + (cellSpacing * 6)
+        (style.cellSize * 7) + (style.verticalSpacing * 6)
     }
 
     private var heatmapHeight: CGFloat {
-        monthLabelHeight + gridHeight
+        style.titleToGridSpacing + style.monthLabelHeight + style.monthLabelToGridSpacing + gridHeight
     }
 
     var body: some View {
         GeometryReader { geo in
-            let availableWidth = geo.size.width
-            let weekWidth = cellSize + cellSpacing
-            let numberOfWeeks = min(20, Int(availableWidth / weekWidth))
+            let availableWidth = max(
+                0,
+                geo.size.width - style.dayLabelWidth - style.rowLabelLeadingPadding - style.horizontalSpacing
+            )
+            let weekWidth = style.cellSize + style.horizontalSpacing
+            let numberOfWeeks = max(1, min(20, Int((availableWidth + style.horizontalSpacing) / weekWidth)))
+            let layoutService = HeatmapLayoutService(calendarProvider: calendarProvider)
 
-            let weeks = HeatmapCalendar.makeWeeks(
+            let weeks = layoutService.makeWeeks(
                 endingAt: Date(),
                 numberOfWeeks: numberOfWeeks
             )
 
             GitHubHeatmapGrid(
                 accent: accent,
+                style: style,
+                calendarProvider: calendarProvider,
                 weeks: weeks,
                 selectedDate: selectedDate,
                 isInteractive: isInteractive,
@@ -55,6 +58,7 @@ struct HabitHeatmap: View {
                     onSelectDay(day)
                 }
             )
+            .padding(.top, style.titleToGridSpacing)
         }
         .frame(height: heatmapHeight)
     }

@@ -39,8 +39,12 @@ extension Habit {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    func progress(for date: Date, calendar: Calendar = .current) -> Double? {
-        progressFraction(for: date, calendar: calendar)
+    func progress(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Double? {
+        progressFraction(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
     }
 
     func progressTotal(in interval: DateInterval) -> Double {
@@ -52,23 +56,35 @@ extension Habit {
         }
     }
 
-    func progressTotal(for date: Date, calendar: Calendar = .current) -> Double {
-        progressTotal(in: periodRange(for: date, calendar: calendar))
+    func progressTotal(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Double {
+        progressTotal(in: periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference))
     }
 
-    func progressFraction(for date: Date, calendar: Calendar = .current) -> Double? {
+    func progressFraction(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Double? {
         guard let target = effectiveTargetValue, target > 0 else { return nil }
 
-        let interval = periodRange(for: date, calendar: calendar)
+        let interval = periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
         let rawProgress = progressTotal(in: interval) / target
 
         return min(max(rawProgress, 0.0), 1.0)
     }
 
-    func progressDetails(for date: Date, calendar: Calendar = .current) -> HabitProgressDetails? {
+    func progressDetails(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> HabitProgressDetails? {
         guard let target = effectiveTargetValue else { return nil }
 
-        let interval = periodRange(for: date, calendar: calendar)
+        let interval = periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
         let current = progressTotal(in: interval)
         let metricKind = MetricKindResolver.resolve(self)
 
@@ -89,8 +105,16 @@ extension Habit {
         )
     }
 
-    func inlineProgressText(for date: Date, calendar: Calendar = .current) -> String? {
-        guard let details = progressDetails(for: date, calendar: calendar) else { return nil }
+    func inlineProgressText(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> String? {
+        guard let details = progressDetails(
+            for: date,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ) else { return nil }
 
         switch goalType {
         case .frequency:
@@ -101,8 +125,16 @@ extension Habit {
         }
     }
 
-    func detailProgressText(for date: Date, calendar: Calendar = .current) -> String? {
-        guard let details = progressDetails(for: date, calendar: calendar) else { return nil }
+    func detailProgressText(
+        for date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> String? {
+        guard let details = progressDetails(
+            for: date,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ) else { return nil }
 
         switch goalType {
         case .frequency:
