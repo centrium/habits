@@ -10,18 +10,18 @@ import SwiftUI
 
 struct CloseButton: View {
     var action: () -> Void
-    var size: CGFloat = 32
-    var iconSize: CGFloat = 14
+    var size: CGFloat = 30
+    var iconSize: CGFloat = 13
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .font(.system(size: iconSize, weight: .semibold))
+                .font(.system(size: iconSize, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: size, height: size)
                 .background(
                     Circle()
-                        .fill(Color.secondary.opacity(0.15))
+                        .fill(Color.secondary.opacity(0.1))
                 )
         }
         .buttonStyle(.plain)

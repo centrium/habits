@@ -17,6 +17,22 @@ struct HabitHeatmap: View {
     let isInteractive: Bool
     let onSelectDay: (Date) -> Void
 
+    init(
+        habit: Habit,
+        service: HabitLogService,
+        calendarProvider: CalendarProvider,
+        selectedDate: Date,
+        isInteractive: Bool,
+        onSelectDay: @escaping (Date) -> Void
+    ) {
+        self.habit = habit
+        self.service = service
+        self.calendarProvider = calendarProvider
+        self.selectedDate = selectedDate
+        self.isInteractive = isInteractive
+        self.onSelectDay = onSelectDay
+    }
+
     private var accent: Color {
         Color(hex: habit.colorHex)
     }
