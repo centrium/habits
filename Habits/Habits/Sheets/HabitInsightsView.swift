@@ -1,121 +1,46 @@
-import SwiftData
 import SwiftUI
 
 struct HabitInsightsView: View {
     let habit: Habit
-    
+    let logAnchorDate: Date?
+
+    init(habit: Habit, logAnchorDate: Date? = nil) {
+        self.habit = habit
+        self.logAnchorDate = logAnchorDate
+    }
+
     @EnvironmentObject private var userSettings: UserSettings
     @State private var hasAnimatedIn = false
+    @State private var expandedPatternCards: Set<String> = []
 
     private var accent: Color {
         Color(hex: habit.colorHex)
     }
-    
-    // MARK: - Insights Engine
 
-    private var insights: HabitInsights {
+    private var insights: HabitInsightsViewModel {
         HabitInsightsEngine.insights(
             for: habit,
-            referenceDate: .now,
+            logAnchorDate: logAnchorDate,
             calendar: .current,
-            weekStartPreference: userSettings.weekStartPreference
+            weekStartPreference: userSettings.weekStartPreference,
+            now: .now
         )
     }
 
-    // MARK: - Derived Values
-
-    private var completionRate: Double {
-        insights.completionRate
-    }
-
-    private var completedDays: Int {
-        insights.progressSeries.filter { $0.progress >= 1 }.count
-    }
-
-    private var totalDays: Int {
-        insights.progressSeries.count
-    }
-
-    private var averagePerDay: Double {
-        insights.averagePerDay
-    }
-
-    private var currentStreak: Int {
-        insights.currentStreak
-    }
-
-    private var longestStreak: Int {
-        insights.longestStreak
-    }
-
-    private var momentumPercentage: Double {
-        insights.momentumPercentage
-    }
-
-    private var momentumDirection: HabitInsightsMomentumDirection {
-        if momentumPercentage > 0 {
-            return .up
-        } else if momentumPercentage < 0 {
-            return .down
-        } else {
-            return .neutral
-        }
-    }
-
-    private var recentActivity: [Int] {
-        insights.progressSeries.map { Int($0.progress.rounded()) }
-    }
-
-    // MARK: - UI
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 38) {
-
-                HeroSection(
-                    completionRate: completionRate,
-                    completedDays: completedDays,
-                    totalDays: totalDays,
-                    momentumPercentage: Int(momentumPercentage),
-                    momentumDirection: momentumDirection,
-                    accent: accent
-                )
-                .opacity(hasAnimatedIn ? 1 : 0)
-                .offset(y: hasAnimatedIn ? 0 : 10)
-                .animation(.easeOut(duration: 0.32), value: hasAnimatedIn)
-
-                TrendSection(
-                    activity: recentActivity,
-                    accent: accent,
-                    animateBars: hasAnimatedIn
-                )
-                .opacity(hasAnimatedIn ? 1 : 0)
-                .offset(y: hasAnimatedIn ? 0 : 10)
-                .animation(.easeOut(duration: 0.36).delay(0.03), value: hasAnimatedIn)
-
-                PerformanceSection(
-                    averagePerDay: averagePerDay,
-                    currentStreak: currentStreak,
-                    longestStreak: longestStreak
-                )
-                .opacity(hasAnimatedIn ? 1 : 0)
-                .offset(y: hasAnimatedIn ? 0 : 10)
-                .animation(.easeOut(duration: 0.38).delay(0.06), value: hasAnimatedIn)
-
-                MomentumSection(
-                    percentage: Int(momentumPercentage.rounded()),
-                    direction: momentumDirection
-                )
-                .opacity(hasAnimatedIn ? 1 : 0)
-                .offset(y: hasAnimatedIn ? 0 : 10)
-                .animation(.easeOut(duration: 0.4).delay(0.1), value: hasAnimatedIn)
-            }
+            HabitInsightsCardsRenderer(
+                viewModel: insights,
+                accent: accent,
+                hasAnimatedIn: hasAnimatedIn,
+                expandedPatternCards: $expandedPatternCards
+            )
             .padding(.horizontal, 20)
             .padding(.top, 26)
             .padding(.bottom, 40)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("Insights")
+        .navigationTitle(insights.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -130,3 +55,532 @@ struct HabitInsightsView: View {
         }
     }
 }
+
+private struct HabitInsightsCardsRenderer: View {
+    let viewModel: HabitInsightsViewModel
+    let accent: Color
+    let hasAnimatedIn: Bool
+    @Binding var expandedPatternCards: Set<String>
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ForEach(Array(viewModel.cards.enumerated()), id: \.element.id) { index, card in
+                cardView(card)
+                    .opacity(hasAnimatedIn ? 1 : 0)
+                    .offset(y: hasAnimatedIn ? 0 : 8)
+                    .animation(
+                        .easeOut(duration: 0.24).delay(0.02 * Double(index)),
+                        value: hasAnimatedIn
+                    )
+            }
+
+            if !viewModel.notes.isEmpty {
+                HabitInsightsPanel(background: Color(.tertiarySystemGroupedBackground)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(viewModel.notes, id: \.self) { note in
+                            Text(note)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .opacity(hasAnimatedIn ? 1 : 0)
+                .offset(y: hasAnimatedIn ? 0 : 8)
+                .animation(.easeOut(duration: 0.24).delay(0.15), value: hasAnimatedIn)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cardView(_ card: HabitInsightsCard) -> some View {
+        switch card {
+        case .hero(let block):
+            HeroCardView(block: block, accent: accent)
+        case .motivation(let block):
+            MotivationCardView(block: block)
+        case .intent(let block):
+            IntentCardView(block: block)
+        case .trend(let block):
+            TrendCardView(block: block, accent: accent)
+        case .completionHistory(let block):
+            CompletionHistoryCardView(block: block)
+        case .patterns(let block):
+            PatternCardView(
+                block: block,
+                isExpanded: expandedPatternCards.contains(card.id),
+                toggle: {
+                    if expandedPatternCards.contains(card.id) {
+                        expandedPatternCards.remove(card.id)
+                    } else {
+                        expandedPatternCards.insert(card.id)
+                    }
+                }
+            )
+        case .debug(let block):
+            DebugCardView(block: block)
+        }
+    }
+}
+
+private struct HeroCardView: View {
+    let block: HabitInsightsHeroBlock
+    let accent: Color
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(block.heading)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Text(block.valueText)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(accent)
+                    .monospacedDigit()
+
+                Text(block.periodLabel)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if let status = block.statusText {
+                    Text(status)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
+
+                if let surplus = block.surplusText {
+                    Text(surplus)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let comparison = block.comparisonText {
+                    Text(comparison)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct IntentCardView: View {
+    let block: HabitInsightsIntentBlock
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(block.primaryText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                if let secondary = block.secondaryText {
+                    Text(secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(block.projectionText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct MotivationCardView: View {
+    let block: MotivationCard
+
+    private var toneColor: Color {
+        switch block.tone {
+        case .encouragement:
+            return .blue
+        case .celebration:
+            return .green
+        case .nudge:
+            return .orange
+        }
+    }
+
+    var body: some View {
+        HabitInsightsPanel(background: toneColor.opacity(0.12)) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Motivation")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(block.message)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct TrendCardView: View {
+    let block: HabitInsightsTrendBlock
+    let accent: Color
+
+    private let chartHeight: CGFloat = 86
+    private let barSpacing: CGFloat = 5
+
+    private var maxValue: Double {
+        max(block.points.map(\.value).max() ?? 1, block.targetLine ?? 0, 1)
+    }
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                GeometryReader { geometry in
+                    let barCount = CGFloat(max(block.points.count, 1))
+                    let totalSpacing = barSpacing * max(barCount - 1, 0)
+                    let width = max(4, (geometry.size.width - totalSpacing) / barCount)
+
+                    ZStack(alignment: .bottomLeading) {
+                        if let target = block.targetLine {
+                            let targetY = min(CGFloat(target / maxValue), 1)
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.14))
+                                .frame(height: 1)
+                                .offset(y: -targetY * chartHeight)
+                        }
+
+                        HStack(alignment: .bottom, spacing: barSpacing) {
+                            ForEach(block.points) { point in
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(point.value > 0 ? accent.opacity(0.8) : Color.secondary.opacity(0.15))
+                                    .frame(width: width, height: max(6, CGFloat(point.value / maxValue) * chartHeight))
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
+                .frame(height: chartHeight)
+
+                if let unit = block.unitText, block.isValueBased {
+                    Text("Unit: \(unit)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct CompletionHistoryCardView: View {
+    let block: HabitInsightsCompletionHistoryBlock
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 9) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(block.completionRateText)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+
+                Text(block.streakText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if let longest = block.longestStreakText {
+                    Text(longest)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct PatternCardView: View {
+    let block: HabitInsightsPatternBlock
+    let isExpanded: Bool
+    let toggle: () -> Void
+
+    private var visibleItems: [String] {
+        if isExpanded || block.items.count <= 3 {
+            return block.items
+        }
+        return Array(block.items.prefix(3))
+    }
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                ForEach(visibleItems, id: \.self) { item in
+                    Text(item)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                }
+
+                if block.items.count > 3 {
+                    Button(isExpanded ? "Less" : "More") {
+                        toggle()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct DebugCardView: View {
+    let block: HabitInsightsDebugBlock
+
+    var body: some View {
+        HabitInsightsPanel(background: Color(.tertiarySystemGroupedBackground)) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                ForEach(block.lines, id: \.self) { line in
+                    Text(line)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+#if DEBUG
+private struct HabitInsightsPreviewScenario: Identifiable {
+    let id: String
+    let title: String
+    let habit: Habit
+
+    static func all(referenceDate: Date, calendar: Calendar) -> [HabitInsightsPreviewScenario] {
+        [
+            makeScenario(
+                id: "daily-frequency",
+                title: "Daily Frequency",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .daily,
+                goalType: .frequency,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "weekly-frequency",
+                title: "Weekly Frequency",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .weekly,
+                goalType: .frequency,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "monthly-frequency",
+                title: "Monthly Frequency",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .monthly,
+                goalType: .frequency,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "yearly-frequency",
+                title: "Yearly Frequency",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .yearly,
+                goalType: .frequency,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "daily-cumulative",
+                title: "Daily Cumulative",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .daily,
+                goalType: .cumulative,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "weekly-cumulative",
+                title: "Weekly Cumulative",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .weekly,
+                goalType: .cumulative,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "monthly-cumulative",
+                title: "Monthly Cumulative",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .monthly,
+                goalType: .cumulative,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "yearly-cumulative",
+                title: "Yearly Cumulative",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .yearly,
+                goalType: .cumulative,
+                hasGoal: true
+            ),
+            makeScenario(
+                id: "daily-open",
+                title: "Daily Open",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .daily,
+                goalType: .frequency,
+                hasGoal: false
+            ),
+            makeScenario(
+                id: "weekly-open",
+                title: "Weekly Open",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .weekly,
+                goalType: .frequency,
+                hasGoal: false
+            ),
+            makeScenario(
+                id: "monthly-open",
+                title: "Monthly Open",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .monthly,
+                goalType: .frequency,
+                hasGoal: false
+            ),
+            makeScenario(
+                id: "yearly-open",
+                title: "Yearly Open",
+                referenceDate: referenceDate,
+                calendar: calendar,
+                goalPeriod: .yearly,
+                goalType: .frequency,
+                hasGoal: false
+            )
+        ]
+    }
+
+    private static func makeScenario(
+        id: String,
+        title: String,
+        referenceDate: Date,
+        calendar: Calendar,
+        goalPeriod: GoalPeriod,
+        goalType: GoalType,
+        hasGoal: Bool
+    ) -> HabitInsightsPreviewScenario {
+        let createdAt = calendar.date(byAdding: .month, value: -6, to: referenceDate) ?? referenceDate
+        let habit = Habit(
+            name: title,
+            colorHex: "#22A699",
+            hasStreakGoal: hasGoal,
+            goalPeriod: goalPeriod,
+            goalType: goalType,
+            streakTarget: goalType == .frequency ? 7 : 1,
+            targetValue: goalType == .cumulative ? 20 : nil,
+            unit: goalType == .cumulative ? "km" : nil,
+            allowsDecimals: goalType == .cumulative,
+            createdAt: createdAt
+        )
+
+        seedLogs(
+            for: habit,
+            goalPeriod: goalPeriod,
+            goalType: goalType,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+
+        return HabitInsightsPreviewScenario(id: id, title: title, habit: habit)
+    }
+
+    private static func seedLogs(
+        for habit: Habit,
+        goalPeriod: GoalPeriod,
+        goalType: GoalType,
+        referenceDate: Date,
+        calendar: Calendar
+    ) {
+        for dayOffset in 0..<120 {
+            guard let day = calendar.date(byAdding: .day, value: -dayOffset, to: referenceDate) else { continue }
+            let weekday = calendar.component(.weekday, from: day)
+            let shouldLog = weekday == 2 || weekday == 4 || weekday == 6
+            guard shouldLog else { continue }
+
+            if goalType == .frequency {
+                habit.log(on: day, amount: 1, calendar: calendar)
+                if dayOffset % 11 == 0 {
+                    habit.log(on: day, amount: 1, calendar: calendar)
+                }
+            } else {
+                let value = dayOffset % 9 == 0 ? 4.5 : 2.1
+                habit.logValue(on: day, value: value, calendar: calendar)
+            }
+        }
+    }
+}
+
+#Preview("Insights Debug Harness") {
+    let calendar = Calendar.autoupdatingCurrent
+    let referenceDate = Date()
+    let scenarios = HabitInsightsPreviewScenario.all(referenceDate: referenceDate, calendar: calendar)
+
+    return ScrollView {
+        VStack(alignment: .leading, spacing: 24) {
+            ForEach(scenarios) { scenario in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(scenario.title)
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+
+                    let model = HabitInsightsEngine.insights(
+                        for: scenario.habit,
+                        logAnchorDate: referenceDate,
+                        calendar: calendar,
+                        weekStartPreference: .monday,
+                        now: referenceDate
+                    )
+
+                    HabitInsightsCardsRenderer(
+                        viewModel: model,
+                        accent: Color(hex: scenario.habit.colorHex),
+                        hasAnimatedIn: true,
+                        expandedPatternCards: .constant(["patterns"])
+                    )
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+        .padding(.vertical, 20)
+    }
+    .background(Color(.systemGroupedBackground))
+}
+#endif

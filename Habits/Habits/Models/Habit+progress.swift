@@ -72,7 +72,14 @@ extension Habit {
         guard let target = effectiveTargetValue, target > 0 else { return nil }
 
         let interval = periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
-        let rawProgress = progressTotal(in: interval) / target
+        let current = progressTotal(in: interval)
+
+        if goalType == .frequency {
+            let progress = GoalProgress(actual: Int(current), goal: Int(target))
+            return progress.fraction
+        }
+
+        let rawProgress = current / target
 
         return min(max(rawProgress, 0.0), 1.0)
     }
@@ -86,12 +93,13 @@ extension Habit {
 
         let interval = periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
         let current = progressTotal(in: interval)
+        let displayCurrent = displayedCurrentProgressValue(current: current, target: target)
         let metricKind = MetricKindResolver.resolve(self)
 
         return HabitProgressDetails(
             current: current,
             target: target,
-            currentText: formatProgressValue(current),
+            currentText: formatProgressValue(displayCurrent),
             targetText: formatProgressValue(target),
             unitText: metricKind == .genericValue ? trimmedUnit : nil,
             goalType: goalType
@@ -147,5 +155,14 @@ extension Habit {
 
     func activePeriodText(for date: Date, calendar: Calendar = .current) -> String {
         goalPeriod.relativeLabel
+    }
+
+    private func displayedCurrentProgressValue(current: Double, target: Double) -> Double {
+        if goalType == .frequency {
+            let progress = GoalProgress(actual: Int(current), goal: Int(target))
+            return Double(progress.clamped)
+        }
+
+        return min(current, target)
     }
 }

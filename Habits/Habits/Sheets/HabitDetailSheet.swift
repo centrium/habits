@@ -169,7 +169,10 @@ struct HabitDetailSheet: View {
         }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
-                HabitInsightsView(habit: habit)
+                HabitInsightsView(
+                    habit: habit,
+                    logAnchorDate: selectionState.selectedDate
+                )
             }
             .presentationDetents([.medium, .large], selection: $insightsDetent)
             .presentationBackground(Color(.systemGroupedBackground))

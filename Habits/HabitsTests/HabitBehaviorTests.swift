@@ -1597,6 +1597,14 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(habit.inlineProgressText(for: day, calendar: Fixtures.calendar), "2 / 3")
     }
 
+    func testFrequencyInlineProgressTextClampsWhenOverGoal() {
+        let habit = makeGoalHabit(goalType: .daily, target: 1)
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        habit.logs = [HabitLog(day: day, count: 2, calendar: Fixtures.calendar)]
+
+        XCTAssertEqual(habit.inlineProgressText(for: day, calendar: Fixtures.calendar), "1 / 1")
+    }
+
     func testCumulativeInlineProgressTextIncludesUnit() {
         let habit = makeCumulativeHabit(goalPeriod: .daily, target: 20, unit: "books")
         let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)

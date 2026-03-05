@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct HabitInsightsCard<Content: View>: View {
+struct HabitInsightsPanel<Content: View>: View {
     let content: Content
     let background: Color
     let padding: CGFloat

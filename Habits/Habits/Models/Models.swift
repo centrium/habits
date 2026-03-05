@@ -146,19 +146,6 @@ enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    private var calendarComponent: Calendar.Component {
-        switch self {
-        case .daily:
-            return .day
-        case .weekly:
-            return .weekOfYear
-        case .monthly:
-            return .month
-        case .yearly:
-            return .year
-        }
-    }
-
     private func fallbackPeriodRange(for date: Date, calendar: Calendar) -> DateInterval {
         switch self {
         case .daily:

@@ -43,11 +43,22 @@ final class HabitSelectionState: ObservableObject {
         if navigator.isCurrentMonth(normalizedMonth, today: today) {
             selectedDate = calendar.startOfDay(for: today)
         } else {
-            selectedDate = normalizedMonth
+            selectedDate = lastDayOfMonth(for: normalizedMonth)
         }
     }
 
     func selectToday(today: Date = Date()) {
         select(date: today)
+    }
+
+    private func lastDayOfMonth(for month: Date) -> Date {
+        guard
+            let monthInterval = calendar.dateInterval(of: .month, for: month),
+            let lastDay = calendar.date(byAdding: .day, value: -1, to: monthInterval.end)
+        else {
+            return month
+        }
+
+        return calendar.startOfDay(for: lastDay)
     }
 }

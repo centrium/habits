@@ -32,7 +32,7 @@ final class HabitSelectionStateTests: XCTestCase {
         )
     }
 
-    func testSelectingCalendarMonthUsesFirstDayForPastMonth() {
+    func testSelectingCalendarMonthUsesLastDayForPastMonth() {
         let calendar = HabitDetailTestFixtures.makeCalendar()
         let today = HabitDetailTestFixtures.makeDate(year: 2026, month: 3, day: 10, calendar: calendar)
         let selectionState = HabitSelectionState(selectedDate: today, calendar: calendar)
@@ -42,7 +42,7 @@ final class HabitSelectionStateTests: XCTestCase {
 
         XCTAssertEqual(
             selectionState.selectedDate,
-            HabitDetailTestFixtures.makeDate(year: 2026, month: 1, day: 1, calendar: calendar)
+            HabitDetailTestFixtures.makeDate(year: 2026, month: 1, day: 31, calendar: calendar)
         )
         XCTAssertEqual(
             selectionState.visibleMonth,

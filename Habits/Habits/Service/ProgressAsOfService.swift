@@ -13,6 +13,7 @@ struct ProgressAsOfSnapshot {
 }
 
 struct ProgressAsOfService {
+
     private let calendar: Calendar
     private let timelineContext: TimelineContext
     private let weekStartPreference: WeekStartPreference
@@ -29,30 +30,53 @@ struct ProgressAsOfService {
         self.now = now
     }
 
-    func snapshot(for habit: Habit, visibleMonth: Date, selectedDate: Date) -> ProgressAsOfSnapshot? {
-        guard let target = habit.effectiveTargetValue else { return nil }
+    func snapshot(
+        for habit: Habit,
+        visibleMonth: Date,
+        selectedDate: Date
+    ) -> ProgressAsOfSnapshot? {
+
+        guard habit.effectiveTargetValue != nil else { return nil }
 
         let today = now()
-        let selectedPeriod = habit.periodRange(
-            for: selectedDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
+
+        // Decide which period we are evaluating
+        let anchor = anchorDate(
+            selectedDate: selectedDate,
+            today: today,
+            goalPeriod: habit.goalPeriod
         )
-        let current = total(for: habit, in: selectedPeriod, asOf: selectedDate, today: today)
-        let progressFraction = min(max(current / target, 0), 1)
+
+        let canonical = HabitInsightsEngine.snapshot(
+            for: habit,
+            anchorDate: anchor,
+            respectCreatedAtBoundary: false,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference,
+            now: today
+        )
+
+        guard let target = canonical.currentPeriod.target else { return nil }
+
+        let progress = canonical.currentPeriod.progress
+        let displayProgress = canonical.currentPeriod.progressClamped
+        let ratio = canonical.currentPeriod.completionRatio ?? 0
+
         let details = HabitProgressDetails(
-            current: current,
+            current: progress,
             target: target,
-            currentText: habit.formatProgressValue(current),
+            currentText: habit.formatProgressValue(displayProgress),
             targetText: habit.formatProgressValue(target),
-            unitText: MetricKindResolver.resolve(habit) == .genericValue ? habit.trimmedUnit : nil,
+            unitText: MetricKindResolver.resolve(habit) == .genericValue
+                ? habit.trimmedUnit
+                : nil,
             goalType: habit.goalType
         )
 
         return ProgressAsOfSnapshot(
-            current: current,
+            current: progress,
             target: target,
-            progressFraction: progressFraction,
+            progressFraction: ratio,
             headlineText: detailProgressText(from: details),
             contextText: timelineContext.periodContextLabel(
                 for: habit.goalPeriod,
@@ -60,121 +84,105 @@ struct ProgressAsOfService {
                 today: today,
                 weekStartPreference: weekStartPreference
             ),
-            overflowText: overflowText(for: habit, current: current, target: target),
-            streak: streak(for: habit, selectedDate: selectedDate, today: today),
-            isComplete: progressFraction == 1.0,
-            visibleMonthText: visibleMonthText(for: habit, visibleMonth: visibleMonth, selectedDate: selectedDate, today: today)
-        )
-    }
-
-    func total(for habit: Habit, in interval: DateInterval, asOf selectedDate: Date, today: Date) -> Double {
-        let upperBound = min(interval.end, timelineContext.asOfExclusiveUpperBound(for: selectedDate, today: today))
-        return total(for: habit, in: interval, upperBound: upperBound)
-    }
-
-    func goalProgress(for habit: Habit, asOf selectedDate: Date) -> (current: Double, target: Double, percent: Double)? {
-        guard let target = habit.effectiveTargetValue else { return nil }
-
-        let today = now()
-        let interval = habit.periodRange(
-            for: selectedDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-        let current = total(for: habit, in: interval, asOf: selectedDate, today: today)
-        let percent = min(max(current / target, 0), 1)
-
-        return (current, target, percent)
-    }
-
-    private func total(for habit: Habit, in interval: DateInterval, upperBound: Date) -> Double {
-        guard upperBound > interval.start else { return 0 }
-
-        let matchingLogs = habit.logs.filter { log in
-            let timestamp = log.effectiveTimestamp
-            return timestamp >= interval.start && timestamp < upperBound
-        }
-
-        switch habit.goalType {
-        case .frequency:
-            return Double(matchingLogs.reduce(0) { $0 + $1.frequencyContribution })
-        case .cumulative:
-            return matchingLogs.reduce(0) { $0 + $1.numericValue }
-        }
-    }
-
-    private func streak(for habit: Habit, selectedDate: Date, today: Date) -> Int {
-        guard let target = habit.effectiveTargetValue else { return 0 }
-
-        var streak = 0
-        var interval = habit.periodRange(
-            for: selectedDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-        var upperBound = min(interval.end, timelineContext.asOfExclusiveUpperBound(for: selectedDate, today: today))
-
-        while total(for: habit, in: interval, upperBound: upperBound) >= target {
-            streak += 1
-
-            let previousStart = habit.goalPeriod.previousPeriodStart(
-                before: interval.start,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
+            overflowText: overflowText(
+                for: habit,
+                surplus: canonical.currentPeriod.surplus
+            ),
+            streak: canonical.streak.current,
+            isComplete: canonical.currentPeriod.isCompleted ?? false,
+            visibleMonthText: visibleMonthText(
+                for: habit,
+                visibleMonth: visibleMonth
             )
-            interval = habit.periodRange(
-                for: previousStart,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-            upperBound = interval.end
-        }
-
-        return streak
+        )
     }
 
-    private func visibleMonthText(for habit: Habit, visibleMonth: Date, selectedDate: Date, today: Date) -> String? {
+    // MARK: Anchor Logic
+
+    private func anchorDate(
+        selectedDate: Date,
+        today: Date,
+        goalPeriod: GoalPeriod
+    ) -> Date {
+
+        guard let interval = calendar.dateInterval(
+            of: goalPeriod.calendarComponent,
+            for: selectedDate
+        ) else {
+            return today
+        }
+
+        // Current period → anchor to today
+        if interval.contains(today) {
+            return today
+        }
+
+        // Past period → anchor to end of that period
+        if interval.end < today {
+            return interval.end.addingTimeInterval(-1)
+        }
+
+        // Future period → anchor to today
+        return today
+    }
+
+    // MARK: Visible Month
+
+    private func visibleMonthText(
+        for habit: Habit,
+        visibleMonth: Date
+    ) -> String? {
+
         guard habit.goalType == .cumulative else { return nil }
 
-        let interval = calendar.dateInterval(of: .month, for: visibleMonth) ?? DateInterval(start: visibleMonth, end: visibleMonth)
-        let monthTotal: Double
+        let interval = calendar.dateInterval(of: .month, for: visibleMonth)
 
-        if calendar.isDate(selectedDate, equalTo: visibleMonth, toGranularity: .month) {
-            monthTotal = total(for: habit, in: interval, asOf: selectedDate, today: today)
-        } else {
-            monthTotal = total(for: habit, in: interval, upperBound: interval.end)
+        guard let interval else { return nil }
+
+        let logs = habit.logs.filter {
+            let ts = $0.effectiveTimestamp
+            return ts >= interval.start && ts < interval.end
+        }
+
+        let total: Double = logs.reduce(0) { partial, log in
+            partial + log.numericValue
         }
 
         let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = calendar.locale ?? .current
-        formatter.timeZone = calendar.timeZone
         formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
 
-        let totalText = habit.formatProgressValue(monthTotal)
-        let unitSuffix = monthUnitSuffix(for: habit)
-        return "\(formatter.string(from: visibleMonth)): \(totalText)\(unitSuffix)"
+        let totalText = habit.formatProgressValue(total)
+
+        return "\(formatter.string(from: visibleMonth)): \(totalText)"
     }
 
-    private func monthUnitSuffix(for habit: Habit) -> String {
-        let context = ValueFormattingContext(habit: habit)
-        guard context.showsUnitSuffix, let unit = habit.trimmedUnit else { return "" }
-        return " \(unit)"
-    }
+    // MARK: Formatting
 
-    private func detailProgressText(from details: HabitProgressDetails) -> String {
+    private func detailProgressText(
+        from details: HabitProgressDetails
+    ) -> String {
+
         switch details.goalType {
         case .frequency:
             return "\(details.currentText) of \(details.targetText)"
+
         case .cumulative:
             let unitSuffix = details.unitText.map { " \($0)" } ?? ""
             return "\(details.currentText) of \(details.targetText)\(unitSuffix)"
         }
     }
 
-    private func overflowText(for habit: Habit, current: Double, target: Double) -> String? {
-        let overflow = max(0, current - target)
-        guard overflow > 0 else { return nil }
-        return "+\(habit.formatProgressValue(overflow)) extra"
+    private func overflowText(
+        for habit: Habit,
+        surplus: Double
+    ) -> String? {
+
+        guard surplus > 0 else { return nil }
+
+        if habit.goalType == .frequency {
+            return "+\(Int(surplus.rounded())) extra"
+        }
+
+        return "+\(habit.formatProgressValue(surplus)) extra"
     }
 }
