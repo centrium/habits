@@ -60,6 +60,17 @@ struct HabitInsightsCompletionHistorySnapshot {
     let total: Int
 }
 
+struct MonthInsight: Identifiable {
+    let month: Date
+    let monthLabel: String
+    let goal: Int
+    let completionCount: Int
+    let goalMet: Bool
+    let completionRatio: Double
+
+    var id: Date { month }
+}
+
 struct HabitInsightsDebugRow: Identifiable {
     let key: String
     let periodStart: Date
@@ -100,6 +111,26 @@ struct HabitInsightsSnapshot {
     let streak: HabitInsightsStreakSnapshot
     let completionHistory: HabitInsightsCompletionHistorySnapshot?
     let trendBuckets: [HabitInsightsPeriodSnapshot]
+    let progressCurrent: Int
+    let goal: Int
+    let goalMet: Bool
+    let overflowCount: Int
+    let currentStreak: Int
+    let longestStreak: Int
+    let projectedMonthlyTotal: Int
+    let projectedCompletion: Int
+    let projectedGoalDifference: Int
+    let consistencyScore: Double?
+    let averageLogsPerWeek: Double?
+    let lastSixMonths: [MonthInsight]
+    let strongestWeekday: String?
+    let weakestWeekday: String?
+    let commonLogWindow: String?
+    let timingInsight: String?
+    let milestoneInsight: String?
+    let recoveryInsight: String?
+    let motivationMessage: String?
+    let patternSummary: String?
     let debug: HabitInsightsDebugSnapshot
 }
 
@@ -110,16 +141,26 @@ struct HabitInsightsViewModel {
 }
 
 enum HabitInsightsCard: Identifiable {
+    case achievement(HabitInsightsAchievementBlock)
+    case momentum(HabitInsightsMomentumBlock)
+    case consistency(HabitInsightsConsistencyBlock)
     case hero(HabitInsightsHeroBlock)
     case motivation(MotivationCard)
     case intent(HabitInsightsIntentBlock)
     case trend(HabitInsightsTrendBlock)
     case completionHistory(HabitInsightsCompletionHistoryBlock)
     case patterns(HabitInsightsPatternBlock)
+    case retention(HabitInsightsRetentionBlock)
     case debug(HabitInsightsDebugBlock)
 
     var id: String {
         switch self {
+        case .achievement:
+            return "achievement"
+        case .momentum:
+            return "momentum"
+        case .consistency:
+            return "consistency"
         case .hero:
             return "hero"
         case .motivation:
@@ -132,10 +173,30 @@ enum HabitInsightsCard: Identifiable {
             return "completion-history"
         case .patterns:
             return "patterns"
+        case .retention:
+            return "retention"
         case .debug:
             return "debug"
         }
     }
+}
+
+struct HabitInsightsAchievementBlock {
+    let progressText: String
+    let statusText: String
+    let overflowText: String?
+    let progressRatio: Double
+}
+
+struct HabitInsightsMomentumBlock {
+    let currentStreakText: String
+    let longestStreakText: String
+    let paceText: String
+}
+
+struct HabitInsightsConsistencyBlock {
+    let scoreText: String
+    let averageText: String?
 }
 
 struct HabitInsightsHeroBlock {
@@ -179,6 +240,7 @@ struct HabitInsightsTrendBlock {
     let targetLine: Double?
     let unitText: String?
     let isValueBased: Bool
+    let isCompletionRatioBars: Bool
 }
 
 struct HabitInsightsCompletionHistoryBlock {
@@ -189,6 +251,11 @@ struct HabitInsightsCompletionHistoryBlock {
 }
 
 struct HabitInsightsPatternBlock {
+    let heading: String
+    let items: [String]
+}
+
+struct HabitInsightsRetentionBlock {
     let heading: String
     let items: [String]
 }

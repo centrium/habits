@@ -7,7 +7,7 @@ struct HabitInsightsPanel<Content: View>: View {
 
     init(
         background: Color = Color(.secondarySystemGroupedBackground),
-        padding: CGFloat = 19,
+        padding: CGFloat = 18,
         @ViewBuilder content: () -> Content
     ) {
         self.background = background
@@ -22,6 +22,6 @@ struct HabitInsightsPanel<Content: View>: View {
         .padding(padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

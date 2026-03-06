@@ -290,14 +290,13 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        let janHero = try XCTUnwrap(heroBlock(from: janModel))
-        let marHero = try XCTUnwrap(heroBlock(from: marModel))
+        let janAchievement = try XCTUnwrap(achievementBlock(from: janModel))
+        let marAchievement = try XCTUnwrap(achievementBlock(from: marModel))
 
-        XCTAssertEqual(janHero.valueText, marHero.valueText)
-        XCTAssertEqual(janHero.periodLabel, marHero.periodLabel)
+        XCTAssertEqual(janAchievement.progressText, marAchievement.progressText)
     }
 
-    func testInsightsIncludeMotivationCard() throws {
+    func testInsightsIncludeMotivationMessage() throws {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
         let habit = Fixtures.makeMonthlyFrequencyHabit(
             target: 7,
@@ -308,16 +307,16 @@ final class HabitInsightsEngineTests: XCTestCase {
             habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
         }
 
-        let model = HabitInsightsEngine.insights(
+        let snapshot = HabitInsightsEngine.snapshot(
             for: habit,
-            logAnchorDate: Fixtures.makeDate(year: 2026, month: 3, day: 5),
+            anchorDate: now,
             calendar: Fixtures.calendar,
             weekStartPreference: Fixtures.weekStart,
             now: now
         )
 
-        let motivation = try XCTUnwrap(motivationBlock(from: model))
-        XCTAssertFalse(motivation.message.isEmpty)
+        let motivation = try XCTUnwrap(snapshot.motivationMessage)
+        XCTAssertFalse(motivation.isEmpty)
     }
 
     func testProjectionMessagingWaitsForEnoughElapsedUnits() throws {
@@ -336,8 +335,8 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        let intent = try XCTUnwrap(intentBlock(from: model))
-        XCTAssertEqual(intent.projectionText, "Log a bit more this month to get a stable projection.")
+        let momentum = try XCTUnwrap(momentumBlock(from: model))
+        XCTAssertEqual(momentum.paceText, "Log a bit more this month to get a stable projection.")
     }
 
     func testSnapshotSeparatesPeriodProgressAndProgressSoFar() {
@@ -364,6 +363,171 @@ final class HabitInsightsEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.currentPeriodSoFar.progressCount, 0)
     }
 
+    func testLastSixMonthsUsesHistoricalMonthlySummaries() {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Fixtures.makeMonthlyFrequencyHabit(
+            target: 4,
+            createdAt: Fixtures.makeDate(year: 2025, month: 8, day: 1)
+        )
+
+        // Oct (0), Nov (2), Dec (4), Jan (3), Feb (4), Mar (1)
+        [5, 12].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2025, month: 11, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+        [1, 7, 14, 21].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2025, month: 12, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+        [3, 10, 17].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 1, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+        [4, 11, 18, 25].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 2, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 5, hour: 8), calendar: Fixtures.calendar)
+
+        let snapshot = HabitInsightsEngine.snapshot(
+            for: habit,
+            anchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        XCTAssertEqual(snapshot.lastSixMonths.count, 6)
+        XCTAssertEqual(snapshot.lastSixMonths.map(\.completionCount), [0, 2, 4, 3, 4, 1])
+        XCTAssertEqual(snapshot.lastSixMonths.map(\.goal), [4, 4, 4, 4, 4, 4])
+        XCTAssertEqual(snapshot.lastSixMonths.map(\.goalMet), [false, false, true, false, true, false])
+        let ratios = snapshot.lastSixMonths.map(\.completionRatio)
+        let expectedRatios: [Double] = [0, 0.5, 1, 0.75, 1, 0.25]
+        XCTAssertEqual(ratios.count, expectedRatios.count)
+        for (actual, expected) in zip(ratios, expectedRatios) {
+            XCTAssertEqual(actual, expected, accuracy: 0.0001)
+        }
+    }
+
+    func testMonthlyTrendCardUsesCompletionRatioBarsFromLastSixMonths() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Fixtures.makeMonthlyFrequencyHabit(
+            target: 4,
+            createdAt: Fixtures.makeDate(year: 2025, month: 8, day: 1)
+        )
+
+        [1, 8, 15, 22].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 2, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+        [3, 10].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let trend = try XCTUnwrap(trendBlock(from: model))
+        XCTAssertTrue(trend.isCompletionRatioBars)
+        XCTAssertEqual(trend.targetLine, 1, accuracy: 0.0001)
+        XCTAssertEqual(trend.points.count, 6)
+        let trailingValues = Array(trend.points.suffix(2).map(\.value))
+        XCTAssertEqual(trailingValues[0], 1, accuracy: 0.0001)
+        XCTAssertEqual(trailingValues[1], 0.5, accuracy: 0.0001)
+    }
+
+    func testMotivationCelebratesEarlyGoalCompletion() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 10, hour: 12)
+        let habit = Fixtures.makeMonthlyFrequencyHabit(
+            target: 3,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        [1, 2, 3].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+
+        let snapshot = HabitInsightsEngine.snapshot(
+            for: habit,
+            anchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let motivation = try XCTUnwrap(snapshot.motivationMessage)
+        XCTAssertTrue(motivation.contains("hit your goal early"))
+    }
+
+    func testPatternsFallbackUsesSupportiveCopyForLimitedData() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Fixtures.makeMonthlyFrequencyHabit(
+            target: 7,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        [1, 4, 7].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        XCTAssertNil(patternBlock(from: model))
+    }
+
+    func testRetentionSelectionDoesNotShowLargeMilestoneValues() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Fixtures.makeMonthlyFrequencyHabit(
+            target: 50,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        [1, 3, 5, 7, 9].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let retention = try XCTUnwrap(retentionBlock(from: model))
+        XCTAssertFalse(retention.items.contains { $0.contains("48") && $0.contains("milestone") })
+    }
+
+    func testRetentionSelectionReturnsTopThreeCandidates() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Fixtures.makeMonthlyFrequencyHabit(
+            target: 7,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        [1, 2, 3, 5, 7, 9, 11].forEach { day in
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let retention = try XCTUnwrap(retentionBlock(from: model))
+        XCTAssertLessThanOrEqual(retention.items.count, 3)
+        XCTAssertTrue(retention.items.contains("Goal achieved for this period"))
+    }
+
     private func trendBlock(from model: HabitInsightsViewModel) -> HabitInsightsTrendBlock? {
         for card in model.cards {
             if case .trend(let block) = card {
@@ -382,6 +546,15 @@ final class HabitInsightsEngineTests: XCTestCase {
         return nil
     }
 
+    private func achievementBlock(from model: HabitInsightsViewModel) -> HabitInsightsAchievementBlock? {
+        for card in model.cards {
+            if case .achievement(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
     private func motivationBlock(from model: HabitInsightsViewModel) -> MotivationCard? {
         for card in model.cards {
             if case .motivation(let block) = card {
@@ -394,6 +567,33 @@ final class HabitInsightsEngineTests: XCTestCase {
     private func intentBlock(from model: HabitInsightsViewModel) -> HabitInsightsIntentBlock? {
         for card in model.cards {
             if case .intent(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func momentumBlock(from model: HabitInsightsViewModel) -> HabitInsightsMomentumBlock? {
+        for card in model.cards {
+            if case .momentum(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func patternBlock(from model: HabitInsightsViewModel) -> HabitInsightsPatternBlock? {
+        for card in model.cards {
+            if case .patterns(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func retentionBlock(from model: HabitInsightsViewModel) -> HabitInsightsRetentionBlock? {
+        for card in model.cards {
+            if case .retention(let block) = card {
                 return block
             }
         }

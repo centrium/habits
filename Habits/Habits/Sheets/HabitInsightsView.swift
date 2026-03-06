@@ -11,7 +11,6 @@ struct HabitInsightsView: View {
 
     @EnvironmentObject private var userSettings: UserSettings
     @State private var hasAnimatedIn = false
-    @State private var expandedPatternCards: Set<String> = []
 
     private var accent: Color {
         Color(hex: habit.colorHex)
@@ -32,8 +31,7 @@ struct HabitInsightsView: View {
             HabitInsightsCardsRenderer(
                 viewModel: insights,
                 accent: accent,
-                hasAnimatedIn: hasAnimatedIn,
-                expandedPatternCards: $expandedPatternCards
+                hasAnimatedIn: hasAnimatedIn
             )
             .padding(.horizontal, 20)
             .padding(.top, 26)
@@ -60,7 +58,6 @@ private struct HabitInsightsCardsRenderer: View {
     let viewModel: HabitInsightsViewModel
     let accent: Color
     let hasAnimatedIn: Bool
-    @Binding var expandedPatternCards: Set<String>
 
     var body: some View {
         VStack(spacing: 16) {
@@ -94,6 +91,12 @@ private struct HabitInsightsCardsRenderer: View {
     @ViewBuilder
     private func cardView(_ card: HabitInsightsCard) -> some View {
         switch card {
+        case .achievement(let block):
+            AchievementCardView(block: block, accent: accent)
+        case .momentum(let block):
+            MomentumCardView(block: block)
+        case .consistency(let block):
+            ConsistencyCardView(block: block)
         case .hero(let block):
             HeroCardView(block: block, accent: accent)
         case .motivation(let block):
@@ -105,19 +108,84 @@ private struct HabitInsightsCardsRenderer: View {
         case .completionHistory(let block):
             CompletionHistoryCardView(block: block)
         case .patterns(let block):
-            PatternCardView(
-                block: block,
-                isExpanded: expandedPatternCards.contains(card.id),
-                toggle: {
-                    if expandedPatternCards.contains(card.id) {
-                        expandedPatternCards.remove(card.id)
-                    } else {
-                        expandedPatternCards.insert(card.id)
-                    }
-                }
-            )
+            PatternCardView(block: block)
+        case .retention(let block):
+            RetentionCardView(block: block)
         case .debug(let block):
             DebugCardView(block: block)
+        }
+    }
+}
+
+private struct AchievementCardView: View {
+    let block: HabitInsightsAchievementBlock
+    let accent: Color
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Achievement")
+                    .font(.headline)
+                Text(block.progressText)
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .monospacedDigit()
+                Text(block.statusText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if let overflowText = block.overflowText {
+                    Text(overflowText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                ProgressView(value: min(max(block.progressRatio, 0), 1))
+                    .tint(accent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct MomentumCardView: View {
+    let block: HabitInsightsMomentumBlock
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Momentum")
+                    .font(.headline)
+                Text(block.currentStreakText)
+                    .font(.subheadline)
+                Text(block.longestStreakText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(block.paceText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct ConsistencyCardView: View {
+    let block: HabitInsightsConsistencyBlock
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Consistency")
+                    .font(.headline)
+                Text(block.scoreText)
+                    .font(.system(size: 34, weight: .semibold))
+                    .monospacedDigit()
+                if let averageText = block.averageText {
+                    Text(averageText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -134,7 +202,7 @@ private struct HeroCardView: View {
                     .foregroundStyle(.secondary)
 
                 Text(block.valueText)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.system(size: 34, weight: .semibold))
                     .foregroundStyle(accent)
                     .monospacedDigit()
 
@@ -232,7 +300,12 @@ private struct TrendCardView: View {
     private let barSpacing: CGFloat = 5
 
     private var maxValue: Double {
-        max(block.points.map(\.value).max() ?? 1, block.targetLine ?? 0, 1)
+        get {
+            if block.isCompletionRatioBars {
+                return 1
+            }
+            return max(block.points.map(\.value).max() ?? 1, block.targetLine ?? 0, 1)
+        }
     }
 
     var body: some View {
@@ -260,7 +333,7 @@ private struct TrendCardView: View {
                             ForEach(block.points) { point in
                                 RoundedRectangle(cornerRadius: 3)
                                     .fill(point.value > 0 ? accent.opacity(0.8) : Color.secondary.opacity(0.15))
-                                    .frame(width: width, height: max(6, CGFloat(point.value / maxValue) * chartHeight))
+                                    .frame(width: width, height: barHeight(for: point.value))
                             }
                         }
                     }
@@ -268,13 +341,43 @@ private struct TrendCardView: View {
                 }
                 .frame(height: chartHeight)
 
+                HStack(spacing: barSpacing) {
+                    ForEach(block.points) { point in
+                        Text(shortLabel(point.label))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+
                 if let unit = block.unitText, block.isValueBased {
                     Text("Unit: \(unit)")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
         }
+    }
+
+    private func barHeight(for value: Double) -> CGFloat {
+        if block.isCompletionRatioBars {
+            if value >= 1 {
+                return chartHeight
+            }
+            if value > 0 {
+                return max(12, min(CGFloat(value), 1) * chartHeight)
+            }
+            return 6
+        }
+
+        return max(6, CGFloat(value / maxValue) * chartHeight)
+    }
+
+    private func shortLabel(_ raw: String) -> String {
+        let split = raw.split(separator: " ")
+        return String(split.first ?? Substring(raw))
     }
 }
 
@@ -309,37 +412,37 @@ private struct CompletionHistoryCardView: View {
 
 private struct PatternCardView: View {
     let block: HabitInsightsPatternBlock
-    let isExpanded: Bool
-    let toggle: () -> Void
-
-    private var visibleItems: [String] {
-        if isExpanded || block.items.count <= 3 {
-            return block.items
-        }
-        return Array(block.items.prefix(3))
-    }
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(block.heading)
                     .font(.headline)
                     .foregroundStyle(.primary)
 
-                ForEach(visibleItems, id: \.self) { item in
+                ForEach(block.items, id: \.self) { item in
                     Text(item)
                         .font(.subheadline)
                         .foregroundStyle(.primary)
                 }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
 
-                if block.items.count > 3 {
-                    Button(isExpanded ? "Less" : "More") {
-                        toggle()
-                    }
-                    .buttonStyle(.plain)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+private struct RetentionCardView: View {
+    let block: HabitInsightsRetentionBlock
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(block.heading)
+                    .font(.headline)
+                ForEach(block.items, id: \.self) { item in
+                    Text(item)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -572,8 +675,7 @@ private struct HabitInsightsPreviewScenario: Identifiable {
                     HabitInsightsCardsRenderer(
                         viewModel: model,
                         accent: Color(hex: scenario.habit.colorHex),
-                        hasAnimatedIn: true,
-                        expandedPatternCards: .constant(["patterns"])
+                        hasAnimatedIn: true
                     )
                     .padding(.horizontal, 20)
                 }
