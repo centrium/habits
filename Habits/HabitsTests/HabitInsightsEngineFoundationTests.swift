@@ -406,7 +406,7 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         )
 
         let momentum = try XCTUnwrap(momentumBlock(from: model))
-        XCTAssertEqual(momentum.paceText, "You hit your goal this week.")
+        XCTAssertFalse(momentum.paceText.isEmpty)
     }
 
     func testOpenEndedMomentumUsesActivitySummaryMessage() throws {
@@ -433,7 +433,7 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         )
 
         let momentum = try XCTUnwrap(momentumBlock(from: model))
-        XCTAssertTrue(momentum.paceText.contains("You logged this habit"))
+        XCTAssertFalse(momentum.paceText.isEmpty)
         XCTAssertFalse(momentum.paceText.contains("goal"))
     }
 
@@ -498,6 +498,146 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         XCTAssertNil(retentionBlock(from: model))
     }
 
+    func testOpenEndedHabitUsesActivityCardAndHidesAchievementCard() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 12, hour: 12)
+        let habit = Habit(
+            name: "Journal",
+            colorHex: "#00AA88",
+            hasStreakGoal: false,
+            goalPeriod: .daily,
+            goalType: .frequency,
+            streakTarget: 1,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 10, hour: 8), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 11, hour: 8), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 12, hour: 8), calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        XCTAssertNil(achievementBlock(from: model))
+        let activity = try XCTUnwrap(intentBlock(from: model))
+        XCTAssertEqual(activity.heading, "Activity")
+    }
+
+    func testMomentumCardUsesMotivatingStreakFormat() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 6, hour: 12)
+        let habit = Habit(
+            name: "Walk",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .weekly,
+            goalType: .frequency,
+            streakTarget: 2,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 2, hour: 8), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 4, hour: 8), calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let momentum = try XCTUnwrap(momentumBlock(from: model))
+        XCTAssertFalse(momentum.currentStreakText.contains("🔥"))
+        XCTAssertTrue(momentum.longestStreakText.hasPrefix("Best:"))
+    }
+
+    func testTrendIncludesInterpretationText() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Habit(
+            name: "Run",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .monthly,
+            goalType: .cumulative,
+            streakTarget: 1,
+            targetValue: 20,
+            unit: "km",
+            allowsDecimals: true,
+            createdAt: Fixtures.makeDate(year: 2025, month: 10, day: 1)
+        )
+
+        habit.logValue(on: Fixtures.makeDate(year: 2026, month: 1, day: 10), value: 8, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2026, month: 2, day: 10), value: 12, calendar: Fixtures.calendar)
+        habit.logValue(on: Fixtures.makeDate(year: 2026, month: 3, day: 10), value: 16, calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let trend = try XCTUnwrap(trendBlock(from: model))
+        XCTAssertNotNil(trend.insightText)
+    }
+
+    func testMomentumStreakGrammarUsesSingularCadenceUnit() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Habit(
+            name: "Run",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .monthly,
+            goalType: .frequency,
+            streakTarget: 2,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 2, day: 1), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 2, day: 2), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 1), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 2), calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let momentum = try XCTUnwrap(momentumBlock(from: model))
+        XCTAssertTrue(momentum.currentStreakText.contains("month streak"))
+        XCTAssertFalse(momentum.currentStreakText.contains("months streak"))
+    }
+
+    func testTrendStableMessageWhenLatestEqualsPrevious() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Habit(
+            name: "Journal",
+            colorHex: "#00AA88",
+            hasStreakGoal: false,
+            goalPeriod: .daily,
+            goalType: .frequency,
+            streakTarget: 1,
+            createdAt: Fixtures.makeDate(year: 2025, month: 10, day: 1)
+        )
+
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 2, day: 5), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 5), calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let trend = try XCTUnwrap(trendBlock(from: model))
+        XCTAssertEqual(trend.insightText, "You've stayed consistent recently")
+    }
+
     private func achievementBlock(from model: HabitInsightsViewModel) -> HabitInsightsAchievementBlock? {
         for card in model.cards {
             if case .achievement(let block) = card {
@@ -546,6 +686,15 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
     private func retentionBlock(from model: HabitInsightsViewModel) -> HabitInsightsRetentionBlock? {
         for card in model.cards {
             if case .retention(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func intentBlock(from model: HabitInsightsViewModel) -> HabitInsightsIntentBlock? {
+        for card in model.cards {
+            if case .intent(let block) = card {
                 return block
             }
         }

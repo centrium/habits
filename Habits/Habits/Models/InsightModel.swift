@@ -239,6 +239,7 @@ struct HabitInsightsTrendBlock {
     let points: [HabitInsightsTrendPoint]
     let targetLine: Double?
     let unitText: String?
+    let insightText: String?
     let isValueBased: Bool
     let isCompletionRatioBars: Bool
 }

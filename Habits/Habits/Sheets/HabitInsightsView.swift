@@ -123,7 +123,7 @@ private struct AchievementCardView: View {
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text("Achievement")
                     .font(.headline)
                 Text(block.progressText)
@@ -151,16 +151,16 @@ private struct MomentumCardView: View {
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text("Momentum")
                     .font(.headline)
                 Text(block.currentStreakText)
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.semibold))
                 Text(block.longestStreakText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Text(block.paceText)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -173,7 +173,7 @@ private struct ConsistencyCardView: View {
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text("Consistency")
                     .font(.headline)
                 Text(block.scoreText)
@@ -238,7 +238,7 @@ private struct IntentCardView: View {
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(block.heading)
                     .font(.headline)
                     .foregroundStyle(.primary)
@@ -278,11 +278,7 @@ private struct MotivationCardView: View {
 
     var body: some View {
         HabitInsightsPanel(background: toneColor.opacity(0.12)) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Motivation")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
+            VStack(alignment: .leading, spacing: 6) {
                 Text(block.message)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -310,7 +306,7 @@ private struct TrendCardView: View {
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(block.heading)
                     .font(.headline)
                     .foregroundStyle(.primary)
@@ -354,6 +350,12 @@ private struct TrendCardView: View {
 
                 if let unit = block.unitText, block.isValueBased {
                     Text("Unit: \(unit)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let insight = block.insightText {
+                    Text(insight)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
