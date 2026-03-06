@@ -32,6 +32,18 @@ struct HabitInsightsEngine {
             weekStartPreference: weekStartPreference,
             now: now
         ).streak
+        let metrics = MetricsCalculator.calculate(
+            foundation: foundation,
+            streak: streakSnapshot
+        )
+        let behaviour = BehaviourAnalyzer.analyze(
+            metrics: metrics,
+            foundation: foundation
+        )
+        let generatedInsights = InsightGenerator.generate(
+            metrics: metrics,
+            behaviour: behaviour
+        )
 
         let achievement = foundation.achievement
 
@@ -82,7 +94,7 @@ struct HabitInsightsEngine {
                     progressText: progressText,
                     statusText: statusText,
                     overflowText: overflowText,
-                    progressRatio: achievement.completionRatio ?? 0
+                    progressRatio: metrics.completionRatio ?? 0
                 )
             )
         )
@@ -92,7 +104,7 @@ struct HabitInsightsEngine {
                 HabitInsightsMomentumBlock(
                     currentStreakText: "Current streak: \(streakSnapshot.current)",
                     longestStreakText: "Longest streak: \(streakSnapshot.longest)",
-                    paceText: momentumText(from: foundation)
+                    paceText: behaviour.momentumMessage
                 )
             )
         )
@@ -100,8 +112,8 @@ struct HabitInsightsEngine {
         cards.append(
             .consistency(
                 HabitInsightsConsistencyBlock(
-                    scoreText: "\(Int((foundation.consistency.activeDayRatio * 100).rounded()))%",
-                    averageText: "You log this habit \(foundation.consistency.averageActiveDaysPerWeek.formatted(.number.precision(.fractionLength(1)))) days per week."
+                    scoreText: "\(Int(((metrics.consistencyScore ?? 0) * 100).rounded()))%",
+                    averageText: "You log this habit \((metrics.averageDaysPerWeek ?? 0).formatted(.number.precision(.fractionLength(1)))) days per week."
                 )
             )
         )
@@ -119,29 +131,29 @@ struct HabitInsightsEngine {
             )
         )
 
-        if let patternSignals = foundation.patternSignals {
-            if !patternSignals.patternItems.isEmpty {
-                cards.append(
-                    .patterns(
-                        HabitInsightsPatternBlock(
-                            heading: "Patterns",
-                            items: patternSignals.patternItems
-                        )
+        if !behaviour.patternItems.isEmpty {
+            cards.append(
+                .patterns(
+                    HabitInsightsPatternBlock(
+                        heading: "Patterns",
+                        items: behaviour.patternItems
                     )
                 )
-            }
-
-            if !patternSignals.retentionItems.isEmpty {
-                cards.append(
-                    .retention(
-                        HabitInsightsRetentionBlock(
-                            heading: "Retention Insights",
-                            items: patternSignals.retentionItems
-                        )
-                    )
-                )
-            }
+            )
         }
+
+        if !behaviour.retentionItems.isEmpty {
+            cards.append(
+                .retention(
+                    HabitInsightsRetentionBlock(
+                        heading: "Retention Insights",
+                        items: behaviour.retentionItems
+                    )
+                )
+            )
+        }
+
+        _ = generatedInsights
 
         return HabitInsightsViewModel(
             title: "Insights",
@@ -171,19 +183,5 @@ struct HabitInsightsEngine {
         case .frequency, .cumulative:
             return month.completionRatio ?? 0
         }
-    }
-
-    private static func momentumText(
-        from snapshot: HabitInsightSnapshot
-    ) -> String {
-        if let pace = snapshot.pace {
-            return pace.message
-        }
-
-        if let activitySummary = snapshot.activitySummary {
-            return activitySummary.summaryText
-        }
-
-        return "In progress."
     }
 }
