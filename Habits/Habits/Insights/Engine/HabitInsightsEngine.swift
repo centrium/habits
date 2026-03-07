@@ -27,6 +27,7 @@ struct HabitInsightsEngine {
         logAnchorDate: Date? = nil,
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system,
+        greigModeEnabled: Bool = true,
         timezone: TimeZone? = nil,
         now: Date = .now
     ) -> HabitInsightsViewModel {
@@ -112,6 +113,23 @@ struct HabitInsightsEngine {
             guard habit.goalType == .cumulative, !trendUsesCompletionRatios else { return nil }
             return habit.trimmedUnit
         }()
+        let goalPaceBlock = goalPaceBlock(
+            for: habit,
+            foundation: foundation,
+            statusText: statusText,
+            now: now
+        )
+        let weeklyRhythmBlock = weeklyRhythmBlock(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+        let greigModeBlock = greigModeBlock(
+            for: habit,
+            foundation: foundation,
+            calendar: calendar,
+            now: now
+        )
 
         var cards: [HabitInsightsCard] = []
 
@@ -152,6 +170,10 @@ struct HabitInsightsEngine {
             )
         }
 
+        if let goalPaceBlock {
+            cards.append(.goalPace(goalPaceBlock))
+        }
+
         cards.append(
             .momentum(
                 HabitInsightsMomentumBlock(
@@ -168,17 +190,6 @@ struct HabitInsightsEngine {
             )
         )
 
-        if shouldShowConsistencyCard(for: habit, now: now, calendar: calendar) {
-            cards.append(
-                .consistency(
-                    HabitInsightsConsistencyBlock(
-                        scoreText: consistencyRhythmText(metrics.averageDaysPerWeek ?? 0),
-                        averageText: nil
-                    )
-                )
-            )
-        }
-
         cards.append(
             .trend(
                 HabitInsightsTrendBlock(
@@ -194,6 +205,10 @@ struct HabitInsightsEngine {
             )
         )
 
+        if let weeklyRhythmBlock {
+            cards.append(.weeklyRhythm(weeklyRhythmBlock))
+        }
+
         if let behaviourInsights = behaviourInsightsBlock(
             habit: habit,
             isOpenEnded: isOpenEnded,
@@ -204,6 +219,10 @@ struct HabitInsightsEngine {
             cards.append(
                 .behaviourInsights(behaviourInsights)
             )
+        }
+
+        if greigModeEnabled, let greigModeBlock {
+            cards.append(.greigMode(greigModeBlock))
         }
 
         return HabitInsightsViewModel(
@@ -682,28 +701,6 @@ struct HabitInsightsEngine {
         count == 1 ? unit : "\(unit)s"
     }
 
-    private static func consistencyRhythmText(_ averageDaysPerWeek: Double) -> String {
-        if averageDaysPerWeek < 0.75 {
-            return "Less than once per week"
-        }
-        if averageDaysPerWeek < 1.5 {
-            return "About once per week"
-        }
-        if averageDaysPerWeek < 2.5 {
-            return "About twice per week"
-        }
-        return "\(averageDaysPerWeek.formatted(.number.precision(.fractionLength(1)))) days per week"
-    }
-
-    private static func shouldShowConsistencyCard(
-        for habit: Habit,
-        now: Date,
-        calendar: Calendar
-    ) -> Bool {
-        let daysActive = (calendar.dateComponents([.day], from: calendar.startOfDay(for: habit.createdAt), to: calendar.startOfDay(for: now)).day ?? 0) + 1
-        return daysActive >= 7
-    }
-
     private static func shouldUseCompletionRatios(
         mode: HabitInsightMode
     ) -> Bool {
@@ -769,6 +766,214 @@ struct HabitInsightsEngine {
             return "Keep this steady rhythm going"
         }
         return "A quick check-in could rebuild momentum"
+    }
+
+    private static func goalPaceBlock(
+        for habit: Habit,
+        foundation: HabitInsightSnapshot,
+        statusText: String,
+        now: Date
+    ) -> HabitInsightsGoalPaceBlock? {
+        guard let target = foundation.achievement.target, target > 0 else {
+            return nil
+        }
+
+        let periodStart = foundation.currentPeriodStart
+        let periodEnd = foundation.currentPeriodEnd
+        let periodLength = max(periodEnd.timeIntervalSince(periodStart), 1)
+        let nowClamped = min(max(now, periodStart), periodEnd)
+        let nowRatio = min(max(nowClamped.timeIntervalSince(periodStart) / periodLength, 0), 1)
+
+        let expectedNow = target * nowRatio
+        let expectedLine = [
+            HabitInsightsChartPoint(x: 0, y: 0),
+            HabitInsightsChartPoint(x: nowRatio, y: expectedNow),
+            HabitInsightsChartPoint(x: 1, y: target)
+        ]
+
+        let logs = habit.logs
+            .filter { $0.effectiveTimestamp >= periodStart && $0.effectiveTimestamp <= nowClamped }
+            .sorted { $0.effectiveTimestamp < $1.effectiveTimestamp }
+
+        var running: Double = 0
+        var actualLine: [HabitInsightsChartPoint] = [HabitInsightsChartPoint(x: 0, y: 0)]
+        for log in logs {
+            let contribution = valueContribution(for: log, goalType: habit.goalType)
+            running += contribution
+            let x = min(max(log.effectiveTimestamp.timeIntervalSince(periodStart) / periodLength, 0), 1)
+            actualLine.append(HabitInsightsChartPoint(x: x, y: running))
+        }
+        let actualNow = foundation.achievement.progress
+        actualLine.append(HabitInsightsChartPoint(x: nowRatio, y: actualNow))
+
+        let projectedTotal = foundation.pace?.projectedTotal ?? actualNow
+        let projectionLine = [
+            HabitInsightsChartPoint(x: nowRatio, y: actualNow),
+            HabitInsightsChartPoint(x: 1, y: projectedTotal)
+        ]
+
+        return HabitInsightsGoalPaceBlock(
+            heading: "Goal Pace",
+            expectedLine: expectedLine,
+            actualLine: deduplicatedLine(actualLine),
+            projectionLine: projectionLine,
+            targetValue: target,
+            statusText: statusText,
+            targetText: "Goal \(habit.formatProgressValue(target))"
+        )
+    }
+
+    private static func weeklyRhythmBlock(
+        for habit: Habit,
+        calendar: Calendar,
+        now: Date
+    ) -> HabitInsightsWeeklyRhythmBlock? {
+        let windowStart = calendar.date(byAdding: .day, value: -83, to: now) ?? now
+        let logs = habit.logs.filter { $0.effectiveTimestamp >= windowStart && $0.effectiveTimestamp <= now }
+        guard !logs.isEmpty else { return nil }
+
+        let weekdayOrder = [2, 3, 4, 5, 6, 7, 1]
+        let shortLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = calendar.locale ?? .current
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("EEEE")
+
+        let counts = logs.reduce(into: [Int: Int]()) { partialResult, log in
+            let weekday = calendar.component(.weekday, from: log.effectiveTimestamp)
+            partialResult[weekday, default: 0] += 1
+        }
+
+        let days = weekdayOrder.enumerated().map { index, weekday in
+            let referenceDate = referenceDateForWeekday(weekday, calendar: calendar, anchor: now)
+            let fullName = formatter.string(from: referenceDate)
+            return HabitInsightsWeeklyRhythmDay(
+                index: index,
+                dayLabel: shortLabels[index],
+                fullDayLabel: fullName,
+                entries: counts[weekday, default: 0]
+            )
+        }
+
+        return HabitInsightsWeeklyRhythmBlock(
+            heading: "Weekly Rhythm",
+            days: days
+        )
+    }
+
+    private static func valueContribution(
+        for log: HabitLog,
+        goalType: GoalType
+    ) -> Double {
+        switch goalType {
+        case .frequency:
+            return Double(max(1, log.frequencyContribution))
+        case .cumulative:
+            return max(0, log.numericValue)
+        }
+    }
+
+    private static func deduplicatedLine(
+        _ points: [HabitInsightsChartPoint]
+    ) -> [HabitInsightsChartPoint] {
+        var result: [HabitInsightsChartPoint] = []
+        for point in points {
+            if let last = result.last, abs(last.x - point.x) < 0.0001, abs(last.y - point.y) < 0.0001 {
+                continue
+            }
+            result.append(point)
+        }
+        return result
+    }
+
+    private static func referenceDateForWeekday(
+        _ weekday: Int,
+        calendar: Calendar,
+        anchor: Date
+    ) -> Date {
+        let anchorWeekday = calendar.component(.weekday, from: anchor)
+        let delta = (weekday - anchorWeekday + 7) % 7
+        return calendar.date(byAdding: .day, value: delta, to: anchor) ?? anchor
+    }
+
+    private static func greigModeBlock(
+        for habit: Habit,
+        foundation: HabitInsightSnapshot,
+        calendar: Calendar,
+        now: Date
+    ) -> HabitInsightsGreigModeBlock? {
+        guard let target = foundation.achievement.target, target > 0 else {
+            return nil
+        }
+
+        let currentProgress = foundation.achievement.progress
+        let periodStart = foundation.currentPeriodStart
+        let periodEnd = foundation.currentPeriodEnd
+        guard periodEnd > periodStart else { return nil }
+
+        let bestWeek = strongestSevenDayWindow(
+            logs: habit.logs,
+            goalType: habit.goalType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            calendar: calendar
+        )
+        guard bestWeek > 0 else { return nil }
+
+        let nowClamped = min(max(now, periodStart), periodEnd)
+        let remainingDays = max(0, calendar.dateComponents([.day], from: nowClamped, to: periodEnd).day ?? 0)
+        let remainingWeeks = max(Int(ceil(Double(remainingDays) / 7.0)), 0)
+        let potential = currentProgress + (bestWeek * Double(remainingWeeks))
+
+        guard potential > currentProgress else { return nil }
+
+        let projectedText = habit.formatProgressValue(potential)
+        let targetText = habit.formatProgressValue(target)
+        let headline = "Your strongest week suggests you could reach \(projectedText) this \(habit.goalPeriod.unit)."
+        let support: String = {
+            if potential >= target {
+                return "That pace would put you ahead of target."
+            }
+            return "Exploring that pace would move you closer to your goal."
+        }()
+
+        return HabitInsightsGreigModeBlock(
+            heading: "Greig Mode",
+            headline: headline,
+            supportText: support + " Goal: \(targetText).",
+            iconName: "brain"
+        )
+    }
+
+    private static func strongestSevenDayWindow(
+        logs: [HabitLog],
+        goalType: GoalType,
+        periodStart: Date,
+        periodEnd: Date,
+        calendar: Calendar
+    ) -> Double {
+        let relevantLogs = logs
+            .filter { $0.effectiveTimestamp >= periodStart && $0.effectiveTimestamp < periodEnd }
+            .sorted { $0.effectiveTimestamp < $1.effectiveTimestamp }
+        guard !relevantLogs.isEmpty else { return 0 }
+
+        let dayTotals = relevantLogs.reduce(into: [Date: Double]()) { partialResult, log in
+            let day = calendar.startOfDay(for: log.effectiveTimestamp)
+            partialResult[day, default: 0] += valueContribution(for: log, goalType: goalType)
+        }
+
+        let orderedDays = dayTotals.keys.sorted()
+        var bestWindow: Double = 0
+        for day in orderedDays {
+            guard let windowEnd = calendar.date(byAdding: .day, value: 7, to: day) else { continue }
+            let sum = dayTotals.reduce(0) { partial, item in
+                guard item.key >= day && item.key < windowEnd else { return partial }
+                return partial + item.value
+            }
+            bestWindow = max(bestWindow, sum)
+        }
+        return bestWindow
     }
 
     private static func behaviourInsightsBlock(

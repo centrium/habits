@@ -37,10 +37,19 @@ struct HabitInsightsPanel<Content: View>: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(.white.opacity(0.05))
         )
+        .overlay {
+            LinearGradient(
+                colors: [.white.opacity(0.04), .clear],
+                startPoint: .top,
+                endPoint: .center
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .allowsHitTesting(false)
+        }
         .shadow(
-            color: .black.opacity(0.25),
-            radius: 6,
-            y: 3
+            color: .black.opacity(0.08),
+            radius: 12,
+            y: 4
         )
     }
 }

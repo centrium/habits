@@ -12,6 +12,20 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section("Insights") {
+                Toggle(isOn: $userSettings.greigModeEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Greig Mode")
+                            .font(.body)
+                        Text("Show potential insights based on your strongest performance.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityLabel("Greig Mode")
+                .accessibilityHint("Show potential insights based on your strongest performance.")
+            }
         }
         .navigationTitle("Settings")
     }

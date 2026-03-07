@@ -35,6 +35,8 @@ enum WeekStartPreference: String, CaseIterable, Codable, Identifiable {
 protocol SettingsKeyValueStore {
     func string(forKey key: String) -> String?
     func set(_ value: String?, forKey key: String)
+    func bool(forKey key: String) -> Bool?
+    func set(_ value: Bool, forKey key: String)
 }
 
 struct UserDefaultsSettingsStore: SettingsKeyValueStore {
@@ -51,12 +53,22 @@ struct UserDefaultsSettingsStore: SettingsKeyValueStore {
     func set(_ value: String?, forKey key: String) {
         defaults.set(value, forKey: key)
     }
+
+    func bool(forKey key: String) -> Bool? {
+        guard defaults.object(forKey: key) != nil else { return nil }
+        return defaults.bool(forKey: key)
+    }
+
+    func set(_ value: Bool, forKey key: String) {
+        defaults.set(value, forKey: key)
+    }
 }
 
 @MainActor
 final class UserSettings: ObservableObject {
     private enum Keys {
         static let weekStart = "settings.weekStart"
+        static let greigModeEnabled = "greigModeEnabled"
     }
 
     private let store: any SettingsKeyValueStore
@@ -64,6 +76,12 @@ final class UserSettings: ObservableObject {
     @Published var weekStartPreference: WeekStartPreference {
         didSet {
             store.set(weekStartPreference.rawValue, forKey: Keys.weekStart)
+        }
+    }
+
+    @Published var greigModeEnabled: Bool {
+        didSet {
+            store.set(greigModeEnabled, forKey: Keys.greigModeEnabled)
         }
     }
 
@@ -76,6 +94,7 @@ final class UserSettings: ObservableObject {
         self.weekStartPreference = WeekStartPreference(
             rawValue: store.string(forKey: Keys.weekStart) ?? ""
         ) ?? .system
+        self.greigModeEnabled = store.bool(forKey: Keys.greigModeEnabled) ?? true
     }
 
     func weekLayoutStrategy(base: Calendar = .autoupdatingCurrent) -> WeekLayoutStrategy {

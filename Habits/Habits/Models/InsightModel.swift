@@ -142,20 +142,25 @@ struct HabitInsightsViewModel {
 
 enum HabitInsightsCard: Identifiable {
     case achievement(HabitInsightsAchievementBlock)
+    case goalPace(HabitInsightsGoalPaceBlock)
     case momentum(HabitInsightsMomentumBlock)
     case consistency(HabitInsightsConsistencyBlock)
     case hero(HabitInsightsHeroBlock)
     case motivation(MotivationCard)
     case intent(HabitInsightsIntentBlock)
     case trend(HabitInsightsTrendBlock)
+    case weeklyRhythm(HabitInsightsWeeklyRhythmBlock)
     case completionHistory(HabitInsightsCompletionHistoryBlock)
     case behaviourInsights(HabitInsightsBehaviourBlock)
+    case greigMode(HabitInsightsGreigModeBlock)
     case debug(HabitInsightsDebugBlock)
 
     var id: String {
         switch self {
         case .achievement:
             return "achievement"
+        case .goalPace:
+            return "goal-pace"
         case .momentum:
             return "momentum"
         case .consistency:
@@ -168,10 +173,14 @@ enum HabitInsightsCard: Identifiable {
             return "intent"
         case .trend:
             return "trend"
+        case .weeklyRhythm:
+            return "weekly-rhythm"
         case .completionHistory:
             return "completion-history"
         case .behaviourInsights:
             return "behaviour-insights"
+        case .greigMode:
+            return "greig-mode"
         case .debug:
             return "debug"
         }
@@ -237,6 +246,25 @@ struct HabitInsightsTrendPoint: Identifiable {
     var id: Date { periodStart }
 }
 
+struct HabitInsightsChartPoint: Identifiable {
+    let x: Double
+    let y: Double
+
+    var id: String {
+        "\(x)-\(y)"
+    }
+}
+
+struct HabitInsightsGoalPaceBlock {
+    let heading: String
+    let expectedLine: [HabitInsightsChartPoint]
+    let actualLine: [HabitInsightsChartPoint]
+    let projectionLine: [HabitInsightsChartPoint]
+    let targetValue: Double
+    let statusText: String
+    let targetText: String
+}
+
 struct HabitInsightsTrendBlock {
     let heading: String
     let points: [HabitInsightsTrendPoint]
@@ -246,6 +274,20 @@ struct HabitInsightsTrendBlock {
     let insightSupportingText: String?
     let isValueBased: Bool
     let isCompletionRatioBars: Bool
+}
+
+struct HabitInsightsWeeklyRhythmDay: Identifiable {
+    let index: Int
+    let dayLabel: String
+    let fullDayLabel: String
+    let entries: Int
+
+    var id: Int { index }
+}
+
+struct HabitInsightsWeeklyRhythmBlock {
+    let heading: String
+    let days: [HabitInsightsWeeklyRhythmDay]
 }
 
 struct HabitInsightsCompletionHistoryBlock {
@@ -259,6 +301,13 @@ struct HabitInsightsBehaviourBlock {
     let heading: String
     let observations: [String]
     let suggestion: String
+}
+
+struct HabitInsightsGreigModeBlock {
+    let heading: String
+    let headline: String
+    let supportText: String
+    let iconName: String
 }
 
 struct HabitInsightsDebugBlock {

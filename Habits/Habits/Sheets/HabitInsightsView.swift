@@ -22,6 +22,7 @@ struct HabitInsightsView: View {
             logAnchorDate: logAnchorDate,
             calendar: .current,
             weekStartPreference: userSettings.weekStartPreference,
+            greigModeEnabled: userSettings.greigModeEnabled,
             now: .now
         )
     }
@@ -60,30 +61,37 @@ private struct HabitInsightsCardsRenderer: View {
     let hasAnimatedIn: Bool
 
     var body: some View {
-        VStack(spacing: 16) {
-            ForEach(Array(renderRows.enumerated()), id: \.offset) { index, row in
-                rowView(row)
-                    .opacity(hasAnimatedIn ? 1 : 0)
-                    .offset(y: hasAnimatedIn ? 0 : 8)
-                    .animation(
-                        .easeOut(duration: 0.24).delay(0.02 * Double(index)),
-                        value: hasAnimatedIn
-                    )
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Insights")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.top, 14)
 
-            if !viewModel.notes.isEmpty {
-                HabitInsightsPanel(background: Color(.tertiarySystemGroupedBackground)) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(viewModel.notes, id: \.self) { note in
-                            Text(note)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+            VStack(spacing: 16) {
+                ForEach(Array(renderRows.enumerated()), id: \.offset) { index, row in
+                    rowView(row)
+                        .opacity(hasAnimatedIn ? 1 : 0)
+                        .offset(y: hasAnimatedIn ? 0 : 8)
+                        .animation(
+                            .easeOut(duration: 0.24).delay(0.02 * Double(index)),
+                            value: hasAnimatedIn
+                        )
+                }
+
+                if !viewModel.notes.isEmpty {
+                    HabitInsightsPanel(background: Color(.tertiarySystemGroupedBackground)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(viewModel.notes, id: \.self) { note in
+                                Text(note)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .opacity(hasAnimatedIn ? 1 : 0)
+                    .offset(y: hasAnimatedIn ? 0 : 8)
+                    .animation(.easeOut(duration: 0.24).delay(0.15), value: hasAnimatedIn)
                 }
-                .opacity(hasAnimatedIn ? 1 : 0)
-                .offset(y: hasAnimatedIn ? 0 : 8)
-                .animation(.easeOut(duration: 0.24).delay(0.15), value: hasAnimatedIn)
             }
         }
     }
@@ -129,6 +137,8 @@ private struct HabitInsightsCardsRenderer: View {
         switch card {
         case .achievement(let block):
             AchievementCardView(block: block, accent: accent)
+        case .goalPace(let block):
+            GoalPaceCardView(block: block, accent: accent, hasAnimatedIn: hasAnimatedIn)
         case .momentum(let block):
             MomentumCardView(block: block)
         case .consistency(let block):
@@ -141,10 +151,14 @@ private struct HabitInsightsCardsRenderer: View {
             IntentCardView(block: block)
         case .trend(let block):
             TrendCardView(block: block, accent: accent, hasAnimatedIn: hasAnimatedIn)
+        case .weeklyRhythm(let block):
+            WeeklyRhythmCardView(block: block, accent: accent, hasAnimatedIn: hasAnimatedIn)
         case .completionHistory(let block):
             CompletionHistoryCardView(block: block)
         case .behaviourInsights(let block):
             BehaviourInsightsCardView(block: block)
+        case .greigMode(let block):
+            GreigModeCardView(block: block, accent: accent)
         case .debug(let block):
             DebugCardView(block: block)
         }
@@ -578,6 +592,216 @@ private struct TrendCardView: View {
     }
 }
 
+private struct GoalPaceCardView: View {
+    let block: HabitInsightsGoalPaceBlock
+    let accent: Color
+    let hasAnimatedIn: Bool
+
+    private let chartHeight: CGFloat = 122
+
+    private var maxY: Double {
+        let values = block.expectedLine.map(\.y) + block.actualLine.map(\.y) + block.projectionLine.map(\.y) + [block.targetValue]
+        return max(values.max() ?? 1, 1)
+    }
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                GeometryReader { geometry in
+                    let progress = hasAnimatedIn ? 1.0 : 0.0
+
+                    ZStack(alignment: .bottomLeading) {
+                        Path { path in
+                            let y = yPosition(for: 0, height: geometry.size.height)
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                        }
+                        .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+
+                        gradientArea(in: geometry.size)
+                            .fill(
+                                LinearGradient(
+                                    colors: [accent.opacity(0.15), accent.opacity(0.02)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .opacity(progress)
+
+                        linePath(points: block.expectedLine, in: geometry.size)
+                            .trimmedPath(from: 0, to: progress)
+                            .stroke(
+                                Color.secondary.opacity(0.4),
+                                style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
+                            )
+
+                        linePath(points: block.actualLine, in: geometry.size)
+                            .trimmedPath(from: 0, to: progress)
+                            .stroke(
+                                accent,
+                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                            )
+                            .shadow(color: accent.opacity(0.25), radius: 6)
+
+                        linePath(points: block.projectionLine, in: geometry.size)
+                            .trimmedPath(from: 0, to: progress)
+                            .stroke(
+                                accent.opacity(0.6),
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4])
+                            )
+
+                        Circle()
+                            .fill(Color.secondary.opacity(0.4))
+                            .frame(width: 7, height: 7)
+                            .position(
+                                x: xPosition(for: 1, width: geometry.size.width),
+                                y: yPosition(for: block.targetValue, height: geometry.size.height)
+                            )
+
+                        Text("Goal")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .position(
+                                x: max(20, xPosition(for: 1, width: geometry.size.width) - 18),
+                                y: max(8, yPosition(for: block.targetValue, height: geometry.size.height) - 12)
+                            )
+                    }
+                    .animation(.easeOut(duration: 0.6), value: hasAnimatedIn)
+                }
+                .frame(height: chartHeight)
+
+                Text(block.statusText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text(block.targetText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func linePath(
+        points: [HabitInsightsChartPoint],
+        in size: CGSize
+    ) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: CGPoint(x: xPosition(for: first.x, width: size.width), y: yPosition(for: first.y, height: size.height)))
+        for point in points.dropFirst() {
+            path.addLine(to: CGPoint(x: xPosition(for: point.x, width: size.width), y: yPosition(for: point.y, height: size.height)))
+        }
+        return path
+    }
+
+    private func gradientArea(in size: CGSize) -> Path {
+        guard let first = block.actualLine.first, let last = block.actualLine.last else {
+            return Path()
+        }
+        var path = linePath(points: block.actualLine, in: size)
+        path.addLine(to: CGPoint(x: xPosition(for: last.x, width: size.width), y: yPosition(for: 0, height: size.height)))
+        path.addLine(to: CGPoint(x: xPosition(for: first.x, width: size.width), y: yPosition(for: 0, height: size.height)))
+        path.closeSubpath()
+        return path
+    }
+
+    private func xPosition(for x: Double, width: CGFloat) -> CGFloat {
+        CGFloat(min(max(x, 0), 1)) * width
+    }
+
+    private func yPosition(for y: Double, height: CGFloat) -> CGFloat {
+        let normalized = min(max(y / maxY, 0), 1)
+        return height - (CGFloat(normalized) * height)
+    }
+}
+
+private struct WeeklyRhythmCardView: View {
+    let block: HabitInsightsWeeklyRhythmBlock
+    let accent: Color
+    let hasAnimatedIn: Bool
+
+    @State private var selectedDayID: Int?
+    private let chartHeight: CGFloat = 116
+    private let barWidth: CGFloat = 24
+
+    private var maxEntries: Int {
+        max(block.days.map(\.entries).max() ?? 0, 1)
+    }
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                HStack(alignment: .bottom, spacing: 10) {
+                    ForEach(Array(block.days.enumerated()), id: \.element.id) { idx, day in
+                        VStack(spacing: 7) {
+                            ZStack(alignment: .top) {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(dayColor(for: day))
+                                    .frame(width: barWidth, height: barHeight(for: day))
+                                    .scaleEffect(y: hasAnimatedIn ? 1 : 0, anchor: .bottom)
+                                    .animation(.easeOut(duration: 0.5).delay(0.03 * Double(idx)), value: hasAnimatedIn)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation(.easeOut(duration: 0.18)) {
+                                            selectedDayID = selectedDayID == day.id ? nil : day.id
+                                        }
+                                    }
+
+                                if selectedDayID == day.id {
+                                    Text("\(day.fullDayLabel)\n\(day.entries) \(day.entries == 1 ? "entry" : "entries")")
+                                        .font(.footnote)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 7)
+                                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        .offset(y: -56)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                        .zIndex(1)
+                                }
+                            }
+                            .frame(height: chartHeight, alignment: .bottom)
+
+                            Text(day.dayLabel)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func barHeight(for day: HabitInsightsWeeklyRhythmDay) -> CGFloat {
+        if day.entries == 0 {
+            return 10
+        }
+        return max(12, CGFloat(Double(day.entries) / Double(maxEntries)) * (chartHeight - 14))
+    }
+
+    private func dayColor(for day: HabitInsightsWeeklyRhythmDay) -> Color {
+        guard day.entries > 0 else {
+            return accent.opacity(0.25)
+        }
+        let ratio = Double(day.entries) / Double(maxEntries)
+        if ratio >= 0.85 {
+            return accent
+        }
+        if ratio >= 0.5 {
+            return accent.opacity(0.7)
+        }
+        return accent.opacity(0.4)
+    }
+}
+
 private struct RadialProgressView: View {
     let progress: Double
     let accent: Color
@@ -668,6 +892,50 @@ private struct BehaviourInsightsCardView: View {
                 Text(block.suggestion)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct GreigModeCardView: View {
+    let block: HabitInsightsGreigModeBlock
+    let accent: Color
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(block.heading)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text("beta")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .opacity(0.8)
+                }
+                .padding(.bottom, 7)
+
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: block.iconName)
+                        .font(.title3)
+                        .foregroundStyle(accent)
+                        .opacity(0.9)
+                        .padding(.top, 2)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(block.headline)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(block.supportText)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
