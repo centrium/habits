@@ -638,6 +638,120 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         XCTAssertEqual(trend.insightText, "You've stayed consistent recently")
     }
 
+    func testCoachingCardAppearsFirst() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Habit(
+            name: "Walk",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .weekly,
+            goalType: .frequency,
+            streakTarget: 3,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 18, hour: 8), calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        guard let first = model.cards.first else {
+            return XCTFail("Expected first card")
+        }
+        if case .motivation = first {
+            // expected
+        } else {
+            XCTFail("Coaching card should be first")
+        }
+    }
+
+    func testCoachingShowsStreakProtectionWhenNotLoggedToday() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Habit(
+            name: "Meditate",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .daily,
+            goalType: .frequency,
+            streakTarget: 1,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        // Build an active streak through yesterday, no log today.
+        for day in 12...19 {
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
+        }
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let coaching = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertTrue(coaching.message.contains("Log today to keep your"))
+        XCTAssertTrue(coaching.message.contains("streak alive"))
+        XCTAssertFalse(coaching.headline.isEmpty)
+        XCTAssertFalse(coaching.supportingText.isEmpty)
+    }
+
+    func testCoachingBehindPaceIncludesNumericAction() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 15, hour: 12)
+        let habit = Habit(
+            name: "Exercise",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .monthly,
+            goalType: .frequency,
+            streakTarget: 12,
+            createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
+        )
+
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 1, hour: 8), calendar: Fixtures.calendar)
+        habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 5, hour: 8), calendar: Fixtures.calendar)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let coaching = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertTrue(coaching.headline.contains("behind pace"))
+        XCTAssertTrue(coaching.supportingText.contains("sessions"))
+    }
+
+    func testMomentumShowsEncouragingEmptyStateWhenNoStreak() throws {
+        let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
+        let habit = Habit(
+            name: "Read",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .daily,
+            goalType: .frequency,
+            streakTarget: 1,
+            createdAt: Fixtures.makeDate(year: 2026, month: 3, day: 1)
+        )
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let momentum = try XCTUnwrap(momentumBlock(from: model))
+        XCTAssertEqual(momentum.currentStreakText, "No streak yet")
+        XCTAssertEqual(momentum.longestStreakText, "Start today to begin your streak")
+        XCTAssertEqual(momentum.paceText, "Your streak begins with the next log")
+    }
+
     private func achievementBlock(from model: HabitInsightsViewModel) -> HabitInsightsAchievementBlock? {
         for card in model.cards {
             if case .achievement(let block) = card {
@@ -686,6 +800,15 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
     private func retentionBlock(from model: HabitInsightsViewModel) -> HabitInsightsRetentionBlock? {
         for card in model.cards {
             if case .retention(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func motivationBlock(from model: HabitInsightsViewModel) -> MotivationCard? {
+        for card in model.cards {
+            if case .motivation(let block) = card {
                 return block
             }
         }

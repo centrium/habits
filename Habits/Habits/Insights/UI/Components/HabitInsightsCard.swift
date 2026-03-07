@@ -7,7 +7,7 @@ struct HabitInsightsPanel<Content: View>: View {
 
     init(
         background: Color = Color(.secondarySystemGroupedBackground),
-        padding: CGFloat = 18,
+        padding: CGFloat = 20,
         @ViewBuilder content: () -> Content
     ) {
         self.background = background

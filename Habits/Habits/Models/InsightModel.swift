@@ -215,8 +215,14 @@ enum Tone {
 }
 
 struct MotivationCard {
-    let message: String
+    let headline: String
+    let supportingText: String
+    let iconName: String
     let tone: Tone
+
+    var message: String {
+        "\(headline)\n\(supportingText)"
+    }
 }
 
 struct HabitInsightsIntentBlock {
@@ -240,6 +246,7 @@ struct HabitInsightsTrendBlock {
     let targetLine: Double?
     let unitText: String?
     let insightText: String?
+    let insightSupportingText: String?
     let isValueBased: Bool
     let isCompletionRatioBars: Bool
 }

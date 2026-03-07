@@ -100,7 +100,7 @@ private struct HabitInsightsCardsRenderer: View {
         case .hero(let block):
             HeroCardView(block: block, accent: accent)
         case .motivation(let block):
-            MotivationCardView(block: block)
+            MotivationCardView(block: block, accent: accent)
         case .intent(let block):
             IntentCardView(block: block)
         case .trend(let block):
@@ -127,7 +127,7 @@ private struct AchievementCardView: View {
                 Text("Achievement")
                     .font(.headline)
                 Text(block.progressText)
-                    .font(.system(size: 34, weight: .semibold))
+                    .font(.largeTitle.weight(.bold))
                     .foregroundStyle(accent)
                     .monospacedDigit()
                 Text(block.statusText)
@@ -155,7 +155,7 @@ private struct MomentumCardView: View {
                 Text("Momentum")
                     .font(.headline)
                 Text(block.currentStreakText)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                 Text(block.longestStreakText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -177,8 +177,7 @@ private struct ConsistencyCardView: View {
                 Text("Consistency")
                     .font(.headline)
                 Text(block.scoreText)
-                    .font(.system(size: 34, weight: .semibold))
-                    .monospacedDigit()
+                    .font(.title3.weight(.semibold))
                 if let averageText = block.averageText {
                     Text(averageText)
                         .font(.subheadline)
@@ -244,7 +243,7 @@ private struct IntentCardView: View {
                     .foregroundStyle(.primary)
 
                 Text(block.primaryText)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
 
                 if let secondary = block.secondaryText {
@@ -264,27 +263,38 @@ private struct IntentCardView: View {
 
 private struct MotivationCardView: View {
     let block: MotivationCard
+    let accent: Color
 
     private var toneColor: Color {
-        switch block.tone {
-        case .encouragement:
-            return .blue
-        case .celebration:
-            return .green
-        case .nudge:
-            return .orange
-        }
+        accent
     }
 
     var body: some View {
         HabitInsightsPanel(background: toneColor.opacity(0.12)) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(block.message)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: block.iconName)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(accent)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Coaching")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(block.headline)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(block.supportingText)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(.white.opacity(0.05))
+        )
     }
 }
 
@@ -356,7 +366,13 @@ private struct TrendCardView: View {
 
                 if let insight = block.insightText {
                     Text(insight)
-                        .font(.subheadline)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let supporting = block.insightSupportingText {
+                    Text(supporting)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
