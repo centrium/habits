@@ -437,7 +437,7 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         XCTAssertFalse(momentum.paceText.contains("goal"))
     }
 
-    func testPatternCardsAppearWhenEnoughSamplesExist() throws {
+    func testBehaviourInsightsAppearWhenEnoughSamplesExist() throws {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
         let habit = Habit(
             name: "Journal",
@@ -462,15 +462,12 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
             now: now
         )
 
-        let patterns = try XCTUnwrap(patternBlock(from: model))
-        XCTAssertFalse(patterns.items.isEmpty)
-        XCTAssertTrue(patterns.items.contains { $0.contains("Strongest day") })
-
-        let retention = try XCTUnwrap(retentionBlock(from: model))
-        XCTAssertFalse(retention.items.isEmpty)
+        let behaviour = try XCTUnwrap(behaviourInsightsBlock(from: model))
+        XCTAssertFalse(behaviour.observations.isEmpty)
+        XCTAssertFalse(behaviour.suggestion.isEmpty)
     }
 
-    func testPatternCardsAreHiddenBelowMinimumSampleSize() {
+    func testBehaviourInsightsAreHiddenBelowMinimumSampleSize() {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
         let habit = Habit(
             name: "Journal",
@@ -494,8 +491,7 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
             now: now
         )
 
-        XCTAssertNil(patternBlock(from: model))
-        XCTAssertNil(retentionBlock(from: model))
+        XCTAssertNil(behaviourInsightsBlock(from: model))
     }
 
     func testOpenEndedHabitUsesActivityCardAndHidesAchievementCard() throws {
@@ -788,18 +784,9 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         return nil
     }
 
-    private func patternBlock(from model: HabitInsightsViewModel) -> HabitInsightsPatternBlock? {
+    private func behaviourInsightsBlock(from model: HabitInsightsViewModel) -> HabitInsightsBehaviourBlock? {
         for card in model.cards {
-            if case .patterns(let block) = card {
-                return block
-            }
-        }
-        return nil
-    }
-
-    private func retentionBlock(from model: HabitInsightsViewModel) -> HabitInsightsRetentionBlock? {
-        for card in model.cards {
-            if case .retention(let block) = card {
+            if case .behaviourInsights(let block) = card {
                 return block
             }
         }

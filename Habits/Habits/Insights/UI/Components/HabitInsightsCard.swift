@@ -2,15 +2,25 @@ import SwiftUI
 
 struct HabitInsightsPanel<Content: View>: View {
     let content: Content
-    let background: Color
+    let backgroundStyle: AnyShapeStyle
     let padding: CGFloat
 
     init(
         background: Color = Color(.secondarySystemGroupedBackground),
-        padding: CGFloat = 20,
+        padding: CGFloat = 22,
         @ViewBuilder content: () -> Content
     ) {
-        self.background = background
+        self.backgroundStyle = AnyShapeStyle(background)
+        self.padding = padding
+        self.content = content()
+    }
+
+    init(
+        backgroundStyle: AnyShapeStyle,
+        padding: CGFloat = 22,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.backgroundStyle = backgroundStyle
         self.padding = padding
         self.content = content()
     }
@@ -21,7 +31,16 @@ struct HabitInsightsPanel<Content: View>: View {
         }
         .padding(padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(backgroundStyle)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(.white.opacity(0.05))
+        )
+        .shadow(
+            color: .black.opacity(0.25),
+            radius: 6,
+            y: 3
+        )
     }
 }

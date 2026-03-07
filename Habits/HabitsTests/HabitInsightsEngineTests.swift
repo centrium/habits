@@ -459,7 +459,7 @@ final class HabitInsightsEngineTests: XCTestCase {
         XCTAssertTrue(motivation.contains("hit your goal early"))
     }
 
-    func testPatternsFallbackUsesSupportiveCopyForLimitedData() throws {
+    func testBehaviourInsightsHiddenForLimitedData() throws {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
         let habit = Fixtures.makeMonthlyFrequencyHabit(
             target: 7,
@@ -478,10 +478,10 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        XCTAssertNil(patternBlock(from: model))
+        XCTAssertNil(behaviourInsightsBlock(from: model))
     }
 
-    func testRetentionSelectionDoesNotShowLargeMilestoneValues() throws {
+    func testBehaviourInsightsDoesNotShowLargeMilestoneValues() throws {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
         let habit = Fixtures.makeMonthlyFrequencyHabit(
             target: 50,
@@ -500,11 +500,12 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        let retention = try XCTUnwrap(retentionBlock(from: model))
-        XCTAssertFalse(retention.items.contains { $0.contains("48") && $0.contains("milestone") })
+        let behaviour = try XCTUnwrap(behaviourInsightsBlock(from: model))
+        XCTAssertFalse(behaviour.observations.contains { $0.contains("48") && $0.contains("milestone") })
+        XCTAssertFalse(behaviour.suggestion.contains("48") && behaviour.suggestion.contains("milestone"))
     }
 
-    func testRetentionSelectionReturnsTopThreeCandidates() throws {
+    func testBehaviourInsightsUsesAtMostThreeLines() throws {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 20, hour: 12)
         let habit = Fixtures.makeMonthlyFrequencyHabit(
             target: 7,
@@ -523,9 +524,165 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        let retention = try XCTUnwrap(retentionBlock(from: model))
-        XCTAssertLessThanOrEqual(retention.items.count, 3)
-        XCTAssertTrue(retention.items.contains("Goal achieved for this period"))
+        let behaviour = try XCTUnwrap(behaviourInsightsBlock(from: model))
+        XCTAssertLessThanOrEqual(behaviour.observations.count + 1, 3)
+        XCTAssertFalse(behaviour.suggestion.isEmpty)
+    }
+
+    func testBehaviourInsightSuggestionUsesTodayWhenWeakestDayIsToday() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 2 // Monday
+        )
+        let habit = makeBehaviourInsightHabit(weakestWeekday: 2, strongestWeekday: 4)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let motivation = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertEqual(motivation.supportingText, "Today is a great day for a quick check-in")
+    }
+
+    func testBehaviourInsightSuggestionUsesTomorrowWhenWeakestDayIsTomorrow() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 1 // Sunday
+        )
+        let habit = makeBehaviourInsightHabit(weakestWeekday: 2, strongestWeekday: 4)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let motivation = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertEqual(motivation.supportingText, "Try a quick check-in tomorrow")
+    }
+
+    func testBehaviourInsightSuggestionUsesLaterThisWeekWhenWeakestDayIsAhead() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 3 // Tuesday
+        )
+        let habit = makeBehaviourInsightHabit(weakestWeekday: 6, strongestWeekday: 4)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let motivation = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertEqual(motivation.supportingText, "A quick check-in later this week could strengthen your routine")
+    }
+
+    func testBehaviourInsightSuggestionUsesEarlyNextWeekWhenWeakestDayHasPassed() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 7 // Saturday
+        )
+        let habit = makeBehaviourInsightHabit(weakestWeekday: 6, strongestWeekday: 4)
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let motivation = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertEqual(motivation.supportingText, "A quick check-in early next week could strengthen your routine")
+    }
+
+    func testBehaviourInsightsSuggestionUsesRelativeTimeWhenWeakestDayHasPassed() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 7 // Saturday
+        )
+        let habit = makeBehaviourInsightHabit(weakestWeekday: 6, strongestWeekday: 4) // Friday weakest
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let behaviour = try XCTUnwrap(behaviourInsightsBlock(from: model))
+        XCTAssertTrue(behaviour.suggestion.contains("early next week"))
+        XCTAssertFalse(behaviour.suggestion.contains("Friday"))
+    }
+
+    func testBehaviourInsightsUsesTonightPhrasingForEveningWindowToday() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 6 // Friday
+        )
+        let habit = makeBehaviourInsightHabit(
+            weakestWeekday: 6,
+            strongestWeekday: 4,
+            commonHour: 21
+        )
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let behaviour = try XCTUnwrap(behaviourInsightsBlock(from: model))
+        XCTAssertTrue(behaviour.suggestion.contains("tonight"))
+        XCTAssertFalse(behaviour.suggestion.contains("today night"))
+    }
+
+    func testBehaviourInsightsSuggestionReferencesGoalWhenHabitHasGoal() throws {
+        let now = firstDate(
+            onOrAfter: Fixtures.makeDate(year: 2026, month: 3, day: 1),
+            weekday: 6 // Friday
+        )
+        let habit = Habit(
+            name: "Workout",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .weekly,
+            goalType: .frequency,
+            streakTarget: 4,
+            createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
+        )
+
+        let firstDay = Fixtures.makeDate(year: 2026, month: 1, day: 1, hour: 20)
+        dates(onOrAfter: firstDay, matchingWeekday: 4, count: 4).forEach { date in
+            habit.log(on: date, calendar: Fixtures.calendar)
+        }
+        dates(onOrAfter: firstDay, matchingWeekday: 6, count: 1).forEach { date in
+            habit.log(on: date, calendar: Fixtures.calendar)
+        }
+
+        let model = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: now,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let behaviour = try XCTUnwrap(behaviourInsightsBlock(from: model))
+        XCTAssertTrue(behaviour.suggestion.contains("goal"))
+        XCTAssertTrue(behaviour.suggestion.contains("week"))
     }
 
     private func trendBlock(from model: HabitInsightsViewModel) -> HabitInsightsTrendBlock? {
@@ -582,21 +739,62 @@ final class HabitInsightsEngineTests: XCTestCase {
         return nil
     }
 
-    private func patternBlock(from model: HabitInsightsViewModel) -> HabitInsightsPatternBlock? {
+    private func behaviourInsightsBlock(from model: HabitInsightsViewModel) -> HabitInsightsBehaviourBlock? {
         for card in model.cards {
-            if case .patterns(let block) = card {
+            if case .behaviourInsights(let block) = card {
                 return block
             }
         }
         return nil
     }
 
-    private func retentionBlock(from model: HabitInsightsViewModel) -> HabitInsightsRetentionBlock? {
-        for card in model.cards {
-            if case .retention(let block) = card {
-                return block
-            }
+    private func makeBehaviourInsightHabit(
+        weakestWeekday: Int,
+        strongestWeekday: Int,
+        commonHour: Int = 8
+    ) -> Habit {
+        let habit = Habit(
+            name: "Journaling",
+            colorHex: "#00AA88",
+            hasStreakGoal: false,
+            createdAt: Fixtures.makeDate(year: 2025, month: 1, day: 1)
+        )
+
+        let firstDay = Fixtures.makeDate(year: 2026, month: 1, day: 1, hour: commonHour)
+        dates(onOrAfter: firstDay, matchingWeekday: strongestWeekday, count: 4).forEach { date in
+            habit.log(on: date, calendar: Fixtures.calendar)
         }
-        return nil
+        dates(onOrAfter: firstDay, matchingWeekday: weakestWeekday, count: 1).forEach { date in
+            habit.log(on: date, calendar: Fixtures.calendar)
+        }
+
+        return habit
+    }
+
+    private func dates(
+        onOrAfter start: Date,
+        matchingWeekday weekday: Int,
+        count: Int
+    ) -> [Date] {
+        var matches: [Date] = []
+        var cursor = start
+        while matches.count < count {
+            if Fixtures.calendar.component(.weekday, from: cursor) == weekday {
+                matches.append(cursor)
+            }
+            cursor = Fixtures.calendar.date(byAdding: .day, value: 1, to: cursor) ?? cursor
+        }
+        return matches
+    }
+
+    private func firstDate(
+        onOrAfter start: Date,
+        weekday: Int
+    ) -> Date {
+        var cursor = start
+        while Fixtures.calendar.component(.weekday, from: cursor) != weekday {
+            cursor = Fixtures.calendar.date(byAdding: .day, value: 1, to: cursor) ?? cursor
+        }
+        return cursor
     }
 }

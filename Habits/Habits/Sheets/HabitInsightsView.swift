@@ -61,8 +61,8 @@ private struct HabitInsightsCardsRenderer: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            ForEach(Array(viewModel.cards.enumerated()), id: \.element.id) { index, card in
-                cardView(card)
+            ForEach(Array(renderRows.enumerated()), id: \.offset) { index, row in
+                rowView(row)
                     .opacity(hasAnimatedIn ? 1 : 0)
                     .offset(y: hasAnimatedIn ? 0 : 8)
                     .animation(
@@ -88,6 +88,42 @@ private struct HabitInsightsCardsRenderer: View {
         }
     }
 
+    private var renderRows: [HabitInsightsRenderRow] {
+        var rows: [HabitInsightsRenderRow] = []
+        var index = 0
+
+        while index < viewModel.cards.count {
+            let card = viewModel.cards[index]
+            if case .achievement(let achievement) = card,
+               index + 1 < viewModel.cards.count,
+               case .momentum(let momentum) = viewModel.cards[index + 1] {
+                rows.append(.paired(achievement, momentum))
+                index += 2
+                continue
+            }
+
+            rows.append(.single(card))
+            index += 1
+        }
+
+        return rows
+    }
+
+    @ViewBuilder
+    private func rowView(_ row: HabitInsightsRenderRow) -> some View {
+        switch row {
+        case .single(let card):
+            cardView(card)
+        case .paired(let achievement, let momentum):
+            HStack(alignment: .top, spacing: 16) {
+                AchievementCardView(block: achievement, accent: accent, minHeight: 210)
+                    .frame(maxWidth: .infinity)
+                MomentumCardView(block: momentum, minHeight: 210)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     @ViewBuilder
     private func cardView(_ card: HabitInsightsCard) -> some View {
         switch card {
@@ -104,66 +140,173 @@ private struct HabitInsightsCardsRenderer: View {
         case .intent(let block):
             IntentCardView(block: block)
         case .trend(let block):
-            TrendCardView(block: block, accent: accent)
+            TrendCardView(block: block, accent: accent, hasAnimatedIn: hasAnimatedIn)
         case .completionHistory(let block):
             CompletionHistoryCardView(block: block)
-        case .patterns(let block):
-            PatternCardView(block: block)
-        case .retention(let block):
-            RetentionCardView(block: block)
+        case .behaviourInsights(let block):
+            BehaviourInsightsCardView(block: block)
         case .debug(let block):
             DebugCardView(block: block)
         }
     }
 }
 
+private enum HabitInsightsRenderRow {
+    case single(HabitInsightsCard)
+    case paired(HabitInsightsAchievementBlock, HabitInsightsMomentumBlock)
+}
+
 private struct AchievementCardView: View {
     let block: HabitInsightsAchievementBlock
     let accent: Color
+    var minHeight: CGFloat? = nil
+
+    private var clampedRatio: Double {
+        min(max(block.progressRatio, 0), 1)
+    }
+
+    private var metricDisplay: AchievementMetricDisplay {
+        buildMetricDisplay(from: block.progressText)
+    }
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Achievement")
-                    .font(.headline)
-                Text(block.progressText)
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(accent)
-                    .monospacedDigit()
-                Text(block.statusText)
-                    .font(.subheadline)
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if let overflowText = block.overflowText {
-                    Text(overflowText)
+
+                RadialProgressView(
+                    progress: clampedRatio,
+                    accent: accent,
+                    progressText: metricDisplay.ringText
+                )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(metricDisplay.progressLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(block.statusText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let overflowText = block.overflowText {
+                        Text(overflowText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                ProgressView(value: min(max(block.progressRatio, 0), 1))
-                    .tint(accent)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: minHeight, alignment: .topLeading)
         }
+    }
+
+    private func buildMetricDisplay(from progressText: String) -> AchievementMetricDisplay {
+        let slashParts = progressText
+            .split(separator: "/", maxSplits: 1)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        let currencySymbols = Set(["$", "£", "€", "¥", "₹", "₩", "₽"])
+
+        guard slashParts.count == 2 else {
+            let ring = compactRingToken(from: progressText, currencySymbols: currencySymbols)
+            return AchievementMetricDisplay(ringText: ring, progressLine: progressText)
+        }
+
+        let current = slashParts[0]
+        let target = slashParts[1]
+        let combined = current + target
+        let hasCurrency = combined.contains { currencySymbols.contains(String($0)) }
+
+        let ring = compactRingToken(from: current, currencySymbols: currencySymbols)
+        let progressLine = hasCurrency ? "\(current) of \(target)" : "\(current) / \(target)"
+        return AchievementMetricDisplay(ringText: ring, progressLine: progressLine)
+    }
+
+    private func compactRingToken(
+        from raw: String,
+        currencySymbols: Set<String>
+    ) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "0" }
+
+        let collapsed = trimmed.replacingOccurrences(of: " ", with: "")
+        let first = collapsed.first.map(String.init)
+        let hasCurrencyPrefix = first.map { currencySymbols.contains($0) } ?? false
+        if collapsed.count <= 5 {
+            return collapsed
+        }
+
+        let numeric = ringNumericToken(from: collapsed)
+        if hasCurrencyPrefix, let symbol = first {
+            let withSymbol = "\(symbol)\(numeric)"
+            if withSymbol.count <= 5 {
+                return withSymbol
+            }
+        }
+        return numeric
+    }
+
+    private func ringNumericToken(from raw: String) -> String {
+        let allowed = Set("0123456789.,")
+        let cleaned = raw.filter { allowed.contains($0) }.replacingOccurrences(of: ",", with: "")
+        guard let value = Double(cleaned) else { return "0" }
+        if value >= 1_000_000 {
+            return "\(Int((value / 1_000_000).rounded()))m"
+        }
+        if value >= 1_000 {
+            return "\(Int((value / 1_000).rounded()))k"
+        }
+        return normalizedMetricToken(cleaned)
+    }
+
+    private func normalizedMetricToken(_ raw: String) -> String {
+        let normalized = raw.replacingOccurrences(of: ",", with: "")
+        guard let value = Double(normalized) else { return "0" }
+        if abs(value.rounded() - value) < 0.001 {
+            return String(Int(value.rounded()))
+        }
+        return String(format: "%.1f", value)
+    }
+
+    private struct AchievementMetricDisplay {
+        let ringText: String
+        let progressLine: String
     }
 }
 
 private struct MomentumCardView: View {
     let block: HabitInsightsMomentumBlock
+    var minHeight: CGFloat? = nil
 
     var body: some View {
         HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Momentum")
-                    .font(.headline)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Text(block.currentStreakText)
-                    .font(.title3.weight(.semibold))
-                Text(block.longestStreakText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text(block.paceText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.title3.weight(.bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(block.longestStreakText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if minHeight == nil {
+                        Text(block.paceText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: minHeight, alignment: .topLeading)
         }
     }
 }
@@ -270,10 +413,18 @@ private struct MotivationCardView: View {
     }
 
     var body: some View {
-        HabitInsightsPanel(background: toneColor.opacity(0.12)) {
+        HabitInsightsPanel(
+            backgroundStyle: AnyShapeStyle(
+                LinearGradient(
+                    colors: [toneColor.opacity(0.18), toneColor.opacity(0.10)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        ) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: block.iconName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(accent)
                     .padding(.top, 1)
 
@@ -291,16 +442,13 @@ private struct MotivationCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(.white.opacity(0.05))
-        )
     }
 }
 
 private struct TrendCardView: View {
     let block: HabitInsightsTrendBlock
     let accent: Color
+    let hasAnimatedIn: Bool
 
     private let chartHeight: CGFloat = 86
     private let barSpacing: CGFloat = 5
@@ -314,12 +462,16 @@ private struct TrendCardView: View {
         }
     }
 
+    private var peakValue: Double {
+        max(block.points.map(\.value).max() ?? 0, 0)
+    }
+
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 14) {
                 Text(block.heading)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
 
                 GeometryReader { geometry in
                     let barCount = CGFloat(max(block.points.count, 1))
@@ -336,10 +488,21 @@ private struct TrendCardView: View {
                         }
 
                         HStack(alignment: .bottom, spacing: barSpacing) {
-                            ForEach(block.points) { point in
+                            ForEach(Array(block.points.enumerated()), id: \.element.id) { idx, point in
                                 RoundedRectangle(cornerRadius: 3)
-                                    .fill(point.value > 0 ? accent.opacity(0.8) : Color.secondary.opacity(0.15))
+                                    .fill(barColor(for: point))
                                     .frame(width: width, height: barHeight(for: point.value))
+                                    .overlay {
+                                        if isPeak(point) {
+                                            RoundedRectangle(cornerRadius: 3)
+                                                .fill(Color.white.opacity(0.10))
+                                        }
+                                    }
+                                    .scaleEffect(y: hasAnimatedIn ? 1 : 0.02, anchor: .bottom)
+                                    .animation(
+                                        .easeOut(duration: 0.3).delay(0.02 * Double(idx)),
+                                        value: hasAnimatedIn
+                                    )
                             }
                         }
                     }
@@ -397,6 +560,64 @@ private struct TrendCardView: View {
         let split = raw.split(separator: " ")
         return String(split.first ?? Substring(raw))
     }
+
+    private func barColor(for point: HabitInsightsTrendPoint) -> Color {
+        guard point.value > 0 else {
+            return accent.opacity(0.25)
+        }
+
+        if peakValue > 0, point.value == peakValue {
+            return accent
+        }
+
+        return accent
+    }
+
+    private func isPeak(_ point: HabitInsightsTrendPoint) -> Bool {
+        peakValue > 0 && point.value == peakValue
+    }
+}
+
+private struct RadialProgressView: View {
+    let progress: Double
+    let accent: Color
+    let progressText: String
+
+    @State private var animatedProgress: Double = 0
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(accent.opacity(0.15), lineWidth: 6)
+
+            Circle()
+                .trim(from: 0, to: min(max(animatedProgress, 0), 1))
+                .stroke(
+                    accent,
+                    style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            Text(progressText)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(accent)
+                .monospacedDigit()
+                .minimumScaleFactor(0.60)
+                .lineLimit(1)
+        }
+        .frame(width: 112, height: 112)
+        .onAppear {
+            animatedProgress = 0
+            withAnimation(.easeOut(duration: 0.35)) {
+                animatedProgress = progress
+            }
+        }
+        .onChange(of: progress) { _, newValue in
+            withAnimation(.easeOut(duration: 0.35)) {
+                animatedProgress = newValue
+            }
+        }
+    }
 }
 
 private struct CompletionHistoryCardView: View {
@@ -428,8 +649,8 @@ private struct CompletionHistoryCardView: View {
     }
 }
 
-private struct PatternCardView: View {
-    let block: HabitInsightsPatternBlock
+private struct BehaviourInsightsCardView: View {
+    let block: HabitInsightsBehaviourBlock
 
     var body: some View {
         HabitInsightsPanel {
@@ -438,30 +659,15 @@ private struct PatternCardView: View {
                     .font(.headline)
                     .foregroundStyle(.primary)
 
-                ForEach(block.items, id: \.self) { item in
+                ForEach(block.observations, id: \.self) { item in
                     Text(item)
                         .font(.subheadline)
                         .foregroundStyle(.primary)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
 
-private struct RetentionCardView: View {
-    let block: HabitInsightsRetentionBlock
-
-    var body: some View {
-        HabitInsightsPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(block.heading)
-                    .font(.headline)
-                ForEach(block.items, id: \.self) { item in
-                    Text(item)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                Text(block.suggestion)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

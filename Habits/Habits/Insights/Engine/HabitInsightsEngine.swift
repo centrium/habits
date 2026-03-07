@@ -194,26 +194,15 @@ struct HabitInsightsEngine {
             )
         )
 
-        let patternItems = patternCoachingItems(from: behaviour)
-        if !patternItems.isEmpty {
+        if let behaviourInsights = behaviourInsightsBlock(
+            habit: habit,
+            isOpenEnded: isOpenEnded,
+            from: behaviour,
+            calendar: calendar,
+            now: now
+        ) {
             cards.append(
-                .patterns(
-                    HabitInsightsPatternBlock(
-                        heading: "Patterns",
-                        items: patternItems
-                    )
-                )
-            )
-        }
-
-        if !behaviour.retentionItems.isEmpty {
-            cards.append(
-                .retention(
-                    HabitInsightsRetentionBlock(
-                        heading: "Retention Insights",
-                        items: behaviour.retentionItems
-                    )
-                )
+                .behaviourInsights(behaviourInsights)
             )
         }
 
@@ -266,7 +255,11 @@ struct HabitInsightsEngine {
             return streakMilestone
         }
 
-        if let behaviourTemplate = behaviourInsightTemplate(from: behaviour) {
+        if let behaviourTemplate = behaviourInsightTemplate(
+            from: behaviour,
+            calendar: calendar,
+            now: now
+        ) {
             return behaviourTemplate
         }
 
@@ -402,14 +395,20 @@ struct HabitInsightsEngine {
     }
 
     private static func behaviourInsightTemplate(
-        from behaviour: HabitBehaviourSnapshot
+        from behaviour: HabitBehaviourSnapshot,
+        calendar: Calendar,
+        now: Date
     ) -> CoachingTemplate? {
         if let strongest = behaviour.strongestWeekday, let weakest = behaviour.weakestWeekday {
             return CoachingTemplate(
                 id: .behaviourInsight,
                 priority: 5,
                 headline: "You show up best on \(strongest)",
-                supportingText: "Plan a small check-in this \(weakest)",
+                supportingText: behaviourInsightSupportingText(
+                    weakestWeekday: weakest,
+                    calendar: calendar,
+                    now: now
+                ),
                 iconName: "sparkles",
                 tone: .encouragement
             )
@@ -427,6 +426,73 @@ struct HabitInsightsEngine {
         }
 
         return nil
+    }
+
+    private static func behaviourInsightSupportingText(
+        weakestWeekday: String,
+        calendar: Calendar,
+        now: Date
+    ) -> String {
+        guard let weakestWeekdayNumber = weekdayNumber(for: weakestWeekday, calendar: calendar) else {
+            return "A quick check-in later this week could strengthen your routine"
+        }
+
+        let todayWeekdayNumber = calendar.component(.weekday, from: now)
+        if weakestWeekdayNumber == todayWeekdayNumber {
+            return "Today is a great day for a quick check-in"
+        }
+
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        let tomorrowWeekdayNumber = calendar.component(.weekday, from: tomorrow)
+        if weakestWeekdayNumber == tomorrowWeekdayNumber {
+            return "Try a quick check-in tomorrow"
+        }
+
+        if isLaterThisWeek(
+            targetWeekday: weakestWeekdayNumber,
+            todayWeekday: todayWeekdayNumber,
+            calendar: calendar
+        ) {
+            return "A quick check-in later this week could strengthen your routine"
+        }
+
+        return "A quick check-in early next week could strengthen your routine"
+    }
+
+    private static func weekdayNumber(
+        for weekdayName: String,
+        calendar: Calendar
+    ) -> Int? {
+        for (index, symbol) in calendar.weekdaySymbols.enumerated() where symbol.caseInsensitiveCompare(weekdayName) == .orderedSame {
+            return index + 1
+        }
+        for (index, symbol) in calendar.standaloneWeekdaySymbols.enumerated() where symbol.caseInsensitiveCompare(weekdayName) == .orderedSame {
+            return index + 1
+        }
+
+        return nil
+    }
+
+    private static func isLaterThisWeek(
+        targetWeekday: Int,
+        todayWeekday: Int,
+        calendar: Calendar
+    ) -> Bool {
+        let orderedWeekdays = orderedWeekdayNumbers(firstWeekday: calendar.firstWeekday)
+        guard
+            let targetIndex = orderedWeekdays.firstIndex(of: targetWeekday),
+            let todayIndex = orderedWeekdays.firstIndex(of: todayWeekday)
+        else {
+            return false
+        }
+        return targetIndex > todayIndex
+    }
+
+    private static func orderedWeekdayNumbers(firstWeekday: Int) -> [Int] {
+        let normalizedFirst = max(1, min(7, firstWeekday))
+        let tail = Array(normalizedFirst...7)
+        let head = normalizedFirst > 1 ? Array(1..<(normalizedFirst)) : []
+        return tail + head
     }
 
     private static func achievementSupportingText(
@@ -705,19 +771,188 @@ struct HabitInsightsEngine {
         return "A quick check-in could rebuild momentum"
     }
 
-    private static func patternCoachingItems(
+    private static func behaviourInsightsBlock(
+        habit: Habit,
+        isOpenEnded: Bool,
+        from behaviour: HabitBehaviourSnapshot,
+        calendar: Calendar,
+        now: Date
+    ) -> HabitInsightsBehaviourBlock? {
+        var observations: [String] = []
+        if let strongest = behaviour.strongestWeekday, let window = behaviour.commonLogWindow {
+            observations.append("You tend to log most often on \(pluralizedWeekday(strongest)) \(windowPlural(window)).")
+        } else if let strongest = behaviour.strongestWeekday {
+            observations.append("You show up best on \(pluralizedWeekday(strongest)).")
+        } else if let window = behaviour.commonLogWindow {
+            observations.append("\(window) is your most consistent logging window.")
+        }
+
+        if observations.count < 2, let weakest = behaviour.weakestWeekday {
+            observations.append("\(pluralizedWeekday(weakest)) tend to be quieter for you.")
+        }
+
+        if observations.count < 2, let summary = secondaryBehaviourObservation(from: behaviour) {
+            observations.append(summary)
+        }
+
+        let suggestion = behaviourSuggestion(
+            habit: habit,
+            isOpenEnded: isOpenEnded,
+            weakestWeekday: behaviour.weakestWeekday,
+            commonLogWindow: behaviour.commonLogWindow,
+            calendar: calendar,
+            now: now
+        )
+
+        let trimmedObservations = Array(observations.prefix(2))
+        if trimmedObservations.isEmpty {
+            return nil
+        }
+
+        return HabitInsightsBehaviourBlock(
+            heading: "Behaviour Insights",
+            observations: trimmedObservations,
+            suggestion: suggestion
+        )
+    }
+
+    private static func behaviourSuggestion(
+        habit: Habit,
+        isOpenEnded: Bool,
+        weakestWeekday: String?,
+        commonLogWindow: String?,
+        calendar: Calendar,
+        now: Date
+    ) -> String {
+        let timeframe: BehaviourSuggestionTimeframe
+        if let weakestWeekday {
+            timeframe = suggestionTimeframe(
+                weakestWeekday: weakestWeekday,
+                calendar: calendar,
+                now: now
+            )
+        } else {
+            timeframe = .tomorrow
+        }
+
+        let when = naturalTimePhrase(
+            timeframe: timeframe,
+            window: commonLogWindow
+        )
+
+        if isOpenEnded || !habit.hasGoal {
+            return "A quick entry \(when) would keep your momentum going."
+        }
+
+        if habit.goalType == .cumulative, CurrencyDetection.detect(unit: habit.trimmedUnit).isCurrency {
+            return "A quick check-in \(when) would move you closer to your savings goal."
+        }
+
+        return "Logging \(when) would move you closer to your \(habit.goalPeriod.unit) goal."
+    }
+
+    private enum BehaviourSuggestionTimeframe {
+        case today
+        case tomorrow
+        case laterThisWeek
+        case earlyNextWeek
+    }
+
+    private static func suggestionTimeframe(
+        weakestWeekday: String,
+        calendar: Calendar,
+        now: Date
+    ) -> BehaviourSuggestionTimeframe {
+        guard let weakestWeekdayNumber = weekdayNumber(for: weakestWeekday, calendar: calendar) else {
+            return .laterThisWeek
+        }
+
+        let todayWeekdayNumber = calendar.component(.weekday, from: now)
+        if weakestWeekdayNumber == todayWeekdayNumber {
+            return .today
+        }
+
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        let tomorrowWeekdayNumber = calendar.component(.weekday, from: tomorrow)
+        if weakestWeekdayNumber == tomorrowWeekdayNumber {
+            return .tomorrow
+        }
+
+        if isLaterThisWeek(
+            targetWeekday: weakestWeekdayNumber,
+            todayWeekday: todayWeekdayNumber,
+            calendar: calendar
+        ) {
+            return .laterThisWeek
+        }
+
+        return .earlyNextWeek
+    }
+
+    private static func naturalTimePhrase(
+        timeframe: BehaviourSuggestionTimeframe,
+        window: String?
+    ) -> String {
+        let loweredWindow = window?.lowercased()
+        switch timeframe {
+        case .today:
+            if loweredWindow == "night" || loweredWindow == "evening" {
+                return "tonight"
+            }
+            if loweredWindow == "morning" {
+                return "this morning"
+            }
+            if loweredWindow == "afternoon" {
+                return "this afternoon"
+            }
+            return "today"
+        case .tomorrow:
+            if loweredWindow == "night" || loweredWindow == "evening" {
+                return "tomorrow evening"
+            }
+            if loweredWindow == "morning" {
+                return "tomorrow morning"
+            }
+            if loweredWindow == "afternoon" {
+                return "tomorrow afternoon"
+            }
+            return "tomorrow"
+        case .laterThisWeek:
+            return "later this week"
+        case .earlyNextWeek:
+            return "early next week"
+        }
+    }
+
+    private static func secondaryBehaviourObservation(
         from behaviour: HabitBehaviourSnapshot
-    ) -> [String] {
-        var items: [String] = []
-        if let strongest = behaviour.strongestWeekday {
-            items.append("You show up best on \(strongest)")
+    ) -> String? {
+        guard let activity = behaviour.activitySummary else { return nil }
+        if activity.entriesThisWeek > 0 {
+            return "You logged this habit \(activity.entriesThisWeek) \(activity.entriesThisWeek == 1 ? "time" : "times") this week."
         }
-        if let window = behaviour.commonLogWindow {
-            items.append("\(window) is your most consistent logging window")
+        if activity.entriesThisMonth > 0 {
+            return "You logged \(activity.entriesThisMonth) \(activity.entriesThisMonth == 1 ? "entry" : "entries") this month."
         }
-        if let weakest = behaviour.weakestWeekday {
-            items.append("A quick \(weakest) check-in could strengthen your routine")
+        return nil
+    }
+
+    private static func windowPlural(_ window: String) -> String {
+        switch window.lowercased() {
+        case "night":
+            return "nights"
+        case "evening":
+            return "evenings"
+        case "morning":
+            return "mornings"
+        case "afternoon":
+            return "afternoons"
+        default:
+            return "\(window.lowercased())s"
         }
-        return Array(items.prefix(3))
+    }
+
+    private static func pluralizedWeekday(_ weekday: String) -> String {
+        weekday.hasSuffix("s") ? weekday : "\(weekday)s"
     }
 }

@@ -149,8 +149,7 @@ enum HabitInsightsCard: Identifiable {
     case intent(HabitInsightsIntentBlock)
     case trend(HabitInsightsTrendBlock)
     case completionHistory(HabitInsightsCompletionHistoryBlock)
-    case patterns(HabitInsightsPatternBlock)
-    case retention(HabitInsightsRetentionBlock)
+    case behaviourInsights(HabitInsightsBehaviourBlock)
     case debug(HabitInsightsDebugBlock)
 
     var id: String {
@@ -171,10 +170,8 @@ enum HabitInsightsCard: Identifiable {
             return "trend"
         case .completionHistory:
             return "completion-history"
-        case .patterns:
-            return "patterns"
-        case .retention:
-            return "retention"
+        case .behaviourInsights:
+            return "behaviour-insights"
         case .debug:
             return "debug"
         }
@@ -258,14 +255,10 @@ struct HabitInsightsCompletionHistoryBlock {
     let longestStreakText: String?
 }
 
-struct HabitInsightsPatternBlock {
+struct HabitInsightsBehaviourBlock {
     let heading: String
-    let items: [String]
-}
-
-struct HabitInsightsRetentionBlock {
-    let heading: String
-    let items: [String]
+    let observations: [String]
+    let suggestion: String
 }
 
 struct HabitInsightsDebugBlock {
