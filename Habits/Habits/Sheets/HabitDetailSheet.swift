@@ -61,19 +61,6 @@ struct HabitDetailSheet: View {
                             } : nil
                         )
 
-                        HStack {
-                            Spacer()
-
-                            Button {
-                                insightsDetent = .large
-                                showInsights = true
-                            } label: {
-                                Text("Insights")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
 
                         if let progressSnapshot {
                             HabitProgressSummary(
@@ -150,16 +137,31 @@ struct HabitDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    DismissButton()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.subheadline.weight(.semibold))
+                    }
                 }
+                
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showInsights = true
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(red: 0.82, green: 0.68, blue: 0.42))
+                    }
+
                     Button {
                         showEdit = true
                     } label: {
-                        Text("Edit")
+                        Image(systemName: "pencil")
                             .font(.subheadline.weight(.semibold))
                     }
+
                 }
             }
         }

@@ -193,6 +193,10 @@ final class Habit {
     var allowsDecimals: Bool
 
     var createdAt: Date
+    
+    var reminderEnabled: Bool
+    var reminderHour: Int
+    var reminderMinute: Int
 
     // Logs
     @Relationship(deleteRule: .cascade)
@@ -229,7 +233,10 @@ final class Habit {
         targetValue: Double? = nil,
         unit: String? = nil,
         allowsDecimals: Bool = false,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        reminderEnabled: Bool = false,
+        reminderHour: Int = 20,
+        reminderMinute: Int = 0
     ) {
         self.id = UUID()
         self.name = name
@@ -246,6 +253,10 @@ final class Habit {
         self.allowsDecimals = allowsDecimals
 
         self.createdAt = createdAt
+        self.reminderEnabled = reminderEnabled
+        self.reminderHour = reminderHour
+        self.reminderMinute = reminderMinute
+        
     }
 }
 

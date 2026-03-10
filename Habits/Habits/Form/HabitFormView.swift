@@ -1,10 +1,3 @@
-//
-//  HabitFormView.swift
-//  Habits
-//
-//  Created by Matt Adams on 26/02/2026.
-//
-
 import SwiftUI
 
 struct HabitFormView: View {
@@ -19,6 +12,11 @@ struct HabitFormView: View {
     @Binding var targetValue: Double
     @Binding var unit: String
     @Binding var allowsDecimals: Bool
+
+    // NEW bindings passed from AddHabitSheet
+    @Binding var reminderEnabled: Bool
+    @Binding var reminderTime: Date
+
     let palette: [(String, String)]
 
     @State private var showIconPicker = false
@@ -27,6 +25,7 @@ struct HabitFormView: View {
 
     var body: some View {
         Form {
+
             Section {
                 HabitHeaderPreview(
                     name: name,
@@ -96,6 +95,7 @@ struct HabitFormView: View {
                 Toggle("Set a goal", isOn: $hasStreakGoal)
 
                 if hasStreakGoal {
+
                     Picker("Goal Type", selection: $goalType) {
                         ForEach(GoalType.allCases) { type in
                             Text(type.label).tag(type)
@@ -128,6 +128,19 @@ struct HabitFormView: View {
                     Text("Open-ended — log any amount.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Reminder") {
+
+                Toggle("Remind me", isOn: $reminderEnabled)
+
+                if reminderEnabled {
+                    DatePicker(
+                        "Time",
+                        selection: $reminderTime,
+                        displayedComponents: .hourAndMinute
+                    )
                 }
             }
         }

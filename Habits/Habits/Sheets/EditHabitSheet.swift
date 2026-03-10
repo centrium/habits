@@ -1,11 +1,3 @@
-//
-//  EditHabitSheet.swift
-//  Habits
-//
-//  Created by Matt Adams on 26/02/2026.
-//
-
-
 import SwiftUI
 import SwiftData
 
@@ -26,6 +18,9 @@ struct EditHabitSheet: View {
     @State private var targetValue: Double
     @State private var unit: String
     @State private var allowsDecimals: Bool
+
+    @State private var reminderEnabled: Bool
+    @State private var reminderTime: Date
 
     private let palette: [(String, String)] = [
         ("Violet", "#7C3AED"),
@@ -51,6 +46,17 @@ struct EditHabitSheet: View {
         _targetValue = State(initialValue: habit.targetValue ?? 1)
         _unit = State(initialValue: habit.unit ?? "")
         _allowsDecimals = State(initialValue: habit.allowsDecimals)
+
+        _reminderEnabled = State(initialValue: habit.reminderEnabled)
+
+        let date = Calendar.current.date(
+            from: DateComponents(
+                hour: habit.reminderHour,
+                minute: habit.reminderMinute
+            )
+        ) ?? Date()
+
+        _reminderTime = State(initialValue: date)
     }
 
     var body: some View {
@@ -67,6 +73,8 @@ struct EditHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
+                reminderEnabled: $reminderEnabled,
+                reminderTime: $reminderTime,
                 palette: palette
             )
             .navigationTitle("Edit Habit")
@@ -78,7 +86,6 @@ struct EditHabitSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         saveChanges()
-                        dismiss()
                     }
                     .disabled(isUnchanged || !canSave)
                 }
@@ -90,6 +97,9 @@ struct EditHabitSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let hour = Calendar.current.component(.hour, from: reminderTime)
+        let minute = Calendar.current.component(.minute, from: reminderTime)
+
         return trimmedName == habit.name &&
                (trimmedSubtitle.isEmpty ? nil : trimmedSubtitle) == habit.subtitle &&
                selectedHex == habit.colorHex &&
@@ -100,7 +110,10 @@ struct EditHabitSheet: View {
                streakTarget == habit.streakTarget &&
                targetValue == (habit.targetValue ?? 1) &&
                unit == (habit.unit ?? "") &&
-               allowsDecimals == habit.allowsDecimals
+               allowsDecimals == habit.allowsDecimals &&
+               reminderEnabled == habit.reminderEnabled &&
+               hour == habit.reminderHour &&
+               minute == habit.reminderMinute
     }
 
     private var canSave: Bool {
@@ -113,7 +126,8 @@ struct EditHabitSheet: View {
         case .frequency:
             return streakTarget >= 1
         case .cumulative:
-            return targetValue > 0 && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return targetValue > 0 &&
+                   !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -126,6 +140,7 @@ struct EditHabitSheet: View {
 
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
+
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalUnit = trimmedUnit.isEmpty ? nil : trimmedUnit
 
@@ -142,10 +157,22 @@ struct EditHabitSheet: View {
         habit.unit = finalUnit
         habit.allowsDecimals = allowsDecimals
 
+        let components = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
+
+        habit.reminderEnabled = reminderEnabled
+        habit.reminderHour = components.hour ?? 20
+        habit.reminderMinute = components.minute ?? 0
+
         if habit.goalType == .cumulative {
             _ = habit.normalizeCumulativeLogs()
         }
 
         try? modelContext.save()
+
+        dismiss()
+
+        Task {
+            await NotificationService.shared.syncHabitReminder(for: habit)
+        }
     }
 }

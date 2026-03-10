@@ -10,7 +10,13 @@ import SwiftData
 
 @main
 struct HabitsApp: App {
+    
+    init() {
+        NotificationService.shared.registerNotificationCategories()
+    }
+    
     @StateObject private var userSettings = UserSettings()
+    
 
     var body: some Scene {
         WindowGroup {

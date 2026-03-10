@@ -1,11 +1,3 @@
-//
-//  AddHabitSheet.swift
-//  Habits
-//
-//  Created by Matt Adams on 23/02/2026.
-//
-
-
 import SwiftUI
 import SwiftData
 
@@ -24,6 +16,11 @@ struct AddHabitSheet: View {
     @State private var targetValue: Double = 1
     @State private var unit: String = ""
     @State private var allowsDecimals = false
+
+    @State private var reminderEnabled: Bool = false
+    @State private var reminderTime: Date = Calendar.current.date(
+        from: DateComponents(hour: 20, minute: 0)
+    ) ?? Date()
 
     private let palette: [(String, String)] = [
         ("Violet", "#7C3AED"),
@@ -48,6 +45,8 @@ struct AddHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
+                reminderEnabled: $reminderEnabled,
+                reminderTime: $reminderTime,
                 palette: palette
             )
             .navigationTitle("New Habit")
@@ -59,7 +58,6 @@ struct AddHabitSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add") {
                         addHabit()
-                        dismiss()
                     }
                     .disabled(!canSave)
                 }
@@ -90,8 +88,11 @@ struct AddHabitSheet: View {
 
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
+
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalUnit = trimmedUnit.isEmpty ? nil : trimmedUnit
+
+        let timeComponents = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
 
         let habit = Habit(
             name: trimmedName,
@@ -104,10 +105,21 @@ struct AddHabitSheet: View {
             streakTarget: streakTarget,
             targetValue: finalUnit == nil ? nil : targetValue,
             unit: finalUnit,
-            allowsDecimals: allowsDecimals
+            allowsDecimals: allowsDecimals,
+            reminderEnabled: reminderEnabled,
+            reminderHour: timeComponents.hour ?? 20,
+            reminderMinute: timeComponents.minute ?? 0
         )
 
         modelContext.insert(habit)
         try? modelContext.save()
+
+        Task {
+            await NotificationService.shared.syncHabitReminder(for: habit)
+
+            await MainActor.run {
+                dismiss()
+            }
+        }
     }
 }
