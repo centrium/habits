@@ -56,7 +56,7 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.currentPeriod.progress, 2, accuracy: 0.0001)
-        XCTAssertEqual(snapshot.currentPeriod.target, 3, accuracy: 0.0001)
+        XCTAssertEqual(snapshot.currentPeriod.target!, 3, accuracy: 0.0001)
 
         let model = HabitInsightsEngine.insights(
             for: habit,
@@ -95,7 +95,7 @@ final class HabitInsightsEngineFoundationTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.currentPeriod.progress, 12, accuracy: 0.0001)
-        XCTAssertEqual(snapshot.currentPeriod.target, 20, accuracy: 0.0001)
+        XCTAssertEqual(snapshot.currentPeriod.target!, 20, accuracy: 0.0001)
 
         let model = HabitInsightsEngine.insights(
             for: habit,

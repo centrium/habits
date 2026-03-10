@@ -11,7 +11,7 @@ import SwiftData
 
 final class HabitLogService {
     private enum HeatmapConstants {
-        static let rollingWindowDays = 90
+        static let visibleWindowDays = 140
     }
 
     private let modelContext: ModelContext
@@ -67,62 +67,38 @@ final class HabitLogService {
         habit.logs.removeAll { $0.day == day }
     }
 
-    private func heatmapWindow(for endDate: Date) -> DateInterval {
-        let end = calendar.startOfDay(for: endDate)
-        let start = calendar.date(byAdding: .day, value: -(HeatmapConstants.rollingWindowDays - 1), to: end) ?? end
-        let intervalEnd = calendar.date(byAdding: .day, value: 1, to: end) ?? end
-        return DateInterval(start: start, end: intervalEnd)
-    }
-
     private func normalizeLogsIfNeeded(for habit: Habit) {
         guard habit.normalizeCumulativeLogs(calendar: calendar) else { return }
         try? modelContext.save()
     }
 
-    private func dailyHeatmapValue(for habit: Habit, on date: Date) -> Double {
-        switch habit.goalType {
-        case .frequency:
-            let count = Double(habit.count(on: date, calendar: calendar))
-            if habit.hasGoal, let target = habit.effectiveTargetValue, target > 0 {
-                return min(count, target)
-            }
-            return count
-        case .cumulative:
-            return max(0, habit.value(on: date, calendar: calendar))
-        }
-    }
-
-    private func windowDailyValues(for habit: Habit, endingAt date: Date) -> [Double] {
-        let interval = heatmapWindow(for: date)
-        let frequencyCap = habit.goalType == .frequency ? habit.effectiveTargetValue : nil
-        var grouped: [Date: Double] = [:]
-
-        for log in habit.logs where log.day >= interval.start && log.day < interval.end {
-            let contribution: Double
-
-            switch habit.goalType {
-            case .frequency:
-                contribution = Double(log.frequencyContribution)
-            case .cumulative:
-                contribution = log.numericValue
-            }
-
-            guard contribution > 0 else { continue }
-            grouped[log.day, default: 0] += contribution
-        }
-
-        return grouped.values.map { total in
-            if let frequencyCap, frequencyCap > 0 {
-                return min(total, frequencyCap)
-            }
-            return total
-        }
+    private func heatmapWindow(for endDate: Date) -> DateInterval {
+        let end = calendar.startOfDay(for: endDate)
+        let start = calendar.date(byAdding: .day, value: -(HeatmapConstants.visibleWindowDays - 1), to: end) ?? end
+        let intervalEnd = calendar.date(byAdding: .day, value: 1, to: end) ?? end
+        return DateInterval(start: start, end: intervalEnd)
     }
 
     private func heatmapReferenceDate(for habit: Habit, requested date: Date) -> Date {
         let normalizedRequestedDate = calendar.startOfDay(for: date)
+        let normalizedToday = calendar.startOfDay(for: Date())
         let latestLoggedDay = habit.logs.map(\.day).max() ?? normalizedRequestedDate
-        return max(normalizedRequestedDate, latestLoggedDay)
+        return max(normalizedToday, max(normalizedRequestedDate, latestLoggedDay))
+    }
+
+    private func maxDailyCumulativeValueInHeatmapWindow(for habit: Habit, endingAt endDate: Date) -> Double {
+        guard habit.goalType == .cumulative else { return 0 }
+
+        let interval = heatmapWindow(for: endDate)
+        var dailyTotals: [Date: Double] = [:]
+
+        for log in habit.logs where log.day >= interval.start && log.day < interval.end {
+            let value = log.numericValue
+            guard value > 0 else { continue }
+            dailyTotals[log.day, default: 0] += value
+        }
+
+        return dailyTotals.values.max() ?? 0
     }
 }
 
@@ -237,18 +213,21 @@ extension HabitLogService {
 extension HabitLogService {
     func intensity(for habit: Habit, on date: Date) -> Double {
         normalizeLogsIfNeeded(for: habit)
-        let dayValue = dailyHeatmapValue(for: habit, on: date)
-        guard dayValue > 0 else { return HeatmapNormalizer.intensity(forTier: 0) }
+        let dailyLogCount = max(0, habit.count(on: date, calendar: calendar))
+        let dailyLogValue = max(0, habit.value(on: date, calendar: calendar))
+        guard dailyLogCount > 0 || dailyLogValue > 0 else { return HeatmapNormalizer.intensity(forTier: 0) }
 
         let referenceDate = heatmapReferenceDate(for: habit, requested: date)
+        let maxDailyValueInWindow = maxDailyCumulativeValueInHeatmapWindow(for: habit, endingAt: referenceDate)
+
         let tier = HeatmapNormalizer.tier(
             for: HeatmapNormalizationContext(
                 goalType: habit.goalType,
-                hasTarget: habit.hasGoal,
+                hasGoal: habit.hasGoal,
                 targetValue: habit.effectiveTargetValue,
-                metricKind: metricKind(for: habit),
-                dailyValue: dayValue,
-                recentDailyValues: windowDailyValues(for: habit, endingAt: referenceDate)
+                dailyLogCount: dailyLogCount,
+                dailyLogValue: dailyLogValue,
+                maxDailyValueInWindow: maxDailyValueInWindow
             )
         )
         return HeatmapNormalizer.intensity(forTier: tier)

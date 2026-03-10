@@ -95,7 +95,7 @@ final class HabitInsightsEngineTests: XCTestCase {
 
         XCTAssertEqual(detailSnapshot.current, insightsSnapshot.currentPeriod.progress, accuracy: 0.0001)
         XCTAssertEqual(detailSnapshot.target, insightsSnapshot.currentPeriod.target ?? 0, accuracy: 0.0001)
-        XCTAssertEqual(insightsSnapshot.currentPeriod.progressCount, 8)
+        XCTAssertEqual(insightsSnapshot.currentPeriod.progress, 8, accuracy: 0.0001)
         XCTAssertEqual(insightsSnapshot.currentPeriod.progressClamped, 7, accuracy: 0.0001)
         XCTAssertEqual(insightsSnapshot.currentPeriod.surplus, 1, accuracy: 0.0001)
         XCTAssertEqual(detailSnapshot.overflowText, "+1 extra")
@@ -127,39 +127,66 @@ final class HabitInsightsEngineTests: XCTestCase {
         XCTAssertEqual(days, 31)
     }
 
-    func testProjectionChangesWhenAnchorDateChanges() {
+    func testProjectionChangesWhenAnchorDateChanges() throws {
         let now = Fixtures.makeDate(year: 2026, month: 3, day: 25, hour: 9)
-        let habit = Fixtures.makeMonthlyFrequencyHabit(
-            target: 7,
+        let habit = Habit(
+            name: "Dog Walking",
+            colorHex: "#00AA88",
+            hasStreakGoal: true,
+            goalPeriod: .weekly,
+            goalType: .frequency,
+            streakTarget: 7,
             createdAt: Fixtures.makeDate(year: 2026, month: 1, day: 1)
         )
 
         for _ in 0..<5 {
-            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 5, hour: 8), calendar: Fixtures.calendar)
+            habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 21, hour: 8), calendar: Fixtures.calendar)
         }
 
-        let mar4 = HabitInsightsEngine.snapshot(
+        let mar15 = Fixtures.makeDate(year: 2026, month: 3, day: 15, hour: 12)
+        let mar22 = Fixtures.makeDate(year: 2026, month: 3, day: 22, hour: 12)
+
+        let earlySnapshot = HabitInsightsEngine.snapshot(
             for: habit,
-            anchorDate: Fixtures.makeDate(year: 2026, month: 3, day: 4, hour: 12),
+            anchorDate: mar15,
             calendar: Fixtures.calendar,
             weekStartPreference: Fixtures.weekStart,
             now: now
         )
 
-        let mar5 = HabitInsightsEngine.snapshot(
+        let lateSnapshot = HabitInsightsEngine.snapshot(
             for: habit,
-            anchorDate: Fixtures.makeDate(year: 2026, month: 3, day: 5, hour: 12),
+            anchorDate: mar22,
             calendar: Fixtures.calendar,
             weekStartPreference: Fixtures.weekStart,
             now: now
         )
 
-        XCTAssertEqual(mar4.currentPeriodSoFar.progressCount, 0)
-        XCTAssertEqual(mar5.currentPeriodSoFar.progressCount, 5)
-        XCTAssertNotEqual(mar4.pace.projectedTotal, mar5.pace.projectedTotal, accuracy: 0.0001)
+        XCTAssertEqual(earlySnapshot.currentPeriod.progress, 0, accuracy: 0.0001)
+        XCTAssertEqual(lateSnapshot.currentPeriod.progress, 5, accuracy: 0.0001)
+
+        let earlyFoundation = HabitInsightsEngine.habitInsightSnapshot(
+            for: habit,
+            anchorDate: mar15,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let lateFoundation = HabitInsightsEngine.habitInsightSnapshot(
+            for: habit,
+            anchorDate: mar22,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+
+        let earlyPace = try XCTUnwrap(earlyFoundation.pace)
+        let latePace = try XCTUnwrap(lateFoundation.pace)
+        XCTAssertNotEqual(earlyPace.projectedTotal, latePace.projectedTotal, accuracy: 0.0001)
     }
 
-    func testCompletionHistoryExcludesPreCreationPeriods() throws {
+    func testTrendBucketsIncludePreCreationMonthsAsZeros() {
         let anchorDate = Fixtures.makeDate(year: 2026, month: 6, day: 20)
         let habit = Fixtures.makeMonthlyFrequencyHabit(
             target: 2,
@@ -172,7 +199,7 @@ final class HabitInsightsEngineTests: XCTestCase {
         habit.log(on: Fixtures.makeDate(year: 2026, month: 6, day: 3), calendar: Fixtures.calendar)
         habit.log(on: Fixtures.makeDate(year: 2026, month: 6, day: 8), calendar: Fixtures.calendar)
 
-        let snapshot = HabitInsightsEngine.snapshot(
+        let foundation = HabitInsightsEngine.habitInsightSnapshot(
             for: habit,
             anchorDate: anchorDate,
             calendar: Fixtures.calendar,
@@ -180,9 +207,13 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: anchorDate
         )
 
-        let completion = try XCTUnwrap(snapshot.completionHistory)
-        XCTAssertEqual(completion.total, 3)   // Apr, May, Jun only
-        XCTAssertEqual(completion.completed, 2)
+        XCTAssertEqual(foundation.trend.months.count, 6)
+        let totals = foundation.trend.months.map(\.total)
+        let expectedTotals: [Double] = [0, 0, 0, 0, 2, 2]
+        XCTAssertEqual(totals.count, expectedTotals.count)
+        for (actual, expected) in zip(totals, expectedTotals) {
+            XCTAssertEqual(actual, expected, accuracy: 0.0001)
+        }
     }
 
     func testMonthlyTrendWindowUsesSixBucketsAndLabel() throws {
@@ -196,14 +227,14 @@ final class HabitInsightsEngineTests: XCTestCase {
             habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day), calendar: Fixtures.calendar)
         }
 
-        let snapshot = HabitInsightsEngine.snapshot(
+        let foundation = HabitInsightsEngine.habitInsightSnapshot(
             for: habit,
             anchorDate: anchorDate,
             calendar: Fixtures.calendar,
             weekStartPreference: Fixtures.weekStart,
             now: anchorDate
         )
-        XCTAssertEqual(snapshot.trendBuckets.count, 6)
+        XCTAssertEqual(foundation.trend.months.count, 6)
 
         let model = HabitInsightsEngine.insights(
             for: habit,
@@ -233,7 +264,7 @@ final class HabitInsightsEngineTests: XCTestCase {
         )
         likelyShort.logValue(on: Fixtures.makeDate(year: 2026, month: 3, day: 5, hour: 8), value: 1, calendar: Fixtures.calendar)
 
-        let onTrackSnapshot = HabitInsightsEngine.snapshot(
+        let onTrackSnapshot = HabitInsightsEngine.habitInsightSnapshot(
             for: likelyHit,
             anchorDate: anchorDate,
             calendar: Fixtures.calendar,
@@ -241,7 +272,7 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: anchorDate
         )
 
-        let shortSnapshot = HabitInsightsEngine.snapshot(
+        let shortSnapshot = HabitInsightsEngine.habitInsightSnapshot(
             for: likelyShort,
             anchorDate: anchorDate,
             calendar: Fixtures.calendar,
@@ -249,13 +280,15 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: anchorDate
         )
 
-        if case .likelyToHitTarget = onTrackSnapshot.pace.status {
+        let onTrackPace = try? XCTUnwrap(onTrackSnapshot.pace)
+        if case .likelyToHitTarget = onTrackPace?.status {
             // expected
         } else {
             XCTFail("Expected likely-to-hit-target pace status")
         }
 
-        if case .likelyShort = shortSnapshot.pace.status {
+        let shortPace = try? XCTUnwrap(shortSnapshot.pace)
+        if case .likelyShort = shortPace?.status {
             // expected
         } else {
             XCTFail("Expected likely-short pace status")
@@ -307,16 +340,15 @@ final class HabitInsightsEngineTests: XCTestCase {
             habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
         }
 
-        let snapshot = HabitInsightsEngine.snapshot(
+        let model = HabitInsightsEngine.insights(
             for: habit,
-            anchorDate: now,
             calendar: Fixtures.calendar,
             weekStartPreference: Fixtures.weekStart,
             now: now
         )
 
-        let motivation = try XCTUnwrap(snapshot.motivationMessage)
-        XCTAssertFalse(motivation.isEmpty)
+        let motivation = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertFalse(motivation.message.isEmpty)
     }
 
     func testProjectionMessagingWaitsForEnoughElapsedUnits() throws {
@@ -339,7 +371,7 @@ final class HabitInsightsEngineTests: XCTestCase {
         XCTAssertEqual(momentum.paceText, "Log a bit more this month to get a stable projection.")
     }
 
-    func testSnapshotSeparatesPeriodProgressAndProgressSoFar() {
+    func testSnapshotSeparatesPeriodProgressAndProgressSoFar() throws {
         let anchorDate = Fixtures.makeDate(year: 2026, month: 2, day: 1, hour: 12)
         let now = Fixtures.makeDate(year: 2026, month: 2, day: 1, hour: 12)
         let habit = Fixtures.makeMonthlyFrequencyHabit(
@@ -359,8 +391,17 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(snapshot.currentPeriod.progressCount, 4)
-        XCTAssertEqual(snapshot.currentPeriodSoFar.progressCount, 0)
+        let foundation = HabitInsightsEngine.habitInsightSnapshot(
+            for: habit,
+            anchorDate: anchorDate,
+            calendar: Fixtures.calendar,
+            weekStartPreference: Fixtures.weekStart,
+            now: now
+        )
+        let pace = try XCTUnwrap(foundation.pace)
+
+        XCTAssertEqual(snapshot.currentPeriod.progress, 4, accuracy: 0.0001)
+        XCTAssertEqual(pace.projectedTotal, 0, accuracy: 0.0001)
     }
 
     func testLastSixMonthsUsesHistoricalMonthlySummaries() {
@@ -385,7 +426,7 @@ final class HabitInsightsEngineTests: XCTestCase {
         }
         habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: 5, hour: 8), calendar: Fixtures.calendar)
 
-        let snapshot = HabitInsightsEngine.snapshot(
+        let foundation = HabitInsightsEngine.habitInsightSnapshot(
             for: habit,
             anchorDate: now,
             calendar: Fixtures.calendar,
@@ -393,11 +434,21 @@ final class HabitInsightsEngineTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(snapshot.lastSixMonths.count, 6)
-        XCTAssertEqual(snapshot.lastSixMonths.map(\.completionCount), [0, 2, 4, 3, 4, 1])
-        XCTAssertEqual(snapshot.lastSixMonths.map(\.goal), [4, 4, 4, 4, 4, 4])
-        XCTAssertEqual(snapshot.lastSixMonths.map(\.goalMet), [false, false, true, false, true, false])
-        let ratios = snapshot.lastSixMonths.map(\.completionRatio)
+        XCTAssertEqual(foundation.trend.months.count, 6)
+        let totals = foundation.trend.months.map(\.total)
+        let expectedTotals: [Double] = [0, 2, 4, 3, 4, 1]
+        XCTAssertEqual(totals.count, expectedTotals.count)
+        for (actual, expected) in zip(totals, expectedTotals) {
+            XCTAssertEqual(actual, expected, accuracy: 0.0001)
+        }
+
+        let targets = foundation.trend.months.map { $0.target ?? 0 }
+        let expectedTargets: [Double] = [4, 4, 4, 4, 4, 4]
+        XCTAssertEqual(targets.count, expectedTargets.count)
+        for (actual, expected) in zip(targets, expectedTargets) {
+            XCTAssertEqual(actual, expected, accuracy: 0.0001)
+        }
+        let ratios = foundation.trend.months.compactMap(\.completionRatio)
         let expectedRatios: [Double] = [0, 0.5, 1, 0.75, 1, 0.25]
         XCTAssertEqual(ratios.count, expectedRatios.count)
         for (actual, expected) in zip(ratios, expectedRatios) {
@@ -429,7 +480,7 @@ final class HabitInsightsEngineTests: XCTestCase {
 
         let trend = try XCTUnwrap(trendBlock(from: model))
         XCTAssertTrue(trend.isCompletionRatioBars)
-        XCTAssertEqual(trend.targetLine, 1, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(trend.targetLine), 1, accuracy: 0.0001)
         XCTAssertEqual(trend.points.count, 6)
         let trailingValues = Array(trend.points.suffix(2).map(\.value))
         XCTAssertEqual(trailingValues[0], 1, accuracy: 0.0001)
@@ -447,16 +498,15 @@ final class HabitInsightsEngineTests: XCTestCase {
             habit.log(on: Fixtures.makeDate(year: 2026, month: 3, day: day, hour: 8), calendar: Fixtures.calendar)
         }
 
-        let snapshot = HabitInsightsEngine.snapshot(
+        let model = HabitInsightsEngine.insights(
             for: habit,
-            anchorDate: now,
+            logAnchorDate: now,
             calendar: Fixtures.calendar,
             weekStartPreference: Fixtures.weekStart,
             now: now
         )
-
-        let motivation = try XCTUnwrap(snapshot.motivationMessage)
-        XCTAssertTrue(motivation.contains("hit your goal early"))
+        let motivation = try XCTUnwrap(motivationBlock(from: model))
+        XCTAssertTrue(motivation.supportingText.contains("hit your goal early"))
     }
 
     func testBehaviourInsightsHiddenForLimitedData() throws {

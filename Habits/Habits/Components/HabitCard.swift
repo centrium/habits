@@ -11,6 +11,7 @@ import SwiftData
 struct HabitCard: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject var deepLinkManager: DeepLinkManager
     @Bindable var habit: Habit
     @State private var isDetailPresented = false
     @State private var service: HabitLogService?
@@ -98,6 +99,17 @@ struct HabitCard: View {
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
             service?.updateCalendar(calculationCalendar)
+        }
+        .onChange(of: deepLinkManager.openHabitID) { _, id in
+            guard let id else { return }
+
+            if id == habit.id {
+                isDetailPresented = true
+
+                DispatchQueue.main.async {
+                    deepLinkManager.openHabitID = nil
+                }
+            }
         }
     }
 

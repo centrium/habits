@@ -8,7 +8,6 @@ final class HabitBehaviorTests: XCTestCase {
         static let low = 0.24
         static let medium = 0.40
         static let high = 0.56
-        static let bright = 0.86
     }
 
     private struct Fixtures {
@@ -120,48 +119,6 @@ final class HabitBehaviorTests: XCTestCase {
             let day = Fixtures.calendar.date(byAdding: .day, value: -offset, to: endDate) ?? endDate
             habit.logs.append(HabitLog(timestamp: day, value: value, calendar: Fixtures.calendar))
         }
-    }
-
-    private func heatmapTier(for intensity: Double) -> Int {
-        switch intensity {
-        case let value where abs(value - HeatmapLevels.none) < 0.0001:
-            return 0
-        case let value where abs(value - HeatmapLevels.low) < 0.0001:
-            return 1
-        case let value where abs(value - HeatmapLevels.medium) < 0.0001:
-            return 2
-        case let value where abs(value - HeatmapLevels.high) < 0.0001:
-            return 3
-        case let value where abs(value - HeatmapLevels.bright) < 0.0001:
-            return 4
-        default:
-            XCTFail("Unexpected heatmap intensity \(intensity)")
-            return -1
-        }
-    }
-
-    private func heatmapTierCounts(
-        for habit: Habit,
-        service: HabitLogService,
-        endingAt endDate: Date,
-        days: Int = 90
-    ) -> [Int] {
-        let start = Fixtures.calendar.date(byAdding: .day, value: -(days - 1), to: endDate) ?? endDate
-        var counts = Array(repeating: 0, count: 5)
-
-        for offset in 0..<days {
-            let day = Fixtures.calendar.date(byAdding: .day, value: offset, to: start) ?? start
-            let tier = heatmapTier(for: service.intensity(for: habit, on: day))
-            counts[tier] += 1
-        }
-
-        return counts
-    }
-
-    private func activeShare(of tier: Int, in counts: [Int]) -> Double {
-        let activeDays = counts.dropFirst().reduce(0, +)
-        guard activeDays > 0 else { return 0 }
-        return Double(counts[tier]) / Double(activeDays)
     }
 
     // MARK: - Logging Behavior
@@ -991,7 +948,7 @@ final class HabitBehaviorTests: XCTestCase {
 
     // MARK: - Intensity Behavior
 
-    func testDailyFrequencyTargetOneMarksAnyActivityAsBright() {
+    func testDailyFrequencyTargetOneMarksAnyActivityAsMaxIntensity() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
@@ -1001,11 +958,11 @@ final class HabitBehaviorTests: XCTestCase {
         let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
         _ = service.setCount(for: habit, on: day, to: 1)
 
-        XCTAssertEqual(service.intensity(for: habit, on: day), HeatmapLevels.bright, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day), HeatmapLevels.high, accuracy: 0.0001)
         XCTAssertEqual(service.intensity(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 9)), HeatmapLevels.none, accuracy: 0.0001)
     }
 
-    func testDailyFrequencyTargetTwoUsesMediumAndBrightTiers() {
+    func testDailyFrequencyTargetTwoUsesMediumAndMaxTiers() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
@@ -1018,10 +975,10 @@ final class HabitBehaviorTests: XCTestCase {
         _ = service.setCount(for: habit, on: nextDay, to: 2)
 
         XCTAssertEqual(service.intensity(for: habit, on: day), HeatmapLevels.medium, accuracy: 0.0001)
-        XCTAssertEqual(service.intensity(for: habit, on: nextDay), HeatmapLevels.bright, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: nextDay), HeatmapLevels.high, accuracy: 0.0001)
     }
 
-    func testDailyFrequencyTargetThreeUsesLowHighAndBrightTiers() {
+    func testDailyFrequencyTargetThreeUsesLowMediumAndMaxTiers() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
@@ -1038,9 +995,9 @@ final class HabitBehaviorTests: XCTestCase {
         _ = service.setCount(for: habit, on: day4, to: 5)
 
         XCTAssertEqual(service.intensity(for: habit, on: day1), HeatmapLevels.low, accuracy: 0.0001)
-        XCTAssertEqual(service.intensity(for: habit, on: day2), HeatmapLevels.high, accuracy: 0.0001)
-        XCTAssertEqual(service.intensity(for: habit, on: day3), HeatmapLevels.bright, accuracy: 0.0001)
-        XCTAssertEqual(service.intensity(for: habit, on: day4), HeatmapLevels.bright, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day2), HeatmapLevels.medium, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day3), HeatmapLevels.high, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day4), HeatmapLevels.high, accuracy: 0.0001)
     }
 
     func testWeeklyGoalBasedIntensityUsesDailyCountNotWeeklyAggregate() {
@@ -1056,83 +1013,43 @@ final class HabitBehaviorTests: XCTestCase {
         _ = service.setCount(for: habit, on: monday, to: 3)
         _ = service.setCount(for: habit, on: tuesday, to: 1)
 
-        XCTAssertEqual(service.intensity(for: habit, on: monday), HeatmapLevels.bright, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: monday), HeatmapLevels.high, accuracy: 0.0001)
         XCTAssertEqual(service.intensity(for: habit, on: tuesday), HeatmapLevels.low, accuracy: 0.0001)
     }
 
-    func testOpenEndedFrequencyDistributionKeepsBrightTierUncommon() {
+    func testOpenEndedFrequencyIntensityUsesExplicitCountBands() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
         let habit = makeOpenEndedHabit()
         context.insert(habit)
 
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        seedFrequencyCounts(
-            Array(repeating: 0, count: 52) +
-            Array(repeating: 1, count: 16) +
-            Array(repeating: 2, count: 12) +
-            Array(repeating: 4, count: 6) +
-            Array(repeating: 8, count: 4),
-            endingAt: endDate,
-            into: habit
-        )
+        let day0 = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let day1 = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+        let day2 = Fixtures.makeDate(year: 2025, month: 6, day: 12)
+        let day3 = Fixtures.makeDate(year: 2025, month: 6, day: 13)
 
-        let counts = heatmapTierCounts(for: habit, service: service, endingAt: endDate)
+        _ = service.setCount(for: habit, on: day1, to: 1)
+        _ = service.setCount(for: habit, on: day2, to: 2)
+        _ = service.setCount(for: habit, on: day3, to: 5)
 
-        XCTAssertGreaterThan(activeShare(of: 4, in: counts), 0)
-        XCTAssertLessThan(activeShare(of: 4, in: counts), 0.20)
-        XCTAssertGreaterThan(activeShare(of: 3, in: counts), 0.10)
+        XCTAssertEqual(service.intensity(for: habit, on: day0), HeatmapLevels.none, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day1), HeatmapLevels.low, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day2), HeatmapLevels.medium, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: day3), HeatmapLevels.high, accuracy: 0.0001)
     }
 
-    func testWeeklyFrequencyDistributionKeepsClusteredActivityCalm() {
+    func testGoalBasedIntensityCapsAtMaxWhenExceedingTarget() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
-        let habit = makeGoalHabit(goalType: .weekly, target: 3)
+        let habit = makeGoalHabit(goalType: .daily, target: 3)
         context.insert(habit)
 
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        seedFrequencyCounts(
-            Array(repeating: 0, count: 54) +
-            Array(repeating: 1, count: 18) +
-            Array(repeating: 2, count: 12) +
-            Array(repeating: 3, count: 5) +
-            [4],
-            endingAt: endDate,
-            into: habit
-        )
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        _ = service.setCount(for: habit, on: day, to: 6)
 
-        let counts = heatmapTierCounts(for: habit, service: service, endingAt: endDate)
-
-        XCTAssertGreaterThan(activeShare(of: 4, in: counts), 0)
-        XCTAssertLessThan(activeShare(of: 4, in: counts), 0.25)
-        XCTAssertGreaterThan(activeShare(of: 3, in: counts), 0.20)
-    }
-
-    func testLargeTargetFrequencyUsesDistributionInsteadOfImmediateBrightTiles() {
-        let container = Fixtures.makeContainer()
-        let context = ModelContext(container)
-        let service = HabitLogService(modelContext: context)
-        let habit = makeGoalHabit(goalType: .daily, target: 6)
-        context.insert(habit)
-
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        seedFrequencyCounts(
-            Array(repeating: 0, count: 48) +
-            Array(repeating: 1, count: 20) +
-            Array(repeating: 2, count: 12) +
-            Array(repeating: 4, count: 8) +
-            Array(repeating: 6, count: 2),
-            endingAt: endDate,
-            into: habit
-        )
-
-        let counts = heatmapTierCounts(for: habit, service: service, endingAt: endDate)
-
-        XCTAssertGreaterThan(activeShare(of: 4, in: counts), 0)
-        XCTAssertLessThan(activeShare(of: 4, in: counts), 0.15)
-        XCTAssertGreaterThan(service.intensity(for: habit, on: endDate), service.intensity(for: habit, on: Fixtures.makeDate(year: 2025, month: 6, day: 28)))
+        XCTAssertEqual(service.intensity(for: habit, on: day), HeatmapLevels.high, accuracy: 0.0001)
     }
 
     // MARK: - Cumulative Goal Behavior
@@ -1344,132 +1261,61 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(service.suggestedQuickEntryValue(for: habit), 1)
     }
 
-    func testTargetBoundCumulativeBooksDistributionKeepsBrightTierRare() {
+    func testTargetBoundCumulativeUsesRelativeDailyEffortBands() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
-        let habit = makeCumulativeHabit(goalPeriod: .yearly, target: 20, unit: "books", allowsDecimals: false)
+        let habit = makeCumulativeHabit(goalPeriod: .daily, target: 20, unit: "books", allowsDecimals: false)
         context.insert(habit)
 
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        let seededValues: [Double] =
-            Array(repeating: 0.0, count: 40) +
-            Array(repeating: 1.0, count: 20) +
-            Array(repeating: 2.0, count: 18) +
-            Array(repeating: 3.0, count: 8) +
-            Array(repeating: 5.0, count: 4)
-        seedCumulativeValues(
-            seededValues,
-            endingAt: endDate,
-            into: habit
-        )
+        let lowDay = Fixtures.makeDate(year: 2025, month: 6, day: 10)
+        let mediumDay = Fixtures.makeDate(year: 2025, month: 6, day: 11)
+        let maxDay = Fixtures.makeDate(year: 2025, month: 6, day: 12)
+        let overGoalDay = Fixtures.makeDate(year: 2025, month: 6, day: 13)
 
-        let counts = heatmapTierCounts(for: habit, service: service, endingAt: endDate)
+        _ = service.addLog(for: habit, on: lowDay, value: 4)      // 0.20
+        _ = service.addLog(for: habit, on: mediumDay, value: 12)  // 0.60
+        _ = service.addLog(for: habit, on: maxDay, value: 20)     // 1.0
+        _ = service.addLog(for: habit, on: overGoalDay, value: 35)// 1.75
 
-        XCTAssertGreaterThan(activeShare(of: 4, in: counts), 0.02)
-        XCTAssertLessThan(activeShare(of: 4, in: counts), 0.12)
-        XCTAssertGreaterThan(activeShare(of: 3, in: counts), 0.10)
-        XCTAssertLessThan(activeShare(of: 3, in: counts), 0.25)
+        XCTAssertEqual(service.intensity(for: habit, on: lowDay), HeatmapLevels.low, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: mediumDay), HeatmapLevels.medium, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: maxDay), HeatmapLevels.medium, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: habit, on: overGoalDay), HeatmapLevels.high, accuracy: 0.0001)
     }
 
-    func testTargetBoundCumulativeMoneyDistributionStaysCalmAndPerGoal() {
+    func testTargetBoundCumulativeMoneyUsesRelativeDailyEffortBands() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
-        let moneyHabit = makeCumulativeHabit(goalPeriod: .monthly, target: 500, unit: "usd", allowsDecimals: false)
-        let booksHabit = makeCumulativeHabit(goalPeriod: .yearly, target: 20, unit: "books", allowsDecimals: false)
+        let moneyHabit = makeCumulativeHabit(goalPeriod: .daily, target: 500, unit: "usd", allowsDecimals: false)
         context.insert(moneyHabit)
-        context.insert(booksHabit)
 
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        let moneySeededValues: [Double] =
-            Array(repeating: 0.0, count: 38) +
-            Array(repeating: 25.0, count: 16) +
-            Array(repeating: 50.0, count: 18) +
-            Array(repeating: 100.0, count: 12) +
-            Array(repeating: 150.0, count: 4) +
-            Array(repeating: 300.0, count: 2)
-        seedCumulativeValues(
-            moneySeededValues,
-            endingAt: endDate,
-            into: moneyHabit
-        )
-        let booksSeededValues: [Double] =
-            Array(repeating: 0.0, count: 40) +
-            Array(repeating: 1.0, count: 20) +
-            Array(repeating: 2.0, count: 18) +
-            Array(repeating: 3.0, count: 8) +
-            Array(repeating: 5.0, count: 4)
-        seedCumulativeValues(
-            booksSeededValues,
-            endingAt: endDate,
-            into: booksHabit
-        )
+        let lowDay = Fixtures.makeDate(year: 2025, month: 6, day: 20)
+        let mediumDay = Fixtures.makeDate(year: 2025, month: 6, day: 21)
+        let maxDay = Fixtures.makeDate(year: 2025, month: 6, day: 22)
 
-        let moneyCounts = heatmapTierCounts(for: moneyHabit, service: service, endingAt: endDate)
-        let booksCounts = heatmapTierCounts(for: booksHabit, service: service, endingAt: endDate)
+        _ = service.addLog(for: moneyHabit, on: lowDay, value: 150)
+        _ = service.addLog(for: moneyHabit, on: mediumDay, value: 300)
+        _ = service.addLog(for: moneyHabit, on: maxDay, value: 550)
 
-        XCTAssertGreaterThan(activeShare(of: 4, in: moneyCounts), 0)
-        XCTAssertLessThan(activeShare(of: 4, in: moneyCounts), 0.20)
-        XCTAssertGreaterThan(activeShare(of: 3, in: moneyCounts), 0.10)
-        XCTAssertGreaterThan(activeShare(of: 4, in: booksCounts), 0)
-        XCTAssertGreaterThan(service.intensity(for: moneyHabit, on: endDate), HeatmapLevels.none)
-        XCTAssertGreaterThan(service.intensity(for: booksHabit, on: endDate), HeatmapLevels.none)
+        XCTAssertEqual(service.intensity(for: moneyHabit, on: lowDay), HeatmapLevels.low, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: moneyHabit, on: mediumDay), HeatmapLevels.medium, accuracy: 0.0001)
+        XCTAssertEqual(service.intensity(for: moneyHabit, on: maxDay), HeatmapLevels.high, accuracy: 0.0001)
     }
 
-    func testOpenEndedCumulativePagesDistributionUsesMiddleTiersMostOften() {
+    func testOpenEndedCumulativeUsesLogCountBandsNotLoggedValue() {
         let container = Fixtures.makeContainer()
         let context = ModelContext(container)
         let service = HabitLogService(modelContext: context)
         let habit = makeOpenEndedCumulativeHabit(unit: "pages")
         context.insert(habit)
 
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        let seededValues: [Double] =
-            Array(repeating: 0.0, count: 35) +
-            Array(repeating: 10.0, count: 22) +
-            Array(repeating: 20.0, count: 15) +
-            Array(repeating: 35.0, count: 10) +
-            Array(repeating: 50.0, count: 6) +
-            Array(repeating: 80.0, count: 2)
-        seedCumulativeValues(
-            seededValues,
-            endingAt: endDate,
-            into: habit
-        )
+        let day = Fixtures.makeDate(year: 2025, month: 6, day: 30)
+        _ = service.addLog(for: habit, on: day, value: 80)
+        _ = service.addLog(for: habit, on: day, value: 120)
 
-        let counts = heatmapTierCounts(for: habit, service: service, endingAt: endDate)
-        let middleShare = activeShare(of: 2, in: counts) + activeShare(of: 3, in: counts)
-
-        XCTAssertGreaterThan(middleShare, 0.30)
-        XCTAssertGreaterThan(activeShare(of: 4, in: counts), 0)
-        XCTAssertLessThan(activeShare(of: 4, in: counts), 0.20)
-    }
-
-    func testOpenEndedCumulativeSpikeDoesNotFlattenRemainingGrid() {
-        let container = Fixtures.makeContainer()
-        let context = ModelContext(container)
-        let service = HabitLogService(modelContext: context)
-        let habit = makeOpenEndedCumulativeHabit(unit: "pages")
-        context.insert(habit)
-
-        let endDate = Fixtures.makeDate(year: 2025, month: 6, day: 30)
-        seedCumulativeValues(
-            Array(repeating: 0, count: 50) +
-            Array(repeating: 1, count: 16) +
-            Array(repeating: 2, count: 12) +
-            Array(repeating: 3, count: 8) +
-            [40, 60, 120, 250],
-            endingAt: endDate,
-            into: habit
-        )
-
-        let counts = heatmapTierCounts(for: habit, service: service, endingAt: endDate)
-
-        XCTAssertGreaterThan(counts[1], 0)
-        XCTAssertGreaterThan(counts[2], 0)
-        XCTAssertGreaterThan(activeShare(of: 4, in: counts), 0)
-        XCTAssertLessThan(activeShare(of: 4, in: counts), 0.20)
+        XCTAssertEqual(service.intensity(for: habit, on: day), HeatmapLevels.medium, accuracy: 0.0001)
     }
 
     func testUpdatingCumulativeEntryUpdatesDayAndPeriodTotals() {
@@ -1632,7 +1478,7 @@ final class HabitBehaviorTests: XCTestCase {
         XCTAssertEqual(try! XCTUnwrap(habit.progress(for: day, calendar: Fixtures.calendar)), 0.6, accuracy: 0.0001)
         XCTAssertEqual(habit.inlineProgressText(for: day, calendar: Fixtures.calendar), "3 / 5 books")
         XCTAssertGreaterThan(service.intensity(for: habit, on: day), HeatmapLevels.none)
-        XCTAssertEqual(beforeIntensity, HeatmapLevels.bright, accuracy: 0.0001)
+        XCTAssertEqual(beforeIntensity, HeatmapLevels.high, accuracy: 0.0001)
     }
 
     // MARK: - Persistence and Query Behavior

@@ -6,6 +6,23 @@
 //
 
 import UserNotifications
+import SwiftData
+
+protocol NotificationCenterProtocol {
+    func setNotificationCategories(_ categories: Set<UNNotificationCategory>)
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
+    func notificationStatus() async -> UNAuthorizationStatus
+    func add(_ request: UNNotificationRequest) async throws
+    func removePendingNotificationRequests(withIdentifiers identifiers: [String])
+    func removeDeliveredNotifications(withIdentifiers identifiers: [String])
+}
+
+extension UNUserNotificationCenter: NotificationCenterProtocol {
+    func notificationStatus() async -> UNAuthorizationStatus {
+        let settings = await notificationSettings()
+        return settings.authorizationStatus
+    }
+}
 
 enum NotificationActionID {
     static let logHabit = "LOG_HABIT"
@@ -20,7 +37,16 @@ final class NotificationService {
 
     static let shared = NotificationService()
 
-    private init() {}
+    private let notificationCenter: NotificationCenterProtocol
+    private let modelContainerProvider: () -> ModelContainer?
+
+    init(
+        notificationCenter: NotificationCenterProtocol = UNUserNotificationCenter.current(),
+        modelContainerProvider: @escaping () -> ModelContainer? = { NotificationActionHandler.shared.modelContainer }
+    ) {
+        self.notificationCenter = notificationCenter
+        self.modelContainerProvider = modelContainerProvider
+    }
     
     func registerNotificationCategories() {
         let logAction = UNNotificationAction(
@@ -42,15 +68,14 @@ final class NotificationService {
             options: []
         )
 
-        UNUserNotificationCenter.current().setNotificationCategories([habitCategory])
+        notificationCenter.setNotificationCategories([habitCategory])
     }
 
     // MARK: Permission
 
     func requestPermission() async -> Bool {
         do {
-            let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .sound, .badge])
+            let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
             return granted
         } catch {
             return false
@@ -58,8 +83,7 @@ final class NotificationService {
     }
 
     func notificationStatus() async -> UNAuthorizationStatus {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        return settings.authorizationStatus
+        await notificationCenter.notificationStatus()
     }
     
     // MARK: Global Check In
@@ -86,12 +110,11 @@ final class NotificationService {
             trigger: trigger
         )
 
-        try? await UNUserNotificationCenter.current().add(request)
+        try? await notificationCenter.add(request)
     }
     
     func removeDailyCheckIn() {
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: ["daily-checkin"])
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: ["daily-checkin"])
     }
     
     // Habit Notifications
@@ -101,14 +124,23 @@ final class NotificationService {
 
     func removeHabitReminder(habitID: UUID) {
         let identifier = habitReminderIdentifier(for: habitID)
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: [identifier])
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
     }
     
     func syncHabitReminder(for habit: Habit) async {
+
         removeHabitReminder(habitID: habit.id)
 
         guard habit.reminderEnabled else { return }
+
+        // Do not remind if already completed today
+        if let modelContainer = modelContainerProvider() {
+            let context = ModelContext(modelContainer)
+            let logService = HabitLogService(modelContext: context)
+            if logService.isHabitCompletedToday(habit) {
+                return
+            }
+        }
 
         var status = await notificationStatus()
 
@@ -121,12 +153,11 @@ final class NotificationService {
 
         await scheduleHabitReminder(for: habit)
     }
-
+    
     func scheduleHabitReminder(for habit: Habit) async {
         let identifier = habitReminderIdentifier(for: habit.id)
 
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: [identifier])
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
 
         guard habit.reminderEnabled else { return }
 
@@ -155,10 +186,19 @@ final class NotificationService {
         )
 
         do {
-            try await UNUserNotificationCenter.current().add(request)
+            try await notificationCenter.add(request)
             print("Scheduled habit reminder for \(habit.name) at \(habit.reminderHour):\(habit.reminderMinute)")
         } catch {
             print("Failed to schedule habit reminder for \(habit.name): \(error)")
         }
     }
+}
+
+extension HabitLogService {
+
+    func isHabitCompletedToday(_ habit: Habit) -> Bool {
+        let today = calendar.startOfDay(for: Date())
+        return habit.isComplete(for: today, calendar: calendar)
+    }
+
 }

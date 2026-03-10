@@ -9,6 +9,8 @@
 import SwiftUI
 
 struct CalendarDayCell: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     private enum Layout {
         static let cellWidth: CGFloat = 43
         static let cellHeight: CGFloat = 48
@@ -28,17 +30,23 @@ struct CalendarDayCell: View {
         static let dotSpacing: CGFloat = 4
         static let indicatorPlateOpacity: Double = 0.24
 
-        static let intensityOpacityMultiplier: Double = 0.45
         static let selectedBackgroundOpacity: Double = 0.85
         static let outOfMonthBackgroundOpacity: Double = 0.05
         static let disabledBackgroundOpacity: Double = 0.06
         static let disabledOutOfMonthBackgroundOpacity: Double = 0.03
         static let disabledContentOpacity: Double = 0.55
 
+        static let oneLogBackgroundOpacity: Double = 0.08
+        static let twoLogsBackgroundOpacity: Double = 0.12
+        static let threePlusLogsBackgroundOpacity: Double = 0.18
+
         static let selectedStrokeOpacity: Double = 0.60
         static let todayStrokeOpacity: Double = 0.32
         static let selectedStrokeWidth: CGFloat = 1.5
         static let todayStrokeWidth: CGFloat = 1
+        static let baseStrokeWidth: CGFloat = 0.8
+        static let baseStrokeDarkOpacity: Double = 0.10
+        static let baseStrokeLightOpacity: Double = 0.06
     }
 
     let date: Date
@@ -75,7 +83,16 @@ struct CalendarDayCell: View {
             return Layout.selectedBackgroundOpacity
         }
 
-        return max(0, min(1, intensity)) * Layout.intensityOpacityMultiplier
+        switch count {
+        case 3...:
+            return Layout.threePlusLogsBackgroundOpacity
+        case 2:
+            return Layout.twoLogsBackgroundOpacity
+        case 1:
+            return Layout.oneLogBackgroundOpacity
+        default:
+            return 0
+        }
     }
 
     private var dayNumber: String {
@@ -171,11 +188,6 @@ struct CalendarDayCell: View {
     }
 
     private var selectionOverlay: some View {
-        if isDisabled {
-            return RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
-                .strokeBorder(.clear, lineWidth: 0)
-        }
-
         let strokeColor: Color?
         let lineWidth: CGFloat
 
@@ -190,8 +202,16 @@ struct CalendarDayCell: View {
             lineWidth = 0
         }
 
-        return RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
-            .strokeBorder(strokeColor ?? .clear, lineWidth: lineWidth)
+        return ZStack {
+            RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
+                .strokeBorder(
+                    Color.white.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
+                    lineWidth: Layout.baseStrokeWidth
+                )
+
+            RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
+                .strokeBorder(strokeColor ?? .clear, lineWidth: lineWidth)
+        }
     }
     
     @ViewBuilder

@@ -49,7 +49,7 @@ struct HeatCell: View {
         let lineWidth: CGFloat
 
         if isSelected {
-            strokeColor = Color.white.opacity(style.selectedStrokeOpacity)
+            strokeColor = accent.opacity(style.selectedStrokeOpacity)
             lineWidth = style.selectedStrokeWidth
         } else if isToday {
             strokeColor = Color.primary.opacity(style.todayStrokeOpacity)
