@@ -9,9 +9,40 @@ import SwiftUI
 import SwiftData
 import UserNotifications
 
+enum RootDestination: Equatable {
+    case onboarding
+    case habitsList
+}
+
+enum RootViewRouter {
+    static func destination(hasCompletedOnboarding: Bool) -> RootDestination {
+        hasCompletedOnboarding ? .habitsList : .onboarding
+    }
+}
+
+struct RootView: View {
+    @EnvironmentObject private var deepLinkManager: DeepLinkManager
+    @EnvironmentObject private var userSettings: UserSettings
+
+    var body: some View {
+        switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
+        case .habitsList:
+            HabitsListView()
+                .environmentObject(userSettings)
+                .environmentObject(deepLinkManager)
+        case .onboarding:
+            OnboardingView()
+                .environmentObject(userSettings)
+                .environmentObject(deepLinkManager)
+        }
+    }
+}
+
 @main
 struct HabitsApp: App {
     @StateObject var deepLinkManager = DeepLinkManager.shared
+    @StateObject private var userSettings = UserSettings()
+    
     let container: ModelContainer
 
     init() {
@@ -47,16 +78,13 @@ struct HabitsApp: App {
         }
     }
 
-    
-    @StateObject private var userSettings = UserSettings()
-    
 
     var body: some Scene {
         WindowGroup {
-            HabitsListView()
+            RootView()
                 .environmentObject(userSettings)
                 .environmentObject(deepLinkManager)
-                .preferredColorScheme(.dark) // MVP: match the vibe
+                .preferredColorScheme(.dark)
         }
         .modelContainer(container)
     }

@@ -22,6 +22,8 @@ struct AddHabitSheet: View {
         from: DateComponents(hour: 20, minute: 0)
     ) ?? Date()
 
+    private let onHabitAdded: ((Habit) -> Void)?
+
     private let palette: [(String, String)] = [
         ("Violet", "#7C3AED"),
         ("Blue",   "#3B82F6"),
@@ -30,6 +32,10 @@ struct AddHabitSheet: View {
         ("Pink",   "#EC4899"),
         ("Teal",   "#14B8A6")
     ]
+
+    init(onHabitAdded: ((Habit) -> Void)? = nil) {
+        self.onHabitAdded = onHabitAdded
+    }
 
     var body: some View {
         NavigationStack {
@@ -113,6 +119,7 @@ struct AddHabitSheet: View {
 
         modelContext.insert(habit)
         try? modelContext.save()
+        onHabitAdded?(habit)
 
         Task {
             await NotificationService.shared.syncHabitReminder(for: habit)

@@ -88,6 +88,7 @@ final class UserSettings: ObservableObject {
         static let eveningReflectionEnabled = "settings.eveningReflectionEnabled"
         static let eveningReflectionHour = "settings.eveningReflectionHour"
         static let eveningReflectionMinute = "settings.eveningReflectionMinute"
+        static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
     private enum LegacyKeys {
@@ -133,6 +134,14 @@ final class UserSettings: ObservableObject {
             store.set(eveningReflectionMinute, forKey: Keys.eveningReflectionMinute)
         }
     }
+    
+    @Published var hasCompletedOnboarding: Bool {
+        didSet {
+            store.set(hasCompletedOnboarding, forKey: Keys.hasCompletedOnboarding)
+        }
+    }
+    
+    
 
     // MARK: Init
 
@@ -168,6 +177,9 @@ final class UserSettings: ObservableObject {
         let normalized = EveningReflection.clamped(hour: storedHour, minute: storedMinute)
         self.eveningReflectionHour = normalized.hour
         self.eveningReflectionMinute = normalized.minute
+        
+        self.hasCompletedOnboarding =
+            store.bool(forKey: Keys.hasCompletedOnboarding) ?? false
 
         store.set(eveningReflectionEnabled, forKey: Keys.eveningReflectionEnabled)
         store.set(eveningReflectionHour, forKey: Keys.eveningReflectionHour)
