@@ -5,6 +5,7 @@
 //  Created by Matt Adams on 09/03/2026.
 //
 
+import Foundation
 import UserNotifications
 import SwiftData
 
@@ -100,18 +101,26 @@ final class NotificationService {
         await notificationCenter.notificationStatus()
     }
     
-    // MARK: Global Check In
+    // MARK: Evening Reflection
 
-    func scheduleDailyCheckIn(hour: Int, minute: Int) async {
+    private var legacyDailyCheckInIdentifier: String { "daily-checkin" }
+
+    func scheduleEveningReflection(hour: Int, minute: Int, referenceDate: Date = Date()) async {
+        removeEveningReflection()
+
+        let reflectionContent = EveningReflection.content(
+            for: eveningReflectionProgress(for: referenceDate)
+        )
 
         let content = UNMutableNotificationContent()
-        content.title = "Habit Check-In"
-        content.body = "How did today go?"
+        content.title = reflectionContent.title
+        content.body = reflectionContent.body
         content.sound = .default
 
+        let normalized = EveningReflection.clamped(hour: hour, minute: minute)
         var components = DateComponents()
-        components.hour = hour
-        components.minute = minute
+        components.hour = normalized.hour
+        components.minute = normalized.minute
 
         let trigger = UNCalendarNotificationTrigger(
             dateMatching: components,
@@ -119,16 +128,49 @@ final class NotificationService {
         )
 
         let request = UNNotificationRequest(
-            identifier: "daily-checkin",
+            identifier: EveningReflection.identifier,
             content: content,
             trigger: trigger
         )
 
         try? await notificationCenter.add(request)
     }
-    
-    func removeDailyCheckIn() {
-        notificationCenter.removePendingNotificationRequests(withIdentifiers: ["daily-checkin"])
+
+    func syncEveningReflectionFromStoredSettings(referenceDate: Date = Date()) async {
+        let defaults = UserDefaults.standard
+
+        let enabled =
+            (defaults.object(forKey: "settings.eveningReflectionEnabled") as? Bool)
+            ?? (defaults.object(forKey: "settings.dailyCheckInEnabled") as? Bool)
+            ?? false
+
+        guard enabled else {
+            removeEveningReflection()
+            return
+        }
+
+        let storedHour =
+            (defaults.object(forKey: "settings.eveningReflectionHour") as? Int)
+            ?? (defaults.object(forKey: "settings.dailyCheckInHour") as? Int)
+            ?? EveningReflection.defaultHour
+
+        let storedMinute =
+            (defaults.object(forKey: "settings.eveningReflectionMinute") as? Int)
+            ?? (defaults.object(forKey: "settings.dailyCheckInMinute") as? Int)
+            ?? EveningReflection.defaultMinute
+
+        let normalized = EveningReflection.clamped(hour: storedHour, minute: storedMinute)
+        await scheduleEveningReflection(
+            hour: normalized.hour,
+            minute: normalized.minute,
+            referenceDate: referenceDate
+        )
+    }
+
+    func removeEveningReflection() {
+        let identifiers = [EveningReflection.identifier, legacyDailyCheckInIdentifier]
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+        notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
     
     // Habit Notifications
@@ -295,6 +337,29 @@ final class NotificationService {
         } catch {
             // Ignore scheduling errors in production flow; callers can inspect authorization separately.
         }
+    }
+
+    private func eveningReflectionProgress(for referenceDate: Date) -> EveningReflectionProgress {
+        guard let context = resolvedModelContext() else {
+            return EveningReflectionProgress(totalHabits: 0, completedHabitsToday: 0)
+        }
+
+        let habits = (try? context.fetch(FetchDescriptor<Habit>())) ?? []
+        let calendar = Calendar.current
+        let referenceDay = calendar.startOfDay(for: referenceDate)
+
+        let completedHabitsToday = habits
+            .filter { habit in
+                habit.logs.contains { log in
+                    calendar.isDate(log.day, inSameDayAs: referenceDay)
+                }
+            }
+            .count
+
+        return EveningReflectionProgress(
+            totalHabits: habits.count,
+            completedHabitsToday: completedHabitsToday
+        )
     }
 }
 

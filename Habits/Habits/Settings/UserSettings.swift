@@ -85,6 +85,12 @@ final class UserSettings: ObservableObject {
         static let weekStart = "settings.weekStart"
         static let greigModeEnabled = "settings.greigModeEnabled"
 
+        static let eveningReflectionEnabled = "settings.eveningReflectionEnabled"
+        static let eveningReflectionHour = "settings.eveningReflectionHour"
+        static let eveningReflectionMinute = "settings.eveningReflectionMinute"
+    }
+
+    private enum LegacyKeys {
         static let dailyCheckInEnabled = "settings.dailyCheckInEnabled"
         static let dailyCheckInHour = "settings.dailyCheckInHour"
         static let dailyCheckInMinute = "settings.dailyCheckInMinute"
@@ -108,23 +114,23 @@ final class UserSettings: ObservableObject {
         }
     }
 
-    // MARK: Daily Check-In Reminder
+    // MARK: Evening Reflection
 
-    @Published var dailyCheckInEnabled: Bool {
+    @Published var eveningReflectionEnabled: Bool {
         didSet {
-            store.set(dailyCheckInEnabled, forKey: Keys.dailyCheckInEnabled)
+            store.set(eveningReflectionEnabled, forKey: Keys.eveningReflectionEnabled)
         }
     }
 
-    @Published var dailyCheckInHour: Int {
+    @Published var eveningReflectionHour: Int {
         didSet {
-            store.set(dailyCheckInHour, forKey: Keys.dailyCheckInHour)
+            store.set(eveningReflectionHour, forKey: Keys.eveningReflectionHour)
         }
     }
 
-    @Published var dailyCheckInMinute: Int {
+    @Published var eveningReflectionMinute: Int {
         didSet {
-            store.set(dailyCheckInMinute, forKey: Keys.dailyCheckInMinute)
+            store.set(eveningReflectionMinute, forKey: Keys.eveningReflectionMinute)
         }
     }
 
@@ -144,14 +150,28 @@ final class UserSettings: ObservableObject {
         self.greigModeEnabled =
             store.bool(forKey: Keys.greigModeEnabled) ?? true
 
-        self.dailyCheckInEnabled =
-            store.bool(forKey: Keys.dailyCheckInEnabled) ?? false
+        self.eveningReflectionEnabled =
+            store.bool(forKey: Keys.eveningReflectionEnabled)
+            ?? store.bool(forKey: LegacyKeys.dailyCheckInEnabled)
+            ?? false
 
-        self.dailyCheckInHour =
-            store.int(forKey: Keys.dailyCheckInHour) ?? 20
+        let storedHour =
+            store.int(forKey: Keys.eveningReflectionHour)
+            ?? store.int(forKey: LegacyKeys.dailyCheckInHour)
+            ?? EveningReflection.defaultHour
 
-        self.dailyCheckInMinute =
-            store.int(forKey: Keys.dailyCheckInMinute) ?? 0
+        let storedMinute =
+            store.int(forKey: Keys.eveningReflectionMinute)
+            ?? store.int(forKey: LegacyKeys.dailyCheckInMinute)
+            ?? EveningReflection.defaultMinute
+
+        let normalized = EveningReflection.clamped(hour: storedHour, minute: storedMinute)
+        self.eveningReflectionHour = normalized.hour
+        self.eveningReflectionMinute = normalized.minute
+
+        store.set(eveningReflectionEnabled, forKey: Keys.eveningReflectionEnabled)
+        store.set(eveningReflectionHour, forKey: Keys.eveningReflectionHour)
+        store.set(eveningReflectionMinute, forKey: Keys.eveningReflectionMinute)
     }
 
     // MARK: Calendar Helpers
@@ -175,9 +195,9 @@ final class UserSettings: ObservableObject {
         weekLayoutStrategy(base: base).calendarProviderForCalculations()
     }
 
-    // MARK: Reminder Helpers
+    // MARK: Evening Reflection Helpers
 
-    var dailyCheckInDateComponents: DateComponents {
-        DateComponents(hour: dailyCheckInHour, minute: dailyCheckInMinute)
+    var eveningReflectionDateComponents: DateComponents {
+        DateComponents(hour: eveningReflectionHour, minute: eveningReflectionMinute)
     }
 }

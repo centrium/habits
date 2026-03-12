@@ -57,6 +57,16 @@ struct HabitsListView: View {
             }
         }
         .environmentObject(userSettings)
+        .task {
+            if userSettings.eveningReflectionEnabled {
+                await NotificationService.shared.scheduleEveningReflection(
+                    hour: userSettings.eveningReflectionHour,
+                    minute: userSettings.eveningReflectionMinute
+                )
+            } else {
+                NotificationService.shared.removeEveningReflection()
+            }
+        }
     }
 }
 

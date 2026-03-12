@@ -52,6 +52,12 @@ final class HabitLogService {
     private func saveAndPlayHaptic(for habit: Habit, referenceDate: Date, wasComplete: Bool) {
         try? modelContext.save()
 
+        Task { @MainActor in
+            await NotificationService.shared.syncEveningReflectionFromStoredSettings(
+                referenceDate: referenceDate
+            )
+        }
+
         let isComplete = habit.isComplete(for: referenceDate, calendar: calendar)
         DispatchQueue.main.async {
             self.playHaptic(becameComplete: !wasComplete && isComplete)

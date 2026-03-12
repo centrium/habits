@@ -1,20 +1,47 @@
+import Combine
 import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var userSettings: UserSettings
+    @State private var previewIndex = 0
+    private let previewTimer = Timer.publish(every: 3.5, on: .main, in: .common).autoconnect()
 
-    private var checkInTime: Binding<Date> {
+    private var eveningReflectionTime: Binding<Date> {
         Binding<Date>(
             get: {
-                var components = DateComponents()
-                components.hour = userSettings.dailyCheckInHour
-                components.minute = userSettings.dailyCheckInMinute
-                return Calendar.current.date(from: components) ?? Date()
+                EveningReflection.date(
+                    hour: userSettings.eveningReflectionHour,
+                    minute: userSettings.eveningReflectionMinute,
+                    on: Date(),
+                    calendar: .current
+                )
             },
             set: { newDate in
-                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                userSettings.dailyCheckInHour = components.hour ?? 20
-                userSettings.dailyCheckInMinute = components.minute ?? 0
+                let normalized = EveningReflection.clamped(date: newDate, calendar: .current)
+                let components = Calendar.current.dateComponents([.hour, .minute], from: normalized)
+                userSettings.eveningReflectionHour = components.hour ?? EveningReflection.defaultHour
+                userSettings.eveningReflectionMinute = components.minute ?? EveningReflection.defaultMinute
+            }
+        )
+    }
+
+    private var eveningTimeRange: ClosedRange<Date> {
+        EveningReflection.timeRange(for: Date(), calendar: .current)
+    }
+
+    private var previewMessage: String {
+        let messages = EveningReflection.previewMessages
+        guard !messages.isEmpty else { return "" }
+        return messages[previewIndex % messages.count]
+    }
+
+    private var eveningReflectionToggle: Binding<Bool> {
+        Binding(
+            get: { userSettings.eveningReflectionEnabled },
+            set: { isEnabled in
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    userSettings.eveningReflectionEnabled = isEnabled
+                }
             }
         )
     }
@@ -43,44 +70,78 @@ struct SettingsView: View {
                 .accessibilityHint("Show potential insights based on your strongest performance.")
             }
 
-            Section("Notifications") {
-                Toggle("Daily Check-In Reminder", isOn: $userSettings.dailyCheckInEnabled)
+            Section("Evening Reflection") {
+                Text(EveningReflection.description)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
 
-                DatePicker(
-                    "Time",
-                    selection: checkInTime,
-                    displayedComponents: .hourAndMinute
-                )
+                Toggle("Enable Evening Reflection", isOn: eveningReflectionToggle)
+
+                if userSettings.eveningReflectionEnabled {
+                    DatePicker(
+                        "Time",
+                        selection: eveningReflectionTime,
+                        in: eveningTimeRange,
+                        displayedComponents: .hourAndMinute
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Preview")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(EveningReflection.title)
+                                .font(.headline)
+                            Text(previewMessage)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
-            .onChange(of: userSettings.dailyCheckInEnabled) { _, isEnabled in
+            .onReceive(previewTimer) { _ in
+                let messages = EveningReflection.previewMessages
+                guard messages.count > 1 else { return }
+                previewIndex = (previewIndex + 1) % messages.count
+            }
+            .onChange(of: userSettings.eveningReflectionEnabled) { _, isEnabled in
                 Task {
+                    guard isEnabled else {
+                        NotificationService.shared.removeEveningReflection()
+                        return
+                    }
 
                     let status = await NotificationService.shared.notificationStatus()
+
+                    if status == .denied {
+                        userSettings.eveningReflectionEnabled = false
+                        return
+                    }
 
                     if status == .notDetermined {
                         let granted = await NotificationService.shared.requestPermission()
 
                         if !granted {
-                            userSettings.dailyCheckInEnabled = false
+                            userSettings.eveningReflectionEnabled = false
                             return
                         }
                     }
 
-                    if isEnabled {
-                        await NotificationService.shared.scheduleDailyCheckIn(
-                            hour: userSettings.dailyCheckInHour,
-                            minute: userSettings.dailyCheckInMinute
-                        )
-                    } else {
-                        NotificationService.shared.removeDailyCheckIn()
-                    }
+                    await NotificationService.shared.scheduleEveningReflection(
+                        hour: userSettings.eveningReflectionHour,
+                        minute: userSettings.eveningReflectionMinute
+                    )
                 }
             }
-            .onChange(of: userSettings.dailyCheckInHour) { _, _ in
+            .onChange(of: userSettings.eveningReflectionHour) { _, _ in
                 rescheduleReminder()
             }
 
-            .onChange(of: userSettings.dailyCheckInMinute) { _, _ in
+            .onChange(of: userSettings.eveningReflectionMinute) { _, _ in
                 rescheduleReminder()
             }
         }
@@ -89,12 +150,12 @@ struct SettingsView: View {
     
     func rescheduleReminder() {
         Task {
-            NotificationService.shared.removeDailyCheckIn()
+            NotificationService.shared.removeEveningReflection()
 
-            if userSettings.dailyCheckInEnabled {
-                await NotificationService.shared.scheduleDailyCheckIn(
-                    hour: userSettings.dailyCheckInHour,
-                    minute: userSettings.dailyCheckInMinute
+            if userSettings.eveningReflectionEnabled {
+                await NotificationService.shared.scheduleEveningReflection(
+                    hour: userSettings.eveningReflectionHour,
+                    minute: userSettings.eveningReflectionMinute
                 )
             }
         }

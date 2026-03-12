@@ -173,6 +173,7 @@ struct EditHabitSheet: View {
 
         Task {
             await NotificationService.shared.syncHabitReminder(for: habit)
+            await NotificationService.shared.syncEveningReflectionFromStoredSettings()
         }
     }
 }
