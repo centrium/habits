@@ -39,13 +39,16 @@ final class NotificationService {
     static let shared = NotificationService()
 
     private let notificationCenter: NotificationCenterProtocol
+    private let scheduler: NotificationScheduler
     private let modelContextProvider: () -> ModelContext?
 
     init(
         notificationCenter: NotificationCenterProtocol = UNUserNotificationCenter.current(),
+        scheduler: NotificationScheduler? = nil,
         modelContextProvider: @escaping () -> ModelContext? = { nil }
     ) {
         self.notificationCenter = notificationCenter
+        self.scheduler = scheduler ?? NotificationScheduler()
         self.modelContextProvider = modelContextProvider
     }
 
@@ -142,9 +145,61 @@ final class NotificationService {
 
         removeHabitReminder(habitID: habit.id)
 
+        if let context = resolvedModelContext() {
+            await syncAllHabitReminders(in: context)
+            return
+        }
+
+        await syncSingleHabitReminderWithoutBundling(for: habit)
+    }
+
+    func syncAllHabitReminders(referenceDate: Date = Date()) async {
+        guard let context = resolvedModelContext() else { return }
+        await syncAllHabitReminders(in: context, referenceDate: referenceDate)
+    }
+
+    private func syncAllHabitReminders(
+        in context: ModelContext,
+        referenceDate: Date = Date()
+    ) async {
+        clearSmartReminderSlots()
+
+        let habits = (try? context.fetch(FetchDescriptor<Habit>())) ?? []
+        let legacyIdentifiers = habits.map { habitReminderIdentifier(for: $0.id) }
+
+        if !legacyIdentifiers.isEmpty {
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: legacyIdentifiers)
+            notificationCenter.removeDeliveredNotifications(withIdentifiers: legacyIdentifiers)
+        }
+
+        let schedule = scheduler.schedule(for: habits, referenceDate: referenceDate)
+        guard !schedule.isEmpty else { return }
+
+        var status = await notificationStatus()
+
+        if status == .notDetermined {
+            _ = await requestPermission()
+            status = await notificationStatus()
+        }
+
+        guard status == .authorized || status == .provisional else { return }
+
+        for scheduledNotification in schedule {
+            await submit(scheduledNotification)
+        }
+    }
+
+    private func clearSmartReminderSlots() {
+        let identifiers = (0..<NotificationScheduler.smartIdentifierCleanupLimit)
+            .map(NotificationScheduler.smartIdentifier(for:))
+
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+        notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
+    private func syncSingleHabitReminderWithoutBundling(for habit: Habit) async {
         guard habit.reminderEnabled else { return }
 
-        // Do not remind if already completed today
         if let context = resolvedModelContext() {
             let logService = HabitLogService(modelContext: context)
             if logService.isHabitCompletedToday(habit) {
@@ -162,6 +217,46 @@ final class NotificationService {
         guard status == .authorized || status == .provisional else { return }
 
         await scheduleHabitReminder(for: habit)
+    }
+
+    private func submit(_ scheduledNotification: ScheduledNotification) async {
+        guard !scheduledNotification.habitIDs.isEmpty else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = scheduledNotification.title
+        content.body = scheduledNotification.body
+        content.sound = .default
+
+        let userInfo: [String: Any] = [
+            "habitID": scheduledNotification.habitIDs[0].uuidString,
+            "habitIDs": scheduledNotification.habitIDs.map(\.uuidString)
+        ]
+        content.userInfo = userInfo
+
+        if scheduledNotification.habitIDs.count == 1 {
+            content.categoryIdentifier = NotificationCategoryID.habitReminder
+        }
+
+        var components = DateComponents()
+        components.hour = Calendar.current.component(.hour, from: scheduledNotification.deliveryDate)
+        components.minute = Calendar.current.component(.minute, from: scheduledNotification.deliveryDate)
+
+        let trigger = UNCalendarNotificationTrigger(
+            dateMatching: components,
+            repeats: true
+        )
+
+        let request = UNNotificationRequest(
+            identifier: scheduledNotification.id,
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await notificationCenter.add(request)
+        } catch {
+            // Ignore scheduling errors in production flow; callers can inspect authorization separately.
+        }
     }
     
     func scheduleHabitReminder(for habit: Habit) async {
