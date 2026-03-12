@@ -33,19 +33,30 @@ enum NotificationCategoryID {
     static let habitReminder = "HABIT_REMINDER"
 }
 
+@MainActor
 final class NotificationService {
 
     static let shared = NotificationService()
 
     private let notificationCenter: NotificationCenterProtocol
-    private let modelContainerProvider: () -> ModelContainer?
+    private let modelContextProvider: () -> ModelContext?
 
     init(
         notificationCenter: NotificationCenterProtocol = UNUserNotificationCenter.current(),
-        modelContainerProvider: @escaping () -> ModelContainer? = { NotificationActionHandler.shared.modelContainer }
+        modelContextProvider: @escaping () -> ModelContext? = { nil }
     ) {
         self.notificationCenter = notificationCenter
-        self.modelContainerProvider = modelContainerProvider
+        self.modelContextProvider = modelContextProvider
+    }
+
+    func configureModelContextProvider(_ modelContextProvider: @escaping () -> ModelContext?) {
+        self.modelContextProviderStorage = modelContextProvider
+    }
+
+    private var modelContextProviderStorage: (() -> ModelContext?)?
+
+    private func resolvedModelContext() -> ModelContext? {
+        modelContextProviderStorage?() ?? modelContextProvider()
     }
     
     func registerNotificationCategories() {
@@ -118,7 +129,7 @@ final class NotificationService {
     }
     
     // Habit Notifications
-    func habitReminderIdentifier(for habitID: UUID) -> String {
+    nonisolated func habitReminderIdentifier(for habitID: UUID) -> String {
         "habit-reminder-\(habitID.uuidString)"
     }
 
@@ -134,8 +145,7 @@ final class NotificationService {
         guard habit.reminderEnabled else { return }
 
         // Do not remind if already completed today
-        if let modelContainer = modelContainerProvider() {
-            let context = ModelContext(modelContainer)
+        if let context = resolvedModelContext() {
             let logService = HabitLogService(modelContext: context)
             if logService.isHabitCompletedToday(habit) {
                 return
@@ -187,9 +197,8 @@ final class NotificationService {
 
         do {
             try await notificationCenter.add(request)
-            print("Scheduled habit reminder for \(habit.name) at \(habit.reminderHour):\(habit.reminderMinute)")
         } catch {
-            print("Failed to schedule habit reminder for \(habit.name): \(error)")
+            // Ignore scheduling errors in production flow; callers can inspect authorization separately.
         }
     }
 }

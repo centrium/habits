@@ -10,7 +10,10 @@ import UserNotifications
 import SwiftData
 
 protocol NotificationReminderSyncing {
+    @MainActor
     func syncHabitReminder(for habit: Habit) async
+
+    nonisolated
     func habitReminderIdentifier(for habitID: UUID) -> String
 }
 
@@ -45,26 +48,34 @@ struct HabitLogServiceBuilder: HabitLogServiceBuilding {
     }
 }
 
+@MainActor
 final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegate {
 
     static let shared = NotificationActionHandler()
 
-    var modelContainer: ModelContainer?
+    private let defaultModelContextProvider: () -> ModelContext?
+    private var modelContextProviderStorage: (() -> ModelContext?)?
     private let notificationService: NotificationReminderSyncing
     private let notificationCenter: NotificationCenterProtocol
     private let deepLinkManager: DeepLinkManaging
     private let habitLogServiceBuilder: HabitLogServiceBuilding
 
     init(
-        notificationService: NotificationReminderSyncing = NotificationService.shared,
+        notificationService: NotificationReminderSyncing? = nil,
         notificationCenter: NotificationCenterProtocol = UNUserNotificationCenter.current(),
-        deepLinkManager: DeepLinkManaging = SharedDeepLinkManager(),
-        habitLogServiceBuilder: HabitLogServiceBuilding = HabitLogServiceBuilder()
+        deepLinkManager: DeepLinkManaging? = nil,
+        habitLogServiceBuilder: HabitLogServiceBuilding? = nil,
+        modelContextProvider: @escaping () -> ModelContext? = { nil }
     ) {
-        self.notificationService = notificationService
+        self.defaultModelContextProvider = modelContextProvider
+        self.notificationService = notificationService ?? NotificationService.shared
         self.notificationCenter = notificationCenter
-        self.deepLinkManager = deepLinkManager
-        self.habitLogServiceBuilder = habitLogServiceBuilder
+        self.deepLinkManager = deepLinkManager ?? SharedDeepLinkManager()
+        self.habitLogServiceBuilder = habitLogServiceBuilder ?? HabitLogServiceBuilder()
+    }
+
+    func configureModelContextProvider(_ modelContextProvider: @escaping () -> ModelContext?) {
+        self.modelContextProviderStorage = modelContextProvider
     }
 
     func userNotificationCenter(
@@ -94,18 +105,13 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
         if actionIdentifier == NotificationActionID.openHabit ||
             actionIdentifier == UNNotificationDefaultActionIdentifier
         {
-            await MainActor.run {
-                deepLinkManager.openHabit(habitID)
-            }
-
+            deepLinkManager.openHabit(habitID)
         }
     }
 
     private func logHabit(habitID: UUID) async {
 
-        guard let modelContainer else { return }
-
-        let context = ModelContext(modelContainer)
+        guard let context = modelContextProviderStorage?() ?? defaultModelContextProvider() else { return }
 
         let descriptor = FetchDescriptor<Habit>(
             predicate: #Predicate { $0.id == habitID }

@@ -95,13 +95,21 @@ extension Habit {
         let current = progressTotal(in: interval)
         let displayCurrent = displayedCurrentProgressValue(current: current, target: target)
         let metricKind = MetricKindResolver.resolve(self)
+        let unitText: String? = {
+            switch metricKind {
+            case .genericValue:
+                return trimmedUnit
+            case .count, .currency:
+                return nil
+            }
+        }()
 
         return HabitProgressDetails(
             current: current,
             target: target,
             currentText: formatProgressValue(displayCurrent),
             targetText: formatProgressValue(target),
-            unitText: metricKind == .genericValue ? trimmedUnit : nil,
+            unitText: unitText,
             goalType: goalType
         )
     }

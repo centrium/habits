@@ -149,11 +149,20 @@ struct ProgressAsOfService {
         }
 
         let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = calendar.locale ?? .current
+        formatter.timeZone = calendar.timeZone
         formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
 
         let totalText = habit.formatProgressValue(total)
+        let unitSuffix: String = {
+            guard MetricKindResolver.resolve(habit) == .genericValue, let unit = habit.trimmedUnit else {
+                return ""
+            }
+            return " \(unit)"
+        }()
 
-        return "\(formatter.string(from: visibleMonth)): \(totalText)"
+        return "\(formatter.string(from: visibleMonth)): \(totalText)\(unitSuffix)"
     }
 
     // MARK: Formatting

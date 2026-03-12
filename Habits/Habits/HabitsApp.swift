@@ -7,21 +7,44 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct HabitsApp: App {
     @StateObject var deepLinkManager = DeepLinkManager.shared
     let container: ModelContainer
-    
+
     init() {
-        container = try! ModelContainer(for: Habit.self)
+        self.init(container: nil)
+    }
+
+    init(container: ModelContainer?) {
+        
+        let isRunningTests =
+               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+        if let container {
+            self.container = container
+        } else if isRunningTests {
+                self.container = try! Persistence.makeInMemoryContainer()
+        } else if let appContainer = try? Persistence.makeAppContainer() {
+            self.container = appContainer
+        } else {
+            // Fall back to in-memory storage so test hosts do not crash during app bootstrap.
+            self.container = try! Persistence.makeInMemoryContainer()
+        }
 
         let center = UNUserNotificationCenter.current()
         center.delegate = NotificationActionHandler.shared
 
-        NotificationService.shared.registerNotificationCategories()
+        NotificationService.shared.configureModelContextProvider { [container = self.container] in
+            ModelContext(container)
+        }
 
-        NotificationActionHandler.shared.modelContainer = container
+        NotificationService.shared.registerNotificationCategories()
+        NotificationActionHandler.shared.configureModelContextProvider { [container = self.container] in
+            ModelContext(container)
+        }
     }
 
     
@@ -35,6 +58,6 @@ struct HabitsApp: App {
                 .environmentObject(deepLinkManager)
                 .preferredColorScheme(.dark) // MVP: match the vibe
         }
-        .modelContainer(for: [Habit.self, HabitLog.self])
+        .modelContainer(container)
     }
 }

@@ -17,6 +17,8 @@ struct HabitsListView: View {
 
     @State private var showAddHabit = false
 
+    init() {}
+
     var body: some View {
         NavigationStack {
             List {
