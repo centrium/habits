@@ -4,6 +4,7 @@ import SwiftData
 struct AddHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
     @State private var name: String = ""
     @State private var subtitle: String = ""
@@ -112,6 +113,7 @@ struct AddHabitSheet: View {
             targetValue: finalUnit == nil ? nil : targetValue,
             unit: finalUnit,
             allowsDecimals: allowsDecimals,
+            orderIndex: habits.count,
             reminderEnabled: reminderEnabled,
             reminderHour: timeComponents.hour ?? 20,
             reminderMinute: timeComponents.minute ?? 0

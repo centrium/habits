@@ -18,8 +18,14 @@ struct HabitCard: View {
     @State private var selectedDetent: PresentationDetent = .large
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
+    private let onDeleted: (() -> Void)?
 
     private let headerHeight: CGFloat = 40
+
+    init(habit: Habit, onDeleted: (() -> Void)? = nil) {
+        self.habit = habit
+        self.onDeleted = onDeleted
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -69,7 +75,8 @@ struct HabitCard: View {
             HabitDetailSheet(
                 habit: habit,
                 modelContext: modelContext,
-                initialCalendar: calculationCalendar
+                initialCalendar: calculationCalendar,
+                onDeleted: onDeleted
             )
                 .presentationDetents([.medium, .large], selection: $selectedDetent)
                 .presentationDragIndicator(.visible)

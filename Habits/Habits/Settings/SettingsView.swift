@@ -2,7 +2,14 @@ import Combine
 import SwiftUI
 
 struct SettingsView: View {
+    private struct SharePayload: Identifiable {
+        let id = UUID()
+        let urls: [URL]
+    }
+
     @EnvironmentObject private var userSettings: UserSettings
+    @Environment(\.modelContext) private var modelContext
+    @State private var sharePayload: SharePayload?
     @State private var previewIndex = 0
     private let previewTimer = Timer.publish(every: 3.5, on: .main, in: .common).autoconnect()
 
@@ -140,12 +147,33 @@ struct SettingsView: View {
             .onChange(of: userSettings.eveningReflectionHour) { _, _ in
                 rescheduleReminder()
             }
-
             .onChange(of: userSettings.eveningReflectionMinute) { _, _ in
                 rescheduleReminder()
             }
+            
+            Section("Data") {
+                Button {
+                    exportCSV()
+                } label: {
+                    Label("Export Data (CSV)", systemImage: "square.and.arrow.up")
+                }
+            }
         }
         .navigationTitle("Settings")
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(items: payload.urls)
+        }
+    }
+    
+    func exportCSV() {
+        do {
+            let service = CSVExportService(modelContext: modelContext)
+            let urls = try service.export().filter { FileManager.default.fileExists(atPath: $0.path) }
+            guard !urls.isEmpty else { return }
+            sharePayload = SharePayload(urls: urls)
+        } catch {
+            print("Export failed:", error)
+        }
     }
     
     func rescheduleReminder() {

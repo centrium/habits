@@ -13,7 +13,7 @@ struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
     
-    @Query(sort: \Habit.createdAt, order: .reverse) private var habits: [Habit]
+    @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
     @State private var showAddHabit = false
 
@@ -23,10 +23,13 @@ struct HabitsListView: View {
         NavigationStack {
             List {
                 ForEach(habits) { habit in
-                    HabitCard(habit: habit)
+                    HabitCard(habit: habit) {
+                        normalizeOrderIndexes()
+                    }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
+                .onMove(perform: moveHabit)
 
                 if habits.isEmpty {
                     EmptyState()
@@ -35,9 +38,12 @@ struct HabitsListView: View {
                 }
             }
             .listStyle(.plain)
-            .animation(.snappy, value: habits)
             .navigationTitle("Habits")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                }
+
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     NavigationLink {
                         SettingsView()
@@ -68,6 +74,25 @@ struct HabitsListView: View {
                 NotificationService.shared.removeEveningReflection()
             }
         }
+    }
+
+    private func moveHabit(from source: IndexSet, to destination: Int) {
+        withAnimation(.smooth) {
+            var reordered = habits
+            reordered.move(fromOffsets: source, toOffset: destination)
+            applyOrderIndexes(to: reordered)
+        }
+    }
+
+    private func normalizeOrderIndexes() {
+        applyOrderIndexes(to: habits)
+    }
+
+    private func applyOrderIndexes(to orderedHabits: [Habit]) {
+        for (index, habit) in orderedHabits.enumerated() where habit.orderIndex != index {
+            habit.orderIndex = index
+        }
+        try? modelContext.save()
     }
 }
 

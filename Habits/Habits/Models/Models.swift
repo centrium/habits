@@ -174,7 +174,7 @@ enum HabitLogKind: String, Codable {
 }
 
 @Model
-final class Habit {
+final class Habit: Identifiable {
     @Attribute(.unique) var id: UUID
 
     // Core identity
@@ -193,6 +193,7 @@ final class Habit {
     var allowsDecimals: Bool
 
     var createdAt: Date
+    var orderIndex: Int
     
     var reminderEnabled: Bool
     var reminderHour: Int
@@ -234,6 +235,7 @@ final class Habit {
         unit: String? = nil,
         allowsDecimals: Bool = false,
         createdAt: Date = .now,
+        orderIndex: Int = 0,
         reminderEnabled: Bool = false,
         reminderHour: Int = 20,
         reminderMinute: Int = 0
@@ -253,6 +255,7 @@ final class Habit {
         self.allowsDecimals = allowsDecimals
 
         self.createdAt = createdAt
+        self.orderIndex = orderIndex
         self.reminderEnabled = reminderEnabled
         self.reminderHour = reminderHour
         self.reminderMinute = reminderMinute

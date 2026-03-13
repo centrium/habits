@@ -11,15 +11,18 @@ struct HabitDetailSheet: View {
     @State private var showValueEntry = false
     @State private var manualLogValue: Double? = nil
     @State private var insightsDetent: PresentationDetent = .large
+    private let onDeleted: (() -> Void)?
 
     let habit: Habit
 
     init(
         habit: Habit,
         modelContext: ModelContext,
-        initialCalendar: Calendar = .autoupdatingCurrent
+        initialCalendar: Calendar = .autoupdatingCurrent,
+        onDeleted: (() -> Void)? = nil
     ) {
         self.habit = habit
+        self.onDeleted = onDeleted
         _selectionState = StateObject(wrappedValue: HabitSelectionState(calendar: initialCalendar))
         _service = State(initialValue: HabitLogService(modelContext: modelContext, calendar: initialCalendar))
     }
@@ -170,6 +173,7 @@ struct HabitDetailSheet: View {
             EditHabitSheet(habit: habit) {
                 showEdit = false
                 dismiss()
+                onDeleted?()
             }
         }
         .sheet(isPresented: $showInsights) {
