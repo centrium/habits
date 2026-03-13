@@ -167,7 +167,10 @@ struct HabitDetailSheet: View {
         }
         .presentationBackground(Color(.systemBackground))
         .sheet(isPresented: $showEdit) {
-            EditHabitSheet(habit: habit)
+            EditHabitSheet(habit: habit) {
+                showEdit = false
+                dismiss()
+            }
         }
         .sheet(isPresented: $showInsights) {
             NavigationStack {

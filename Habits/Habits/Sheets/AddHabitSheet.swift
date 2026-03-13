@@ -53,7 +53,7 @@ struct AddHabitSheet: View {
                 allowsDecimals: $allowsDecimals,
                 reminderEnabled: $reminderEnabled,
                 reminderTime: $reminderTime,
-                palette: palette
+                palette: palette,
             )
             .navigationTitle("New Habit")
             .toolbar {

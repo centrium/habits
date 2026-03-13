@@ -35,6 +35,7 @@ struct HabitsListView: View {
                 }
             }
             .listStyle(.plain)
+            .animation(.snappy, value: habits)
             .navigationTitle("Habits")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {

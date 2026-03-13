@@ -18,6 +18,8 @@ struct HabitFormView: View {
     @Binding var reminderTime: Date
 
     let palette: [(String, String)]
+    var showsDelete: Bool = false
+    var onDelete: (() -> Void)? = nil
 
     @State private var showIconPicker = false
     @State private var showingFrequencyTargetEditor = false
@@ -141,6 +143,18 @@ struct HabitFormView: View {
                         selection: $reminderTime,
                         displayedComponents: .hourAndMinute
                     )
+                }
+            }
+            
+            if showsDelete {
+                Section {
+                    Button(role: .destructive) {
+                        onDelete?()
+                    } label: {
+                        Label("Delete Habit", systemImage: "trash")
+                    }
+                } footer: {
+                    Text("Deleting a habit removes all history and cannot be undone.")
                 }
             }
         }

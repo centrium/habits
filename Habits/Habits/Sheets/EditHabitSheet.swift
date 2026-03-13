@@ -6,6 +6,7 @@ struct EditHabitSheet: View {
     @Environment(\.modelContext) private var modelContext
 
     @Bindable var habit: Habit
+    private let onDeleted: (() -> Void)?
 
     @State private var name: String
     @State private var subtitle: String
@@ -21,6 +22,7 @@ struct EditHabitSheet: View {
 
     @State private var reminderEnabled: Bool
     @State private var reminderTime: Date
+    @State private var showDeleteConfirmation: Bool = false
 
     private let palette: [(String, String)] = [
         ("Violet", "#7C3AED"),
@@ -31,8 +33,9 @@ struct EditHabitSheet: View {
         ("Teal",   "#14B8A6")
     ]
 
-    init(habit: Habit) {
+    init(habit: Habit, onDeleted: (() -> Void)? = nil) {
         self.habit = habit
+        self.onDeleted = onDeleted
 
         _name = State(initialValue: habit.name)
         _subtitle = State(initialValue: habit.subtitle ?? "")
@@ -75,7 +78,11 @@ struct EditHabitSheet: View {
                 allowsDecimals: $allowsDecimals,
                 reminderEnabled: $reminderEnabled,
                 reminderTime: $reminderTime,
-                palette: palette
+                palette: palette,
+                showsDelete: true,
+                onDelete: {
+                    showDeleteConfirmation = true
+                }
             )
             .navigationTitle("Edit Habit")
             .toolbar {
@@ -91,6 +98,27 @@ struct EditHabitSheet: View {
                 }
             }
         }
+        .alert("Delete Habit?",
+                isPresented: $showDeleteConfirmation) {
+
+             Button("Delete", role: .destructive) {
+                 deleteHabit()
+             }
+
+             Button("Cancel", role: .cancel) { }
+
+         } message: {
+             Text("This will permanently remove the habit and all associated logs.")
+         }
+    }
+    
+    private func deleteHabit() {
+        HabitDeletionAction.perform(
+            habit: habit,
+            modelContext: modelContext,
+            dismissEditSheet: { dismiss() },
+            onDeleted: onDeleted
+        )
     }
 
     private var isUnchanged: Bool {
@@ -175,5 +203,19 @@ struct EditHabitSheet: View {
             await NotificationService.shared.syncHabitReminder(for: habit)
             await NotificationService.shared.syncEveningReflectionFromStoredSettings()
         }
+    }
+}
+
+enum HabitDeletionAction {
+    static func perform(
+        habit: Habit,
+        modelContext: ModelContext,
+        dismissEditSheet: () -> Void,
+        onDeleted: (() -> Void)? = nil
+    ) {
+        modelContext.delete(habit)
+        try? modelContext.save()
+        dismissEditSheet()
+        onDeleted?()
     }
 }
