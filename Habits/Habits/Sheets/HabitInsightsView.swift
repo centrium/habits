@@ -148,6 +148,8 @@ private struct HabitInsightsCardsRenderer: View {
             GoalPaceCardView(block: block, accent: accent, hasAnimatedIn: hasAnimatedIn)
         case .momentum(let block):
             MomentumCardView(block: block)
+        case .performanceSignals(let block):
+            PerformanceSignalsCardView(block: block)
         case .consistency(let block):
             ConsistencyCardView(block: block)
         case .hero(let block):
@@ -328,6 +330,40 @@ private struct MomentumCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: minHeight, alignment: .topLeading)
+        }
+    }
+}
+
+private struct PerformanceSignalsCardView: View {
+    let block: HabitInsightsPerformanceSignalsBlock
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(block.heading)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                ForEach(block.signals) { signal in
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(signal.gauge.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        GradientGaugeView(
+                            value: signal.gauge.value,
+                            labels: signal.gauge.labels,
+                            valueText: signal.displayValue
+                        )
+
+                        Text(signal.gauge.explanation)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

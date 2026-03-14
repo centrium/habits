@@ -149,6 +149,11 @@ struct HabitInsightsEngine {
             for: habit,
             now: now
         )
+        let performanceSignals = PerformanceSignalsCalculator.calculate(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
 
         var cards: [HabitInsightsCard] = []
 
@@ -231,6 +236,15 @@ struct HabitInsightsEngine {
                     insightSupportingText: trendInsightSupportingText(points: trendPoints, isOpenEnded: isOpenEnded),
                     isValueBased: trendUnitText != nil,
                     isCompletionRatioBars: trendUsesCompletionRatios
+                )
+            )
+        )
+
+        cards.append(
+            .performanceSignals(
+                HabitInsightsPerformanceSignalsBlock(
+                    heading: "Performance Signals",
+                    signals: performanceSignals
                 )
             )
         )

@@ -140,11 +140,26 @@ struct HabitInsightsViewModel {
     let notes: [String]
 }
 
+struct InsightGauge {
+    let title: String
+    let value: Double
+    let labels: [String]
+    let explanation: String
+}
+
+struct HabitInsightsPerformanceSignal: Identifiable {
+    let gauge: InsightGauge
+    let displayValue: String
+
+    var id: String { gauge.title }
+}
+
 enum HabitInsightsCard: Identifiable {
     case overview(HabitInsightsOverviewBlock)
     case achievement(HabitInsightsAchievementBlock)
     case goalPace(HabitInsightsGoalPaceBlock)
     case momentum(HabitInsightsMomentumBlock)
+    case performanceSignals(HabitInsightsPerformanceSignalsBlock)
     case consistency(HabitInsightsConsistencyBlock)
     case hero(HabitInsightsHeroBlock)
     case motivation(MotivationCard)
@@ -166,6 +181,8 @@ enum HabitInsightsCard: Identifiable {
             return "goal-pace"
         case .momentum:
             return "momentum"
+        case .performanceSignals:
+            return "performance-signals"
         case .consistency:
             return "consistency"
         case .hero:
@@ -213,6 +230,11 @@ struct HabitInsightsMomentumBlock {
 struct HabitInsightsConsistencyBlock {
     let scoreText: String
     let averageText: String?
+}
+
+struct HabitInsightsPerformanceSignalsBlock {
+    let heading: String
+    let signals: [HabitInsightsPerformanceSignal]
 }
 
 struct HabitInsightsHeroBlock {
