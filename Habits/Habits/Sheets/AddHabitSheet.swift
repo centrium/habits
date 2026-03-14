@@ -4,7 +4,6 @@ import SwiftData
 struct AddHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
     @State private var name: String = ""
     @State private var subtitle: String = ""
@@ -17,6 +16,7 @@ struct AddHabitSheet: View {
     @State private var targetValue: Double = 1
     @State private var unit: String = ""
     @State private var allowsDecimals = false
+    @State private var nextIndex: Int = 0
 
     @State private var reminderEnabled: Bool = false
     @State private var reminderTime: Date = Calendar.current.date(
@@ -70,6 +70,13 @@ struct AddHabitSheet: View {
                 }
             }
         }
+        .onAppear {
+            nextIndex = (try? modelContext.fetchCount(FetchDescriptor<Habit>())) ?? 0
+        }
+    }
+    
+    private func nextOrderIndex() -> Int {
+        (try? modelContext.fetchCount(FetchDescriptor<Habit>())) ?? 0
     }
 
     private var canSave: Bool {
@@ -113,7 +120,7 @@ struct AddHabitSheet: View {
             targetValue: finalUnit == nil ? nil : targetValue,
             unit: finalUnit,
             allowsDecimals: allowsDecimals,
-            orderIndex: habits.count,
+            orderIndex: nextIndex,
             reminderEnabled: reminderEnabled,
             reminderHour: timeComponents.hour ?? 20,
             reminderMinute: timeComponents.minute ?? 0

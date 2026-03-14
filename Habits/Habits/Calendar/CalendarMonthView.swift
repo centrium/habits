@@ -39,7 +39,7 @@ struct CalendarMonthView: View {
     private let edgePadding: CGFloat = 4
     private let navHitSize: CGFloat = 44
     private let navVisualSize: CGFloat = 34
-    private let monthAnimationDuration: Double = 0.22
+    private let monthAnimationDuration: Double = 0.26
 
     init(
         month: Binding<Date>,
@@ -116,19 +116,24 @@ struct CalendarMonthView: View {
                 .transition(calendarTransition)
             }
             .sheet(item: $adjustingDate) { date in
-                if habit.goalType == .frequency {
-                    AdjustCountSheet(
-                        date: date.date,
-                        habit: habit,
-                        service: service
-                    )
-                } else {
-                    CumulativeDayEntriesSheet(
-                        habit: habit,
-                        date: date.date,
-                        service: service
-                    )
+                Group {
+                    if habit.goalType == .frequency {
+                        AdjustCountSheet(
+                            date: date.date,
+                            habit: habit,
+                            service: service
+                        )
+                    } else {
+                        CumulativeDayEntriesSheet(
+                            habit: habit,
+                            date: date.date,
+                            service: service
+                        )
+                    }
                 }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
             }
             .clipped()
             .contentShape(Rectangle())
@@ -222,7 +227,7 @@ struct CalendarMonthView: View {
     }
 
     private var monthAnimation: Animation {
-        .easeOut(duration: monthAnimationDuration)
+        AppMotion.monthSlide
     }
 
     private var monthIdentity: String {
@@ -243,7 +248,7 @@ struct CalendarMonthView: View {
                         .fill(Color.secondary.opacity(0.14))
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TactileButtonStyle())
         .frame(width: navHitSize, height: navHitSize)
         .contentShape(Circle())
     }
@@ -288,7 +293,9 @@ struct CalendarMonthView: View {
     }
 
     private func selectDay(_ day: Date) {
-        onSelectDay(day)
+        withAnimation(AppMotion.quickFade) {
+            onSelectDay(day)
+        }
         focusMonthIfNeeded(for: day)
     }
 
@@ -380,8 +387,19 @@ struct CalendarMonthView: View {
     }
 
     private func jumpToCurrentMonth() {
-        slideDirection = nil
+        let target = normalizedMonth(Date())
+        let targetComponents = calendar.dateComponents([.year, .month], from: target)
+        let comparison = compareMonth(monthComponents, targetComponents)
+        if comparison < 0 {
+            slideDirection = .left
+        } else if comparison > 0 {
+            slideDirection = .right
+        } else {
+            slideDirection = nil
+        }
         slideResetToken = UUID()
-        month = normalizedMonth(Date())
+        withAnimation(monthAnimation) {
+            month = target
+        }
     }
 }

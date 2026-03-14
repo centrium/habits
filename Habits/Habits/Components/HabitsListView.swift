@@ -16,6 +16,7 @@ struct HabitsListView: View {
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
     @State private var showAddHabit = false
+    @State private var habitPendingDeletion: Habit?
 
     init() {}
 
@@ -23,11 +24,17 @@ struct HabitsListView: View {
         NavigationStack {
             List {
                 ForEach(habits) { habit in
-                    HabitCard(habit: habit) {
-                        normalizeOrderIndexes()
-                    }
+                    HabitCard(habit: habit)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                requestDeletion(of: habit)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .tint(.red)
+                        }
                 }
                 .onMove(perform: moveHabit)
 
@@ -36,6 +43,23 @@ struct HabitsListView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
+            }
+            .alert(
+                "Delete Habit?",
+                isPresented: HabitDeletionConfirmationState.isPresentedBinding(
+                    for: $habitPendingDeletion
+                ),
+                presenting: habitPendingDeletion
+            ) { habit in
+                Button("Delete Habit", role: .destructive) {
+                    confirmDeletion(of: habit)
+                }
+
+                Button("Cancel", role: .cancel) {
+                    cancelDeletion()
+                }
+            } message: { habit in
+                Text(HabitDeletionConfirmationState.message(for: habit))
             }
             .listStyle(.plain)
             .navigationTitle("Habits")
@@ -50,6 +74,7 @@ struct HabitsListView: View {
                     } label: {
                         Image(systemName: "gearshape")
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Settings")
 
                     Button {
@@ -57,10 +82,14 @@ struct HabitsListView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .buttonStyle(TactileButtonStyle())
                 }
             }
             .sheet(isPresented: $showAddHabit) {
                 AddHabitSheet()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(24)
             }
         }
         .environmentObject(userSettings)
@@ -77,22 +106,51 @@ struct HabitsListView: View {
     }
 
     private func moveHabit(from source: IndexSet, to destination: Int) {
-        withAnimation(.smooth) {
+        withAnimation(AppMotion.reorder) {
             var reordered = habits
             reordered.move(fromOffsets: source, toOffset: destination)
-            applyOrderIndexes(to: reordered)
+            HabitListMutation.applyOrderIndexes(to: reordered, in: modelContext)
         }
     }
 
-    private func normalizeOrderIndexes() {
-        applyOrderIndexes(to: habits)
+    private func requestDeletion(of habit: Habit) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            habitPendingDeletion = habit
+        }
     }
 
-    private func applyOrderIndexes(to orderedHabits: [Habit]) {
-        for (index, habit) in orderedHabits.enumerated() where habit.orderIndex != index {
-            habit.orderIndex = index
+    private func cancelDeletion() {
+        habitPendingDeletion = nil
+    }
+
+    private func confirmDeletion(of habit: Habit) {
+        cancelDeletion()
+
+        Haptics.impactMedium()
+
+        withAnimation(AppMotion.quickFade) {
+            HabitDeletionAction.perform(
+                habit: habit,
+                modelContext: modelContext
+            )
         }
-        try? modelContext.save()
+    }
+}
+
+enum HabitDeletionConfirmationState {
+    static func isPresentedBinding(for pendingHabit: Binding<Habit?>) -> Binding<Bool> {
+        Binding(
+            get: { pendingHabit.wrappedValue != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingHabit.wrappedValue = nil
+                }
+            }
+        )
+    }
+
+    static func message(for habit: Habit) -> String {
+        "This will permanently delete \"\(habit.name)\" and its history."
     }
 }
 

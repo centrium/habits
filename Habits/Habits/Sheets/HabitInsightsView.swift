@@ -49,7 +49,9 @@ struct HabitInsightsView: View {
         .onAppear {
             hasAnimatedIn = false
             DispatchQueue.main.async {
-                hasAnimatedIn = true
+                withAnimation(AppMotion.reveal) {
+                    hasAnimatedIn = true
+                }
             }
         }
     }
@@ -66,6 +68,9 @@ private struct HabitInsightsCardsRenderer: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.primary)
                 .padding(.top, 14)
+                .opacity(hasAnimatedIn ? 1 : 0)
+                .offset(y: hasAnimatedIn ? 0 : 6)
+                .animation(AppMotion.reveal, value: hasAnimatedIn)
 
             VStack(spacing: 16) {
                 ForEach(Array(renderRows.enumerated()), id: \.offset) { index, row in
@@ -73,7 +78,7 @@ private struct HabitInsightsCardsRenderer: View {
                         .opacity(hasAnimatedIn ? 1 : 0)
                         .offset(y: hasAnimatedIn ? 0 : 8)
                         .animation(
-                            .easeOut(duration: 0.24).delay(0.02 * Double(index)),
+                            AppMotion.reveal.delay(0.02 * Double(index)),
                             value: hasAnimatedIn
                         )
                 }
@@ -90,7 +95,7 @@ private struct HabitInsightsCardsRenderer: View {
                     }
                     .opacity(hasAnimatedIn ? 1 : 0)
                     .offset(y: hasAnimatedIn ? 0 : 8)
-                    .animation(.easeOut(duration: 0.24).delay(0.15), value: hasAnimatedIn)
+                    .animation(AppMotion.reveal.delay(0.15), value: hasAnimatedIn)
                 }
             }
         }

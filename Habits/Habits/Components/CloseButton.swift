@@ -24,7 +24,7 @@ struct CloseButton: View {
                         .fill(Color.secondary.opacity(0.1))
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TactileButtonStyle(pressedScale: 0.94, pressedOpacity: 0.88))
         .accessibilityLabel("Close")
     }
 }

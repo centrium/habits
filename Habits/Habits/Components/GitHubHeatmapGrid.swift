@@ -55,12 +55,26 @@ struct GitHubHeatmapGrid: View {
     private var monthLabels: some View {
         LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
             ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
+
                 let isMonthBoundary = index == 0 || week.month != weeks[index - 1].month
+
+                let shouldShowLabel: Bool = {
+                    guard isMonthBoundary else { return false }
+
+                    if let nextIndex = weeks.indices.dropFirst(index + 1).first(where: {
+                        weeks[$0].month != week.month
+                    }) {
+                        let distance = nextIndex - index
+                        return distance >= 3
+                    }
+
+                    return true
+                }()
 
                 Color.clear
                     .frame(width: style.cellSize, height: style.monthLabelHeight)
                     .overlay(alignment: .leading) {
-                        if isMonthBoundary {
+                        if shouldShowLabel {
                             Text(monthLabel(for: week.id))
                                 .font(.caption2)
                                 .foregroundStyle(Color.secondary.opacity(style.monthLabelOpacity))

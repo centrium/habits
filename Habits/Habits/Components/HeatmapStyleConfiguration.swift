@@ -57,9 +57,9 @@ struct HeatmapStyleConfiguration {
         monthLabelTracking: 0.8,
         rowLabelOpacity: 0.60,
         rightEdgeFadeWidth: 10,
-        animationStyle: .spring(response: 0.24, dampingFraction: 0.9, blendDuration: 0.08),
+        animationStyle: AppMotion.feedback,
         intensityFadeDuration: 0.18,
-        activationSpring: .spring(response: 0.22, dampingFraction: 0.86, blendDuration: 0.08)
+        activationSpring: AppMotion.press
     )
 
     func intensityLevel(for rawIntensity: Double) -> Int {

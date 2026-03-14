@@ -63,6 +63,9 @@ struct OnboardingView: View {
             AddHabitSheet { _ in
                 flowController.completeOnboarding(userSettings: userSettings)
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
         .alert("Couldn’t create habit", isPresented: $showQuickHabitError) {
             Button("OK", role: .cancel) { }

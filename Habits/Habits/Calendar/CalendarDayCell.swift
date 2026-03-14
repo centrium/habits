@@ -10,6 +10,7 @@ import SwiftUI
 
 struct CalendarDayCell: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var pulseScale: CGFloat = 1
 
     private enum Layout {
         static let cellWidth: CGFloat = 43
@@ -148,6 +149,7 @@ struct CalendarDayCell: View {
             }
         }
         .opacity(contentOpacity)
+        .scaleEffect(pulseScale)
         .frame(width: Layout.cellWidth, height: Layout.cellHeight)
         .overlay(selectionOverlay)
         .contentShape(Rectangle())
@@ -167,6 +169,13 @@ struct CalendarDayCell: View {
         .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: intensity)
         .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: count)
         .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: indicatorText)
+        .onChange(of: count) { oldValue, newValue in
+            guard !isDisabled, newValue > oldValue else { return }
+            pulseScale = 1.04
+            withAnimation(AppMotion.feedback) {
+                pulseScale = 1
+            }
+        }
         .disabled(isDisabled)
     }
 

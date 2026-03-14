@@ -80,6 +80,7 @@ struct HabitCard: View {
             )
                 .presentationDetents([.medium, .large], selection: $selectedDetent)
                 .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showQuickEntry) {
             if let service {
@@ -92,6 +93,9 @@ struct HabitCard: View {
                 ) { newValue in
                     _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
                 }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
             }
         }
         .onAppear {

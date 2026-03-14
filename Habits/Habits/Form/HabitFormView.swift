@@ -24,6 +24,11 @@ struct HabitFormView: View {
     @State private var showIconPicker = false
     @State private var showingFrequencyTargetEditor = false
     @State private var showingCumulativeTargetEditor = false
+    @FocusState private var focusedField: Field?
+    
+    private enum Field {
+        case name
+    }
 
     var body: some View {
         Form {
@@ -41,7 +46,8 @@ struct HabitFormView: View {
             Section("Habit") {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.words)
-
+                    .focused($focusedField, equals: .name)
+                
                 TextField("Subtitle (optional)", text: $subtitle)
             }
 
@@ -65,7 +71,7 @@ struct HabitFormView: View {
                                         )
                                     )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(TactileButtonStyle())
                         }
                     }
                     .padding(.vertical, 6)
@@ -90,7 +96,7 @@ struct HabitFormView: View {
                         }
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(TactileButtonStyle())
             }
 
             Section("Goal") {
@@ -158,6 +164,14 @@ struct HabitFormView: View {
                 }
             }
         }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                focusedField = .name
+            }
+        }
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .sheet(isPresented: $showIconPicker) {
             IconPickerSheet(
                 selectedIcon: iconName,
@@ -166,6 +180,8 @@ struct HabitFormView: View {
                 iconName = newIcon
             }
             .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showingFrequencyTargetEditor) {
             TargetNumberSheet(
@@ -174,6 +190,9 @@ struct HabitFormView: View {
             ) { newValue in
                 streakTarget = newValue
             }
+            .presentationDetents([.fraction(0.32)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showingCumulativeTargetEditor) {
             NumericValueSheet(
@@ -192,6 +211,9 @@ struct HabitFormView: View {
             ) { newValue in
                 targetValue = max(newValue, allowsDecimals ? 0.1 : 1)
             }
+            .presentationDetents([.fraction(0.36)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
     }
 
@@ -222,14 +244,15 @@ struct HabitFormView: View {
                 } label: {
                     Image(systemName: "minus")
                 }
+                .buttonStyle(TactileButtonStyle())
 
                 Button {
                     streakTarget += 1
                 } label: {
                     Image(systemName: "plus")
                 }
+                .buttonStyle(TactileButtonStyle())
             }
-            .buttonStyle(.plain)
         }
     }
 

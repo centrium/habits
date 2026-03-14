@@ -15,12 +15,12 @@ struct GoalProgressButton: View {
     let accessibilityLabel: String
     let action: () -> Void
     let longPressAction: (() -> Void)?
+    @State private var pulseScale: CGFloat = 1
 
     private enum Metrics {
         static let iconSize: CGFloat = 32
         static let tapPadding: CGFloat = 6
         static let ringLineWidth: CGFloat = 3.5
-        static let animationDuration: Double = 0.2
     }
 
     private var clampedProgress: Double {
@@ -36,7 +36,10 @@ struct GoalProgressButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            Haptics.impactLight()
+            action()
+        } label: {
             ZStack {
                 ringLayer
 
@@ -49,10 +52,11 @@ struct GoalProgressButton: View {
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(accent)
             .frame(width: Metrics.iconSize, height: Metrics.iconSize)
+            .scaleEffect(pulseScale)
             .contentShape(Circle())
             .padding(Metrics.tapPadding)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TactileButtonStyle())
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(isComplete ? [.isSelected] : [])
         .simultaneousGesture(
@@ -61,8 +65,17 @@ struct GoalProgressButton: View {
                     longPressAction?()
                 }
         )
-        .animation(.easeInOut(duration: Metrics.animationDuration), value: clampedProgress)
-        .animation(.easeInOut(duration: Metrics.animationDuration), value: isComplete)
+        .animation(AppMotion.quickFade, value: clampedProgress)
+        .animation(AppMotion.quickFade, value: isComplete)
+        .onChange(of: isComplete) { oldValue, newValue in
+            guard !oldValue, newValue else { return }
+            Haptics.success()
+            triggerPulse()
+        }
+        .onChange(of: clampedProgress) { oldValue, newValue in
+            guard oldValue == 0, newValue > 0, !isComplete else { return }
+            triggerPulse()
+        }
     }
 
     @ViewBuilder
@@ -81,6 +94,13 @@ struct GoalProgressButton: View {
                     )
                 )
                 .rotationEffect(.degrees(-90))
+        }
+    }
+
+    private func triggerPulse() {
+        pulseScale = 1.08
+        withAnimation(AppMotion.feedback) {
+            pulseScale = 1
         }
     }
 }

@@ -51,7 +51,7 @@ struct FirstHabitStepView: View {
                         .frame(maxWidth: .infinity)
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TactileButtonStyle())
                 }
             }
 

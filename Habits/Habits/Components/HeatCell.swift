@@ -10,6 +10,7 @@ import SwiftUI
 
 struct HeatCell: View {
     @Environment(\.displayScale) private var displayScale
+    @State private var pulseScale: CGFloat = 1
 
     let date: Date
     let accent: Color
@@ -30,7 +31,7 @@ struct HeatCell: View {
                     .strokeBorder(borderColor, lineWidth: pixelLineWidth)
             )
             .overlay(selectionOverlay)
-            .scaleEffect(isActive ? 1 : 0.96)
+            .scaleEffect((isActive ? 1 : 0.96) * pulseScale)
             .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
             .onTapGesture {
@@ -39,9 +40,16 @@ struct HeatCell: View {
             }
             .accessibilityLabel(Text(formatted(date)))
             .animation(style.activationSpring, value: isActive)
-            .animation(.easeInOut(duration: style.intensityFadeDuration), value: visualIntensity)
+            .animation(AppMotion.quickFade, value: visualIntensity)
             .animation(style.animationStyle, value: isSelected)
             .animation(style.animationStyle, value: isToday)
+            .onChange(of: visualIntensity) { oldValue, newValue in
+                guard oldValue == 0, newValue > 0 else { return }
+                pulseScale = 1.07
+                withAnimation(AppMotion.feedback) {
+                    pulseScale = 1
+                }
+            }
     }
 
     private var selectionOverlay: some View {

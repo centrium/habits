@@ -73,7 +73,7 @@ struct CumulativeDayEntriesSheet: View {
                                         .foregroundStyle(.tertiary)
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(TactileButtonStyle())
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     _ = service.deleteEntry(entry, for: habit, on: date)
@@ -105,7 +105,7 @@ struct CumulativeDayEntriesSheet: View {
                 }
             }
         }
-        .sheet(item: $editorSession) { session in
+            .sheet(item: $editorSession) { session in
             NumericValueSheet(
                 title: session.entry == nil ? "Add Entry" : "Edit Entry",
                 initialValue: session.initialValue,
@@ -119,6 +119,9 @@ struct CumulativeDayEntriesSheet: View {
                     _ = service.addLog(for: habit, on: date, value: max(0, newValue))
                 }
             }
+            .presentationDetents([.fraction(0.36)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
     }
 

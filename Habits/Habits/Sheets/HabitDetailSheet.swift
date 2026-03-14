@@ -77,6 +77,7 @@ struct HabitDetailSheet: View {
                                 streakUnit: habit.goalPeriod.streakUnit,
                                 accent: Color(hex: habit.colorHex)
                             )
+                            .pressableCardFeedback(scale: 0.985, opacity: 0.98)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 if habit.goalType == .cumulative {
@@ -146,6 +147,7 @@ struct HabitDetailSheet: View {
                         Image(systemName: "chevron.left")
                             .font(.subheadline.weight(.semibold))
                     }
+                    .buttonStyle(TactileButtonStyle())
                 }
                 
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
@@ -157,6 +159,7 @@ struct HabitDetailSheet: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color(red: 0.82, green: 0.68, blue: 0.42))
                     }
+                    .buttonStyle(TactileButtonStyle())
 
                     Button {
                         showEdit = true
@@ -164,6 +167,7 @@ struct HabitDetailSheet: View {
                         Image(systemName: "pencil")
                             .font(.subheadline.weight(.semibold))
                     }
+                    .buttonStyle(TactileButtonStyle())
 
                 }
             }
@@ -175,6 +179,9 @@ struct HabitDetailSheet: View {
                 dismiss()
                 onDeleted?()
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
@@ -185,6 +192,8 @@ struct HabitDetailSheet: View {
             }
             .presentationDetents([.medium, .large], selection: $insightsDetent)
             .presentationBackground(Color(.systemGroupedBackground))
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showValueEntry) {
             CumulativeQuickEntrySheet(
@@ -197,6 +206,9 @@ struct HabitDetailSheet: View {
                 _ = service.addLog(for: habit, on: selectionState.selectedDate, value: max(0, newValue))
                 manualLogValue = newValue
             }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
         }
         .onAppear {
             service.updateCalendar(calculationCalendar)

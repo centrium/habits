@@ -210,11 +210,10 @@ enum HabitDeletionAction {
     static func perform(
         habit: Habit,
         modelContext: ModelContext,
-        dismissEditSheet: () -> Void,
+        dismissEditSheet: () -> Void = {},
         onDeleted: (() -> Void)? = nil
     ) {
-        modelContext.delete(habit)
-        try? modelContext.save()
+        HabitListMutation.delete(habit, in: modelContext)
         dismissEditSheet()
         onDeleted?()
     }

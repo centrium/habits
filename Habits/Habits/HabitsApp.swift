@@ -47,6 +47,7 @@ struct HabitsApp: App {
 
     init() {
         self.init(container: nil)
+        KeyboardWarmup.warm()
     }
 
     init(container: ModelContainer?) {
