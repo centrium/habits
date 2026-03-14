@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C95504A52F65F35B0024850C /* HabitsStore.storekit in Resources */ = {isa = PBXBuildFile; fileRef = C95504A42F65F35B0024850C /* HabitsStore.storekit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C91EE40B2F4C589A00DB70AC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -20,6 +24,7 @@
 		C91EE3FB2F4C589800DB70AC /* Habits.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Habits.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C91EE40A2F4C589A00DB70AC /* HabitsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HabitsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C925BA6C2F62D5FD008D04D9 /* Habits.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Habits.xctestplan; sourceTree = "<group>"; };
+		C95504A42F65F35B0024850C /* HabitsStore.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = HabitsStore.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -56,6 +61,7 @@
 		C91EE3F22F4C589800DB70AC = {
 			isa = PBXGroup;
 			children = (
+				C95504A42F65F35B0024850C /* HabitsStore.storekit */,
 				C925BA6C2F62D5FD008D04D9 /* Habits.xctestplan */,
 				C91EE3FD2F4C589800DB70AC /* Habits */,
 				C91EE40D2F4C589A00DB70AC /* HabitsTests */,
@@ -164,6 +170,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C95504A52F65F35B0024850C /* HabitsStore.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

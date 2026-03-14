@@ -42,6 +42,7 @@ struct RootView: View {
 struct HabitsApp: App {
     @StateObject var deepLinkManager = DeepLinkManager.shared
     @StateObject private var userSettings = UserSettings()
+    @StateObject private var purchaseService = PurchaseService()
     
     let container: ModelContainer
 
@@ -85,7 +86,9 @@ struct HabitsApp: App {
             RootView()
                 .environmentObject(userSettings)
                 .environmentObject(deepLinkManager)
+                .environmentObject(purchaseService)
                 .preferredColorScheme(.dark)
+            
         }
         .modelContainer(container)
     }
