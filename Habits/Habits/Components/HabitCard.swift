@@ -28,6 +28,17 @@ struct HabitCard: View {
     }
 
     var body: some View {
+        let now = Date()
+        let today = calculationCalendar.startOfDay(for: now)
+        let streakSnapshot = HabitInsightsEngine.snapshot(
+            for: habit,
+            anchorDate: today,
+            respectCreatedAtBoundary: false,
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference,
+            now: now
+        ).streak
+
         VStack(alignment: .leading, spacing: 12) {
             HabitHeader(
                 habit: habit,
@@ -37,6 +48,7 @@ struct HabitCard: View {
                 showsQuickLogButton: true,
                 showsInlineProgressText: true,
                 secondaryTextOverride: nil,
+                currentStreak: streakSnapshot.current,
                 onQuickLog: { date in
                     if habit.goalType == .frequency {
                         _ = service?.quickLog(for: habit, on: date)

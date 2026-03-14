@@ -15,6 +15,7 @@ struct HabitHeader: View {
     let showsQuickLogButton: Bool
     let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
+    let currentStreak: Int?
     let progressFractionOverride: Double?
     let isCompleteOverride: Bool?
     let onQuickLog: (Date) -> Void
@@ -28,6 +29,7 @@ struct HabitHeader: View {
         showsQuickLogButton: Bool,
         showsInlineProgressText: Bool,
         secondaryTextOverride: String?,
+        currentStreak: Int? = nil,
         progressFractionOverride: Double? = nil,
         isCompleteOverride: Bool? = nil,
         onQuickLog: @escaping (Date) -> Void,
@@ -40,6 +42,7 @@ struct HabitHeader: View {
         self.showsQuickLogButton = showsQuickLogButton
         self.showsInlineProgressText = showsInlineProgressText
         self.secondaryTextOverride = secondaryTextOverride
+        self.currentStreak = currentStreak
         self.progressFractionOverride = progressFractionOverride
         self.isCompleteOverride = isCompleteOverride
         self.onQuickLog = onQuickLog
@@ -95,6 +98,10 @@ struct HabitHeader: View {
         return "Log \(habit.name) for \(dateText)"
     }
 
+    private var resolvedCurrentStreak: Int {
+        max(0, currentStreak ?? 0)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             HabitBadge(
@@ -104,8 +111,13 @@ struct HabitHeader: View {
             )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(habit.name)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(habit.name)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    HabitHeaderStreakIndicator(streak: resolvedCurrentStreak)
+                }
 
                 Text(subtitleText)
                     .font(.caption)
@@ -130,6 +142,44 @@ struct HabitHeader: View {
                 )
             }
         }
+    }
+}
+
+private struct HabitHeaderStreakIndicator: View {
+    let streak: Int
+
+    private var showsIndicator: Bool {
+        StreakIndicatorPresentation.shouldShow(streak: streak)
+    }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            HStack(spacing: 3) {
+                Image(systemName: "flame.fill")
+                    .font(.caption2)
+                Text("888")
+                    .font(.caption.weight(.regular))
+            }
+            .monospacedDigit()
+            .opacity(0)
+
+            if showsIndicator {
+                HStack(spacing: 3) {
+                    Image(systemName: "flame.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange.opacity(0.82))
+
+                    Text(StreakIndicatorPresentation.valueText(for: streak))
+                        .font(.caption.weight(.regular))
+                        .foregroundStyle(.secondary)
+                }
+                .monospacedDigit()
+            }
+        }
+        .frame(width: StreakIndicatorPresentation.reservedWidth, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(showsIndicator ? "Streak \(streak)" : "")
+        .accessibilityHidden(!showsIndicator)
     }
 }
 

@@ -37,6 +37,16 @@ struct HabitDetailSheet: View {
             visibleMonth: selectionState.visibleMonth,
             selectedDate: selectionState.selectedDate
         )
+        let now = Date()
+        let today = service.calendar.startOfDay(for: now)
+        let streakSnapshot = HabitInsightsEngine.snapshot(
+            for: habit,
+            anchorDate: today,
+            respectCreatedAtBoundary: false,
+            calendar: service.calendar,
+            weekStartPreference: userSettings.weekStartPreference,
+            now: now
+        ).streak
 
         NavigationStack {
             ScrollView {
@@ -50,6 +60,7 @@ struct HabitDetailSheet: View {
                             showsQuickLogButton: true,
                             showsInlineProgressText: false,
                             secondaryTextOverride: loggingContextText,
+                            currentStreak: streakSnapshot.current,
                             progressFractionOverride: progressSnapshot?.progressFraction,
                             isCompleteOverride: progressSnapshot?.isComplete,
                             onQuickLog: { date in
@@ -64,7 +75,6 @@ struct HabitDetailSheet: View {
                             } : nil
                         )
 
-
                         if let progressSnapshot {
                             HabitProgressSummary(
                                 headline: progressSnapshot.headlineText,
@@ -73,8 +83,6 @@ struct HabitDetailSheet: View {
                                 percentText: percentText(progressSnapshot.progressFraction),
                                 progress: progressSnapshot.progressFraction,
                                 overflowText: progressSnapshot.overflowText,
-                                streak: progressSnapshot.streak,
-                                streakUnit: habit.goalPeriod.streakUnit,
                                 accent: Color(hex: habit.colorHex)
                             )
                             .pressableCardFeedback(scale: 0.985, opacity: 0.98)
@@ -257,8 +265,6 @@ private struct HabitProgressSummary: View {
     let percentText: String
     let progress: Double
     let overflowText: String?
-    let streak: Int
-    let streakUnit: String
     let accent: Color
 
     private let ringSize: CGFloat = 104
@@ -304,23 +310,6 @@ private struct HabitProgressSummary: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if streak > 0 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "flame.fill")
-                            .font(.caption)
-                            .foregroundStyle(accent)
-
-                        Text("\(streak) \(streakUnit) streak")
-                            .font(.caption.weight(.semibold))
-                            .monospacedDigit()
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(accent.opacity(0.15))
-                    )
-                }
             }
 
             Spacer()

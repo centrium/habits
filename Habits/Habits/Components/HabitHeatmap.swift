@@ -50,6 +50,18 @@ struct HabitHeatmap: View {
     }
 
     var body: some View {
+        let now = Date()
+        let streakDays = HeatmapStreakCellsResolver.currentStreakDays(
+            for: habit,
+            endingAt: now,
+            calendar: calendarProvider.calendar
+        )
+        let streakEmphasisByDay = HeatmapStreakCellsResolver.emphasisByDay(
+            streakDays: streakDays,
+            endingAt: now,
+            calendar: calendarProvider.calendar
+        )
+
         GitHubHeatmapGrid(
             accent: accent,
             style: style,
@@ -59,6 +71,10 @@ struct HabitHeatmap: View {
             isInteractive: isInteractive,
             intensityFor: { day in
                 service.intensity(for: habit, on: day)
+            },
+            streakEmphasisFor: { day in
+                let normalizedDay = calendarProvider.calendar.startOfDay(for: day)
+                return streakEmphasisByDay[normalizedDay] ?? .none
             },
             onTapDay: { day in
                 onSelectDay(day)

@@ -7,7 +7,6 @@ struct ProgressAsOfSnapshot {
     let headlineText: String
     let contextText: String
     let overflowText: String?
-    let streak: Int
     let isComplete: Bool
     let visibleMonthText: String?
 }
@@ -88,7 +87,6 @@ struct ProgressAsOfService {
                 for: habit,
                 surplus: canonical.currentPeriod.surplus
             ),
-            streak: canonical.streak.current,
             isComplete: canonical.currentPeriod.isCompleted ?? false,
             visibleMonthText: visibleMonthText(
                 for: habit,

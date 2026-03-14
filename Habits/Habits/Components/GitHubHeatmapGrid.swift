@@ -16,6 +16,7 @@ struct GitHubHeatmapGrid: View {
     let selectedDate: Date
     let isInteractive: Bool
     let intensityFor: (Date) -> Double
+    let streakEmphasisFor: (Date) -> HeatmapStreakEmphasis
     let onTapDay: (Date) -> Void
 
     private let rows: CGFloat = 7
@@ -99,6 +100,7 @@ struct GitHubHeatmapGrid: View {
                                 date: day,
                                 accent: accent,
                                 intensity: intensityFor(day),
+                                streakEmphasis: streakEmphasisFor(day),
                                 size: style.cellSize,
                                 style: style,
                                 isSelected: calendarProvider.calendar.isDate(day, inSameDayAs: selectedDate),
