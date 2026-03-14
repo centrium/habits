@@ -61,7 +61,7 @@ enum PatternCalculator {
     ) -> [Int: Int] {
         var counts: [Int: Int] = [:]
         for log in logs {
-            let weekday = calendar.component(.weekday, from: log.date)
+            let weekday = calendar.component(.weekday, from: log.dayStart)
             counts[weekday, default: 0] += 1
         }
         return counts

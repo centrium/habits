@@ -140,6 +140,8 @@ private struct HabitInsightsCardsRenderer: View {
     @ViewBuilder
     private func cardView(_ card: HabitInsightsCard) -> some View {
         switch card {
+        case .overview(let block):
+            OverviewCardView(block: block)
         case .achievement(let block):
             AchievementCardView(block: block, accent: accent)
         case .goalPace(let block):
@@ -327,6 +329,65 @@ private struct MomentumCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: minHeight, alignment: .topLeading)
         }
+    }
+}
+
+private struct OverviewCardView: View {
+    let block: HabitInsightsOverviewBlock
+
+    private let columns = [
+        GridItem(.flexible(minimum: 120), spacing: 14, alignment: .leading),
+        GridItem(.flexible(minimum: 120), spacing: 14, alignment: .leading)
+    ]
+
+    var body: some View {
+        HabitInsightsPanel {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Overview")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                    OverviewMetricCell(
+                        title: "Consistency",
+                        value: "\(block.consistency)%"
+                    )
+                    OverviewMetricCell(
+                        title: "Best Month",
+                        value: block.bestMonth
+                    )
+                    OverviewMetricCell(
+                        title: "Most Missed Day",
+                        value: block.mostMissedDay
+                    )
+                    OverviewMetricCell(
+                        title: "Average Streak",
+                        value: "\(block.averageStreak) \(block.averageStreak == 1 ? "day" : "days")"
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct OverviewMetricCell: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

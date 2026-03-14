@@ -47,6 +47,10 @@ enum HeatmapNormalizer {
         }
     }
 
+    static func highestIntensity(from intensities: [Double]) -> Double {
+        intensities.max() ?? 0
+    }
+
     private static func openHabitLogCountTier(for dailyLogCount: Int) -> Int {
         switch dailyLogCount {
         case ...0:

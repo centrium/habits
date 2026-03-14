@@ -16,6 +16,7 @@ struct HabitHeatmap: View {
     let selectedDate: Date
     let isInteractive: Bool
     let onSelectDay: (Date) -> Void
+    @State private var timeline: HeatmapTimeline
 
     init(
         habit: Habit,
@@ -31,6 +32,9 @@ struct HabitHeatmap: View {
         self.selectedDate = selectedDate
         self.isInteractive = isInteractive
         self.onSelectDay = onSelectDay
+        _timeline = State(
+            initialValue: HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
+        )
     }
 
     private var accent: Color {
@@ -46,36 +50,27 @@ struct HabitHeatmap: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let availableWidth = max(
-                0,
-                geo.size.width - style.dayLabelWidth - style.rowLabelLeadingPadding - style.horizontalSpacing
-            )
-            let weekWidth = style.cellSize + style.horizontalSpacing
-            let numberOfWeeks = max(1, min(20, Int((availableWidth + style.horizontalSpacing) / weekWidth)))
-            let layoutService = HeatmapLayoutService(calendarProvider: calendarProvider)
-
-            let weeks = layoutService.makeWeeks(
-                endingAt: Date(),
-                numberOfWeeks: numberOfWeeks
-            )
-
-            GitHubHeatmapGrid(
-                accent: accent,
-                style: style,
-                calendarProvider: calendarProvider,
-                weeks: weeks,
-                selectedDate: selectedDate,
-                isInteractive: isInteractive,
-                intensityFor: { day in
-                    service.intensity(for: habit, on: day)
-                },
-                onTapDay: { day in
-                    onSelectDay(day)
-                }
-            )
-            .padding(.top, style.titleToGridSpacing)
-        }
+        GitHubHeatmapGrid(
+            accent: accent,
+            style: style,
+            calendarProvider: calendarProvider,
+            weeks: timeline.weeks,
+            selectedDate: selectedDate,
+            isInteractive: isInteractive,
+            intensityFor: { day in
+                service.intensity(for: habit, on: day)
+            },
+            onTapDay: { day in
+                onSelectDay(day)
+            }
+        )
+        .padding(.top, style.titleToGridSpacing)
         .frame(height: heatmapHeight)
+        .onChange(of: calendarProvider.calendar.firstWeekday) { _, _ in
+            timeline = HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
+        }
+        .onChange(of: calendarProvider.calendar.timeZone.identifier) { _, _ in
+            timeline = HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
+        }
     }
 }

@@ -447,17 +447,16 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(achievement.progressRatio, 0, accuracy: 0.0001)
     }
 
-    func testInsightsForDenseOpenEndedActivityIncludesBehaviourInsightsCard() {
+    func testBehaviourInsightsShowNeutralMessageWhenLogCountIsBelowMinimumThreshold() {
         // Given
-        let now = TestDateFactory.date(2026, 3, 11, hour: 12, calendar: calendar)
+        let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
-            entries: [
-                .init(timestamp: TestDateFactory.date(2026, 3, 7, hour: 9, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 3, 8, hour: 9, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 3, 9, hour: 9, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 9, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 3, 11, hour: 9, calendar: calendar), value: 1),
-            ],
+            entries: (0..<19).map { offset in
+                .init(
+                    timestamp: TestDateFactory.addingDays(-offset, to: now, calendar: calendar),
+                    value: 1
+                )
+            },
             calendar: calendar
         )
 
@@ -473,7 +472,112 @@ final class InsightEngineTests: XCTestCase {
         guard let behaviour = behaviourBlock(from: viewModel) else {
             return XCTFail("Expected behaviour insights card")
         }
+        XCTAssertTrue(behaviour.observations.isEmpty)
+        XCTAssertEqual(behaviour.suggestion, "We’ll start showing behaviour insights once we have a little more data.")
+    }
+
+    func testBehaviourInsightsShowNeutralMessageWhenCoverageIsBelowMinimumWeeksThreshold() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
+        let entries = (0..<20).map { offset in
+            // Keep completion dates within two Monday-based weeks.
+            let boundedOffset = offset % 13
+            return TestHabitFactory.Entry(
+                timestamp: TestDateFactory.addingDays(-boundedOffset, to: now, calendar: calendar),
+                value: 1
+            )
+        }
+        let habit = TestHabitFactory.openEnded(
+            entries: entries,
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let behaviour = behaviourBlock(from: viewModel) else {
+            return XCTFail("Expected behaviour insights card")
+        }
+        XCTAssertTrue(behaviour.observations.isEmpty)
+        XCTAssertEqual(behaviour.suggestion, "We’ll start showing behaviour insights once we have a little more data.")
+    }
+
+    func testBehaviourInsightsUseCompletionDateWhenLogsAreBackfilled() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
+        let firstMonday = TestDateFactory.date(2026, 2, 9, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(entries: [], calendar: calendar)
+        var logs: [HabitLog] = []
+
+        for weekOffset in 0..<5 {
+            for dayOffset in 0..<4 {
+                let completionDay = TestDateFactory.addingDays((weekOffset * 7) + dayOffset, to: firstMonday, calendar: calendar)
+                logs.append(
+                    TestHabitFactory.legacyLog(
+                        on: completionDay,
+                        count: 1,
+                        createdAt: now,
+                        calendar: calendar
+                    )
+                )
+            }
+        }
+        habit.logs = logs
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let behaviour = behaviourBlock(from: viewModel) else {
+            return XCTFail("Expected behaviour insights card")
+        }
         XCTAssertFalse(behaviour.observations.isEmpty)
+        XCTAssertTrue(behaviour.observations.joined(separator: " ").contains("Mondays"))
+        XCTAssertNotEqual(behaviour.suggestion, "We’ll start showing behaviour insights once we have a little more data.")
+    }
+
+    func testInsightsIncludeOverviewMetricsCard() {
+        // Given
+        let createdAt = TestDateFactory.date(2026, 3, 1, hour: 9, calendar: calendar)
+        let now = TestDateFactory.date(2026, 3, 10, hour: 18, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            createdAt: createdAt,
+            entries: [
+                .init(timestamp: TestDateFactory.date(2026, 3, 1, hour: 8, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.date(2026, 3, 4, hour: 10, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.date(2026, 3, 7, hour: 10, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+        let expected = HabitInsightsService(calendar: calendar).snapshot(for: habit, now: now)
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let overview = overviewBlock(from: viewModel) else {
+            return XCTFail("Expected overview card")
+        }
+        XCTAssertEqual(overview.consistency, expected.consistency)
+        XCTAssertEqual(overview.bestMonth, expected.bestMonth)
+        XCTAssertEqual(overview.mostMissedDay, expected.mostMissedDay)
+        XCTAssertEqual(overview.averageStreak, expected.averageStreak)
     }
 
     private func trendBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsTrendBlock? {
@@ -506,6 +610,15 @@ final class InsightEngineTests: XCTestCase {
     private func behaviourBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsBehaviourBlock? {
         for card in viewModel.cards {
             if case .behaviourInsights(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func overviewBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsOverviewBlock? {
+        for card in viewModel.cards {
+            if case .overview(let block) = card {
                 return block
             }
         }

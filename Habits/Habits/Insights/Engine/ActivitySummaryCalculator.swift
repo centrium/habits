@@ -24,9 +24,11 @@ enum ActivitySummaryCalculator {
         let rollingWindowStart = calendar.date(byAdding: .day, value: -30, to: calendar.startOfDay(for: now))
             ?? calendar.startOfDay(for: now)
 
-        let entriesThisWeek = logs.filter { weekInterval.contains($0.date) }.count
-        let entriesThisMonth = logs.filter { monthInterval.contains($0.date) }.count
-        let entriesInRollingWindow = logs.filter { $0.date >= rollingWindowStart && $0.date <= now }.count
+        let entriesThisWeek = logs.filter { weekInterval.contains($0.dayStart) }.count
+        let entriesThisMonth = logs.filter { monthInterval.contains($0.dayStart) }.count
+        let entriesInRollingWindow = logs.filter {
+            $0.dayStart >= rollingWindowStart && $0.dayStart <= calendar.startOfDay(for: now)
+        }.count
         let averagePerWeek = Double(entriesInRollingWindow) / 4.3
 
         let summaryText: String = {

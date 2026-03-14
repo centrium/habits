@@ -25,7 +25,6 @@ struct GitHubHeatmapGrid: View {
             dayLabels
             scrollableGrid
         }
-        .allowsHitTesting(isInteractive)
     }
 
     private var dayLabels: some View {
@@ -127,6 +126,7 @@ struct GitHubHeatmapGrid: View {
             }
             .padding(.trailing, style.rightEdgeFadeWidth)
         }
+        .defaultScrollAnchor(.trailing)
         .mask {
             HStack(spacing: 0) {
                 Rectangle().fill(.white)

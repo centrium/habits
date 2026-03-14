@@ -141,6 +141,7 @@ struct HabitInsightsViewModel {
 }
 
 enum HabitInsightsCard: Identifiable {
+    case overview(HabitInsightsOverviewBlock)
     case achievement(HabitInsightsAchievementBlock)
     case goalPace(HabitInsightsGoalPaceBlock)
     case momentum(HabitInsightsMomentumBlock)
@@ -157,6 +158,8 @@ enum HabitInsightsCard: Identifiable {
 
     var id: String {
         switch self {
+        case .overview:
+            return "overview"
         case .achievement:
             return "achievement"
         case .goalPace:
@@ -185,6 +188,13 @@ enum HabitInsightsCard: Identifiable {
             return "debug"
         }
     }
+}
+
+struct HabitInsightsOverviewBlock {
+    let consistency: Int
+    let bestMonth: String
+    let mostMissedDay: String
+    let averageStreak: Int
 }
 
 struct HabitInsightsAchievementBlock {

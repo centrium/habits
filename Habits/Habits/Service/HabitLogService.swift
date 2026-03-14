@@ -219,24 +219,28 @@ extension HabitLogService {
 extension HabitLogService {
     func intensity(for habit: Habit, on date: Date) -> Double {
         normalizeLogsIfNeeded(for: habit)
-        let dailyLogCount = max(0, habit.count(on: date, calendar: calendar))
-        let dailyLogValue = max(0, habit.value(on: date, calendar: calendar))
-        guard dailyLogCount > 0 || dailyLogValue > 0 else { return HeatmapNormalizer.intensity(forTier: 0) }
+        let normalizedDate = calendar.startOfDay(for: date)
+        let dayLogs = habit.logs(on: normalizedDate, calendar: calendar)
+        guard !dayLogs.isEmpty else { return 0 }
 
-        let referenceDate = heatmapReferenceDate(for: habit, requested: date)
+        let referenceDate = heatmapReferenceDate(for: habit, requested: normalizedDate)
         let maxDailyValueInWindow = maxDailyCumulativeValueInHeatmapWindow(for: habit, endingAt: referenceDate)
 
-        let tier = HeatmapNormalizer.tier(
-            for: HeatmapNormalizationContext(
-                goalType: habit.goalType,
-                hasGoal: habit.hasGoal,
-                targetValue: habit.effectiveTargetValue,
-                dailyLogCount: dailyLogCount,
-                dailyLogValue: dailyLogValue,
-                maxDailyValueInWindow: maxDailyValueInWindow
+        let intensities = dayLogs.map { log in
+            let tier = HeatmapNormalizer.tier(
+                for: HeatmapNormalizationContext(
+                    goalType: habit.goalType,
+                    hasGoal: habit.hasGoal,
+                    targetValue: habit.effectiveTargetValue,
+                    dailyLogCount: max(0, log.frequencyContribution),
+                    dailyLogValue: max(0, log.numericValue),
+                    maxDailyValueInWindow: maxDailyValueInWindow
+                )
             )
-        )
-        return HeatmapNormalizer.intensity(forTier: tier)
+            return HeatmapNormalizer.intensity(forTier: tier)
+        }
+
+        return HeatmapNormalizer.highestIntensity(from: intensities)
     }
 }
 
