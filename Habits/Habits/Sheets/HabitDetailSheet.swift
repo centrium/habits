@@ -1,14 +1,22 @@
 import SwiftData
 import SwiftUI
 
+private enum ActiveSheet: Identifiable {
+    case edit
+    case insights
+    case valueEntry
+    case paywall
+
+    var id: Int { hashValue }
+}
+
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject private var purchaseService: PurchaseService
     @StateObject private var selectionState: HabitSelectionState
     @State private var service: HabitLogService
-    @State private var showEdit = false
-    @State private var showInsights = false
-    @State private var showValueEntry = false
+    @State private var activeSheet: ActiveSheet?
     @State private var manualLogValue: Double? = nil
     @State private var insightsDetent: PresentationDetent = .large
     private let onDeleted: (() -> Void)?
@@ -161,7 +169,11 @@ struct HabitDetailSheet: View {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
 
                     Button {
-                        showInsights = true
+                        if purchaseService.hasAccess(to: .advancedInsights) {
+                            activeSheet = .insights
+                        } else {
+                            activeSheet = .paywall
+                        }
                     } label: {
                         Image(systemName: "sparkles")
                             .font(.subheadline.weight(.semibold))
@@ -170,7 +182,7 @@ struct HabitDetailSheet: View {
                     .buttonStyle(TactileButtonStyle())
 
                     Button {
-                        showEdit = true
+                        activeSheet = .edit
                     } label: {
                         Image(systemName: "pencil")
                             .font(.subheadline.weight(.semibold))
@@ -181,42 +193,50 @@ struct HabitDetailSheet: View {
             }
         }
         .presentationBackground(Color(.systemBackground))
-        .sheet(isPresented: $showEdit) {
-            EditHabitSheet(habit: habit) {
-                showEdit = false
-                dismiss()
-                onDeleted?()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .edit:
+                EditHabitSheet(habit: habit) {
+                    activeSheet = nil
+                    dismiss()
+                    onDeleted?()
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+
+            case .insights:
+                NavigationStack {
+                    HabitInsightsView(
+                        habit: habit,
+                        logAnchorDate: selectionState.selectedDate
+                    )
+                }
+                .presentationDetents([.medium, .large], selection: $insightsDetent)
+                .presentationBackground(Color(.systemGroupedBackground))
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+
+            case .valueEntry:
+                CumulativeQuickEntrySheet(
+                    goalName: habit.name,
+                    unitLabel: habit.trimmedUnit,
+                    initialValue: manualLogValue,
+                    formattingContext: service.valueFormattingContext(for: habit),
+                    inputContext: service.valueInputContext(for: habit)
+                ) { newValue in
+                    _ = service.addLog(for: habit, on: selectionState.selectedDate, value: max(0, newValue))
+                    manualLogValue = newValue
+                }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+
+            case .paywall:
+                PaywallView(feature: .advancedInsights)
+
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(24)
-        }
-        .sheet(isPresented: $showInsights) {
-            NavigationStack {
-                HabitInsightsView(
-                    habit: habit,
-                    logAnchorDate: selectionState.selectedDate
-                )
-            }
-            .presentationDetents([.medium, .large], selection: $insightsDetent)
-            .presentationBackground(Color(.systemGroupedBackground))
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(24)
-        }
-        .sheet(isPresented: $showValueEntry) {
-            CumulativeQuickEntrySheet(
-                goalName: habit.name,
-                unitLabel: habit.trimmedUnit,
-                initialValue: manualLogValue,
-                formattingContext: service.valueFormattingContext(for: habit),
-                inputContext: service.valueInputContext(for: habit)
-            ) { newValue in
-                _ = service.addLog(for: habit, on: selectionState.selectedDate, value: max(0, newValue))
-                manualLogValue = newValue
-            }
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(24)
+
         }
         .onAppear {
             service.updateCalendar(calculationCalendar)
@@ -238,7 +258,7 @@ struct HabitDetailSheet: View {
 
     private func presentManualEntry() {
         manualLogValue = service.suggestedQuickEntryValue(for: habit)
-        showValueEntry = true
+        activeSheet = .valueEntry
     }
 
     private var weekLayoutStrategy: WeekLayoutStrategy {

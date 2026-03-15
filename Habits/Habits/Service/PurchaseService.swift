@@ -19,21 +19,29 @@ extension Transaction: PremiumEntitlementTransaction {}
 struct StoreCatalogProduct {
     let id: String
     private let storeKitProduct: Product?
+    private let fallbackDisplayPrice: String?
     private let purchaseAction: (@MainActor () async throws -> Product.PurchaseResult)?
 
     init(
         id: String,
+        displayPrice: String? = nil,
         purchaseAction: @escaping @MainActor () async throws -> Product.PurchaseResult = { .userCancelled }
     ) {
         self.id = id
         self.storeKitProduct = nil
+        self.fallbackDisplayPrice = displayPrice
         self.purchaseAction = purchaseAction
     }
 
     init(product: Product) {
         self.id = product.id
         self.storeKitProduct = product
+        self.fallbackDisplayPrice = nil
         self.purchaseAction = nil
+    }
+
+    var displayPrice: String? {
+        storeKitProduct?.displayPrice ?? fallbackDisplayPrice
     }
 
     @MainActor
@@ -56,31 +64,56 @@ final class PurchaseService: ObservableObject {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
-    private let userDefaults: UserDefaults
     private let productLoader: ([String]) async throws -> [StoreCatalogProduct]
+    private let currentEntitlementsLoader: () async -> [any PremiumEntitlementTransaction]
+    private var updatesTask: Task<Void, Never>?
 
     @Published var products: [StoreCatalogProduct] = []
     @Published var isPremiumUnlocked: Bool = false
 
+    var premiumProduct: StoreCatalogProduct? {
+        products.first { $0.id == StoreProduct.premiumLifetime.id }
+    }
+
     init(
-        userDefaults: UserDefaults = .standard,
         productLoader: (([String]) async throws -> [StoreCatalogProduct])? = nil,
+        currentEntitlementsLoader: (() async -> [any PremiumEntitlementTransaction])? = nil,
         shouldStartBackgroundTasks: Bool = true
     ) {
-        self.userDefaults = userDefaults
         self.productLoader = productLoader ?? { ids in
             let products = try await Product.products(for: ids)
             return products.map(StoreCatalogProduct.init(product:))
+        }
+        self.currentEntitlementsLoader = currentEntitlementsLoader ?? {
+            var entitlements: [any PremiumEntitlementTransaction] = []
+
+            for await result in Transaction.currentEntitlements {
+                guard case .verified(let transaction) = result else {
+                    continue
+                }
+
+                entitlements.append(transaction)
+            }
+
+            return entitlements
         }
 
         guard shouldStartBackgroundTasks, !Self.isRunningTests else {
             return
         }
 
-        Task {
-            await self.loadProducts()
+        updatesTask = Task {
             await self.listenForTransactions()
         }
+
+        Task {
+            await self.loadProducts()
+            await self.updateCurrentEntitlements()
+        }
+    }
+    
+    deinit {
+        updatesTask?.cancel()
     }
 
 }
@@ -106,7 +139,7 @@ extension PurchaseService {
 
     func purchasePremium() async throws {
 
-        guard let product = products.first(where: { $0.id == StoreProduct.premiumLifetime.id }) else {
+        guard let product = premiumProduct else {
             return
         }
 
@@ -115,12 +148,9 @@ extension PurchaseService {
         switch result {
 
         case .success(let verification):
-
-            let transaction = try checkVerified(verification)
-
-            await transaction.finish()
-
-            unlockPremium()
+            try await completePurchase(verification) { transaction in
+                await transaction.finish()
+            }
 
         case .userCancelled:
             break
@@ -132,6 +162,19 @@ extension PurchaseService {
             break
         }
 
+    }
+
+}
+
+extension PurchaseService {
+
+    func completePurchase<T: PremiumEntitlementTransaction>(
+        _ verification: VerificationResult<T>,
+        finish: (T) async -> Void
+    ) async throws {
+        let transaction = try checkVerified(verification)
+        await finish(transaction)
+        await updateCurrentEntitlements()
     }
 
 }
@@ -155,12 +198,9 @@ extension PurchaseService {
 
 extension PurchaseService {
 
-    func unlockPremiumIfNeeded<T: PremiumEntitlementTransaction>(for transaction: T) {
-        guard transaction.productID == StoreProduct.premiumLifetime.id else {
-            return
-        }
-
-        unlockPremium()
+    func unlockPremiumIfNeeded(for transaction: any PremiumEntitlementTransaction) {
+        guard transaction.productID == StoreProduct.premiumLifetime.id else { return }
+        isPremiumUnlocked = true
     }
 
 }
@@ -199,14 +239,20 @@ extension PurchaseService {
     func unlockPremium() {
 
         isPremiumUnlocked = true
-        userDefaults.set(true, forKey: "premium_unlocked")
 
     }
 
-    func loadEntitlement() {
+}
 
-        isPremiumUnlocked = userDefaults.bool(forKey: "premium_unlocked")
+extension PurchaseService {
 
+    func updateCurrentEntitlements() async {
+        isPremiumUnlocked = false
+
+        let entitlements = await currentEntitlementsLoader()
+        for transaction in entitlements {
+            unlockPremiumIfNeeded(for: transaction)
+        }
     }
 
 }
@@ -217,10 +263,36 @@ extension PurchaseService {
 
         do {
             try await AppStore.sync()
+            await updateCurrentEntitlements()
         } catch {
             print(error)
         }
 
     }
 
+}
+
+extension PurchaseService {
+
+    func hasAccess(to feature: PremiumFeature) -> Bool {
+
+        if isPremiumUnlocked {
+            return true
+        }
+
+        switch feature {
+
+        case .unlimitedHabits:
+            return false
+
+        case .advancedInsights:
+            return false
+
+        case .fullHeatmapHistory:
+            return false
+
+        case .dataExport:
+            return false
+        }
+    }
 }
