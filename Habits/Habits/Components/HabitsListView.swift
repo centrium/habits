@@ -12,6 +12,7 @@ import SwiftData
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject private var purchaseService: PurchaseService
     
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
@@ -22,6 +23,9 @@ struct HabitsListView: View {
 
     var body: some View {
         NavigationStack {
+            Button("Reset Premium (Debug)") {
+                purchaseService.isPremiumUnlocked = false
+            }
             List {
                 ForEach(habits) { habit in
                     HabitCard(habit: habit)

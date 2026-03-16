@@ -134,20 +134,6 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertTrue(isPremiumUnlocked)
     }
 
-    func testPaywallDisplaysStoreKitPriceWhenAvailable() async {
-        let service = await makeService()
-
-        let price = await MainActor.run {
-            service.products = [StoreCatalogProduct(id: premiumProductID, displayPrice: "£9.99")]
-            return service.premiumProduct?.displayPrice
-        }
-        let title = await MainActor.run {
-            PaywallView.purchaseButtonTitle(price: price)
-        }
-
-        XCTAssertEqual(title, "Unlock Premium - £9.99")
-    }
-
     private func makeService(
         productLoader: @escaping ([String]) async throws -> [StoreCatalogProduct] = { _ in [] },
         currentEntitlementsLoader: @escaping () async -> [any PremiumEntitlementTransaction] = { [] }

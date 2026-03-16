@@ -6,7 +6,7 @@
 //
 
 
-enum PremiumFeature {
+enum PremiumFeature: Equatable, Hashable {
     case unlimitedHabits
     case advancedInsights
     case fullHeatmapHistory

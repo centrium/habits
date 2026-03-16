@@ -148,10 +148,10 @@ extension PurchaseService {
         switch result {
 
         case .success(let verification):
-            try await completePurchase(verification) { transaction in
-                await transaction.finish()
-            }
-
+            let transaction = try checkVerified(verification)
+            unlockPremiumIfNeeded(for: transaction)
+            await transaction.finish()
+            
         case .userCancelled:
             break
 
@@ -247,10 +247,16 @@ extension PurchaseService {
 extension PurchaseService {
 
     func updateCurrentEntitlements() async {
+        print("Checking entitlements...")
+
         isPremiumUnlocked = false
 
         let entitlements = await currentEntitlementsLoader()
+
+        print("Entitlements count:", entitlements.count)
+
         for transaction in entitlements {
+            print("Transaction:", transaction.productID)
             unlockPremiumIfNeeded(for: transaction)
         }
     }
