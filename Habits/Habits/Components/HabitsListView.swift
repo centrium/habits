@@ -9,6 +9,20 @@
 import SwiftUI
 import SwiftData
 
+private enum ActiveSheet: Identifiable {
+    case addHabit
+    case paywall(PremiumFeature)
+
+    var id: String {
+        switch self {
+        case .addHabit:
+            return "addHabit"
+        case .paywall(let feature):
+            return "paywall-\(String(describing: feature))"
+        }
+    }
+}
+
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
@@ -16,16 +30,16 @@ struct HabitsListView: View {
     
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
-    @State private var showAddHabit = false
+    @State private var activeSheet: ActiveSheet?
     @State private var habitPendingDeletion: Habit?
 
     init() {}
 
     var body: some View {
+        Button("Reset Premium (Debug)") {
+            purchaseService.isPremiumUnlocked = false
+        }
         NavigationStack {
-            Button("Reset Premium (Debug)") {
-                purchaseService.isPremiumUnlocked = false
-            }
             List {
                 ForEach(habits) { habit in
                     HabitCard(habit: habit)
@@ -41,6 +55,16 @@ struct HabitsListView: View {
                         }
                 }
                 .onMove(perform: moveHabit)
+
+                if habitLimitPolicy.showsUpgradeHint {
+                    UpgradeHintRow()
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                if habitLimitPolicy.showsLockedSlot {
+                    lockedHabitSlot
+                }
 
                 if habits.isEmpty {
                     EmptyState()
@@ -72,28 +96,35 @@ struct HabitsListView: View {
                     EditButton()
                 }
 
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         SettingsView()
                     } label: {
                         Image(systemName: "gearshape")
                     }
-                    .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Settings")
+                }
 
+                ToolbarItemGroup(placement: .bottomBar) {
                     Button {
-                        showAddHabit = true
+                        addHabit()
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Add Habit", systemImage: "plus")
                     }
-                    .buttonStyle(TactileButtonStyle())
+
+                    Spacer()
                 }
             }
-            .sheet(isPresented: $showAddHabit) {
-                AddHabitSheet()
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-                    .presentationCornerRadius(24)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .addHabit:
+                    AddHabitSheet()
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationCornerRadius(24)
+                case .paywall(let feature):
+                    PaywallView(feature: feature)
+                }
             }
         }
         .environmentObject(userSettings)
@@ -109,12 +140,44 @@ struct HabitsListView: View {
         }
     }
 
+    private var habitLimitPolicy: HabitLimitPolicy {
+        HabitLimitPolicy(
+            habitCount: habits.count,
+            hasUnlimitedHabitsAccess: purchaseService.hasAccess(to: .unlimitedHabits)
+        )
+    }
+
+    private var lockedHabitSlot: some View {
+        Button {
+            showPaywall(feature: .unlimitedHabits)
+        } label: {
+            LockedHabitSlotCard()
+        }
+        .buttonStyle(.plain)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
     private func moveHabit(from source: IndexSet, to destination: Int) {
         withAnimation(AppMotion.reorder) {
             var reordered = habits
             reordered.move(fromOffsets: source, toOffset: destination)
             HabitListMutation.applyOrderIndexes(to: reordered, in: modelContext)
         }
+    }
+
+    private func addHabit() {
+        if purchaseService.hasAccess(to: .unlimitedHabits) {
+            activeSheet = .addHabit
+        } else if habits.count >= HabitLimitPolicy.freeHabitLimit {
+            showPaywall(feature: .unlimitedHabits)
+        } else {
+            activeSheet = .addHabit
+        }
+    }
+
+    private func showPaywall(feature: PremiumFeature) {
+        activeSheet = .paywall(feature)
     }
 
     private func requestDeletion(of habit: Habit) {
@@ -158,12 +221,26 @@ enum HabitDeletionConfirmationState {
     }
 }
 
+private struct UpgradeHintRow: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.footnote)
+
+            Text("Free accounts can track up to 3 habits. Upgrade to add unlimited habits.")
+                .font(.footnote)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
+    }
+}
+
 private struct EmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             Text("No habits yet")
                 .font(.headline)
-            Text("Tap + to add one. Then tap today’s square to log.")
+            Text("Tap the plus button below to create one. Then tap today’s square to log.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -171,5 +248,43 @@ private struct EmptyState: View {
         .padding(16)
         .frame(maxWidth: .infinity)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct LockedHabitSlotCard: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.tertiarySystemFill))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "lock.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Unlimited habits with Premium")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text("Unlock more space for the routines you want to keep.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .opacity(0.6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.primary.opacity(0.05), lineWidth: 1)
+        )
     }
 }
