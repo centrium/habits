@@ -19,7 +19,7 @@ struct PremiumTestView: View {
             Text("Premium Test")
                 .font(.title)
 
-            Text("Premium unlocked: \(purchaseService.isPremiumUnlocked.description)")
+            Text("Premium status: \(String(describing: purchaseService.premiumStatus))")
 
             Button("Load Products") {
                 Task {

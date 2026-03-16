@@ -24,7 +24,10 @@ struct CalendarMonthView: View {
     let calendarProvider: CalendarProvider
     let selectedDate: Date
     let monthSummaryText: String?
+    let premiumHistoryGate: PremiumHistoryGate.Context
+    let earliestVisibleDate: Date?
     let onSelectDay: (Date) -> Void
+    let onTapLockedDay: (Date) -> Void
 
     @State private var slideDirection: SlideDirection?
     @State private var slideResetToken = UUID()
@@ -48,7 +51,10 @@ struct CalendarMonthView: View {
         calendarProvider: CalendarProvider,
         selectedDate: Date,
         monthSummaryText: String? = nil,
-        onSelectDay: @escaping (Date) -> Void
+        premiumHistoryGate: PremiumHistoryGate.Context,
+        earliestVisibleDate: Date? = nil,
+        onSelectDay: @escaping (Date) -> Void,
+        onTapLockedDay: @escaping (Date) -> Void = { _ in }
     ) {
         self._month = month
         self.habit = habit
@@ -56,7 +62,10 @@ struct CalendarMonthView: View {
         self.calendarProvider = calendarProvider
         self.selectedDate = selectedDate
         self.monthSummaryText = monthSummaryText
+        self.premiumHistoryGate = premiumHistoryGate
+        self.earliestVisibleDate = earliestVisibleDate
         self.onSelectDay = onSelectDay
+        self.onTapLockedDay = onTapLockedDay
     }
 
     var body: some View {
@@ -86,27 +95,37 @@ struct CalendarMonthView: View {
                         ForEach(days, id: \.self) { day in
                             let isInDisplayedMonth = isDisplayedMonth(day)
                             let isDisabledDay = isFutureDate(day)
-                            let count = service.count(for: habit, on: day)
-                            let indicatorText = habit.goalType == .cumulative
+                            let isLockedDay = premiumHistoryGate.isLocked(date: day)
+                            let count = isLockedDay ? 0 : service.count(for: habit, on: day)
+                            let indicatorText = isLockedDay ? nil : (habit.goalType == .cumulative
                                 ? service.formattedValue(for: habit, on: day)
-                                : nil
+                                : nil)
 
                             CalendarDayCell(
                                 date: day,
-                                intensity: service.intensity(for: habit, on: day),
+                                intensity: isLockedDay ? 0 : service.intensity(for: habit, on: day),
                                 count: count,
                                 indicatorText: indicatorText,
                                 accent: Color(hex: habit.colorHex),
                                 isInDisplayedMonth: isInDisplayedMonth,
                                 isDisabled: isDisabledDay,
-                                isSelected: !isDisabledDay && calendar.isDate(day, inSameDayAs: selectedDate),
+                                isLocked: isLockedDay,
+                                isSelected: !isDisabledDay && !isLockedDay && calendar.isDate(day, inSameDayAs: selectedDate),
                                 isToday: calendar.isDateInToday(day),
                                 calendar: calendar,
                                 onTap: {
-                                    selectDay(day)
+                                    if isLockedDay {
+                                        onTapLockedDay(day)
+                                    } else {
+                                        selectDay(day)
+                                    }
                                 },
                                 onLongPress: {
-                                    openDayActions(for: day)
+                                    if isLockedDay {
+                                        onTapLockedDay(day)
+                                    } else {
+                                        openDayActions(for: day)
+                                    }
                                 }
                             )
                         }
@@ -144,8 +163,14 @@ struct CalendarMonthView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            monthArrow(systemName: "chevron.left") {
-                navigateMonth(by: -1)
+            if canGoBackward {
+                monthArrow(systemName: "chevron.left") {
+                    navigateMonth(by: -1)
+                }
+            } else {
+                Color.clear
+                    .frame(width: navHitSize, height: navHitSize)
+                    .accessibilityHidden(true)
             }
 
             Spacer()
@@ -328,6 +353,14 @@ struct CalendarMonthView: View {
         compareMonth(monthComponents, currentMonthComponents) < 0
     }
 
+    private var canGoBackward: Bool {
+        guard let earliestVisibleMonthComponents else {
+            return true
+        }
+
+        return compareMonth(monthComponents, earliestVisibleMonthComponents) > 0
+    }
+
     private var shouldShowToday: Bool {
         compareMonth(monthComponents, currentMonthComponents) != 0
     }
@@ -343,6 +376,14 @@ struct CalendarMonthView: View {
     private func normalizedMonth(_ date: Date) -> Date {
         let comps = calendar.dateComponents([.year, .month], from: date)
         return calendar.date(from: comps) ?? date
+    }
+
+    private var earliestVisibleMonthComponents: DateComponents? {
+        guard let earliestVisibleDate else {
+            return nil
+        }
+
+        return calendar.dateComponents([.year, .month], from: normalizedMonth(earliestVisibleDate))
     }
 
     private func compareMonth(_ lhs: DateComponents, _ rhs: DateComponents) -> Int {
@@ -362,6 +403,7 @@ struct CalendarMonthView: View {
     private func navigateMonth(by value: Int) {
         guard value != 0 else { return }
         if value > 0 && !canGoForward { return }
+        if value < 0 && !canGoBackward { return }
 
         guard let candidateMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) else {
             return
@@ -369,6 +411,10 @@ struct CalendarMonthView: View {
         let normalizedNewMonth = normalizedMonth(candidateMonth)
         let newComponents = calendar.dateComponents([.year, .month], from: normalizedNewMonth)
         guard compareMonth(newComponents, currentMonthComponents) <= 0 else {
+            return
+        }
+        if let earliestVisibleMonthComponents,
+           compareMonth(newComponents, earliestVisibleMonthComponents) < 0 {
             return
         }
 

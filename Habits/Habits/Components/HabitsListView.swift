@@ -37,7 +37,7 @@ struct HabitsListView: View {
 
     var body: some View {
         Button("Reset Premium (Debug)") {
-            purchaseService.isPremiumUnlocked = false
+            purchaseService.premiumStatus = .free
         }
         NavigationStack {
             List {

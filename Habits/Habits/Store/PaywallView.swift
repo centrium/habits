@@ -172,8 +172,8 @@ struct PaywallView: View {
                     Color.clear
                         .frame(height: 18)
                 }
-                .onChange(of: purchaseService.isPremiumUnlocked) { _, unlocked in
-                    if unlocked {
+                .onChange(of: purchaseService.premiumStatus) { _, status in
+                    if status == .premium {
                         dismiss()
                     }
                 }

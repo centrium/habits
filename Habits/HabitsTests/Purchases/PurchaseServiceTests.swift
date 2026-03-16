@@ -2,6 +2,7 @@ import XCTest
 import StoreKit
 @testable import Habits
 
+@MainActor
 final class PurchaseServiceTests: XCTestCase {
     private let premiumProductID = "com.yourapp.habits.premium.lifetime"
 
@@ -12,11 +13,11 @@ final class PurchaseServiceTests: XCTestCase {
             service.unlockPremium()
         }
 
-        let isPremiumUnlocked = await MainActor.run {
-            service.isPremiumUnlocked
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
         }
 
-        XCTAssertTrue(isPremiumUnlocked)
+        XCTAssertEqual(premiumStatus, .premium)
     }
 
     func testLoadProducts_populatesProductsArray() async {
@@ -52,11 +53,11 @@ final class PurchaseServiceTests: XCTestCase {
             service.unlockPremiumIfNeeded(for: transaction)
         }
 
-        let isPremiumUnlocked = await MainActor.run {
-            service.isPremiumUnlocked
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
         }
 
-        XCTAssertTrue(isPremiumUnlocked)
+        XCTAssertEqual(premiumStatus, .premium)
     }
 
     func testTransactionVerification_throwsErrorWhenUnverified() async {
@@ -85,11 +86,11 @@ final class PurchaseServiceTests: XCTestCase {
 
         await service.updateCurrentEntitlements()
 
-        let isPremiumUnlocked = await MainActor.run {
-            service.isPremiumUnlocked
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
         }
 
-        XCTAssertFalse(isPremiumUnlocked)
+        XCTAssertEqual(premiumStatus, .free)
     }
 
     func testUpdateCurrentEntitlements_unlocksPremiumForVerifiedTransaction() async {
@@ -101,11 +102,11 @@ final class PurchaseServiceTests: XCTestCase {
 
         await service.updateCurrentEntitlements()
 
-        let isPremiumUnlocked = await MainActor.run {
-            service.isPremiumUnlocked
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
         }
 
-        XCTAssertTrue(isPremiumUnlocked)
+        XCTAssertEqual(premiumStatus, .premium)
     }
 
     func testPurchasePremium_updatesEntitlementsAfterSuccessfulPurchase() async throws {
@@ -125,13 +126,23 @@ final class PurchaseServiceTests: XCTestCase {
             didFinishTransaction = true
         }
 
-        let isPremiumUnlocked = await MainActor.run {
-            service.isPremiumUnlocked
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
         }
 
         XCTAssertTrue(didFinishTransaction)
         XCTAssertEqual(entitlementRefreshCount, 1)
-        XCTAssertTrue(isPremiumUnlocked)
+        XCTAssertEqual(premiumStatus, .premium)
+    }
+
+    func testPremiumStatusStartsUnknownBeforeEntitlementsLoad() async {
+        let service = await makeService()
+
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
+        }
+
+        XCTAssertEqual(premiumStatus, .unknown)
     }
 
     private func makeService(

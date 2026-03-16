@@ -5,9 +5,20 @@ private enum ActiveSheet: Identifiable {
     case edit
     case insights
     case valueEntry
-    case paywall
+    case paywall(PremiumFeature)
 
-    var id: Int { hashValue }
+    var id: String {
+        switch self {
+        case .edit:
+            return "edit"
+        case .insights:
+            return "insights"
+        case .valueEntry:
+            return "valueEntry"
+        case .paywall(let feature):
+            return "paywall-\(String(describing: feature))"
+        }
+    }
 }
 
 struct HabitDetailSheet: View {
@@ -46,6 +57,19 @@ struct HabitDetailSheet: View {
             selectedDate: selectionState.selectedDate
         )
         let now = Date()
+        let premiumHistoryGate = PremiumHistoryGate.Context(
+            calendar: service.calendar,
+            premiumStatus: purchaseService.premiumStatus,
+            now: now
+        )
+        let earliestCalendarDate = purchaseService.premiumStatus == .premium ? nil : premiumHistoryGate.earliestVisibleDate
+        let calendarMonthSummaryText: String? = {
+            guard !premiumHistoryGate.isLocked(date: selectionState.visibleMonth) else {
+                return nil
+            }
+
+            return progressSnapshot?.visibleMonthText
+        }()
         let today = service.calendar.startOfDay(for: now)
         let streakSnapshot = HabitInsightsEngine.snapshot(
             for: habit,
@@ -112,6 +136,9 @@ struct HabitDetailSheet: View {
                             isInteractive: true,
                             onSelectDay: { day in
                                 selectionState.select(heatmapDate: day)
+                            },
+                            onTapLockedDay: { _ in
+                                showPaywall(feature: .fullHeatmapHistory)
                             }
                         )
 
@@ -126,9 +153,14 @@ struct HabitDetailSheet: View {
                             service: service,
                             calendarProvider: calendarViewProvider,
                             selectedDate: selectionState.selectedDate,
-                            monthSummaryText: progressSnapshot?.visibleMonthText,
+                            monthSummaryText: calendarMonthSummaryText,
+                            premiumHistoryGate: premiumHistoryGate,
+                            earliestVisibleDate: earliestCalendarDate,
                             onSelectDay: { day in
                                 selectionState.select(date: day)
+                            },
+                            onTapLockedDay: { _ in
+                                showPaywall(feature: .fullHeatmapHistory)
                             }
                         )
                     }
@@ -172,7 +204,7 @@ struct HabitDetailSheet: View {
                         if purchaseService.hasAccess(to: .advancedInsights) {
                             activeSheet = .insights
                         } else {
-                            activeSheet = .paywall
+                            showPaywall(feature: .advancedInsights)
                         }
                     } label: {
                         Image(systemName: "sparkles")
@@ -232,8 +264,8 @@ struct HabitDetailSheet: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)
 
-            case .paywall:
-                PaywallView(feature: .advancedInsights)
+            case .paywall(let feature):
+                PaywallView(feature: feature)
 
             }
 
@@ -241,6 +273,21 @@ struct HabitDetailSheet: View {
         .onAppear {
             service.updateCalendar(calculationCalendar)
             service.prepare(habit)
+
+            guard purchaseService.premiumStatus != .premium else { return }
+
+            let minimumVisibleMonth = calendarViewProvider.calendar.dateInterval(
+                of: .month,
+                for: premiumHistoryGate.earliestVisibleDate
+            )?.start
+            if let minimumVisibleMonth,
+               calendarViewProvider.calendar.compare(
+                selectionState.visibleMonth,
+                to: minimumVisibleMonth,
+                toGranularity: .month
+               ) == .orderedAscending {
+                selectionState.selectCalendarMonth(minimumVisibleMonth, today: now)
+            }
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             service.updateCalendar(calculationCalendar)
@@ -259,6 +306,10 @@ struct HabitDetailSheet: View {
     private func presentManualEntry() {
         manualLogValue = service.suggestedQuickEntryValue(for: habit)
         activeSheet = .valueEntry
+    }
+
+    private func showPaywall(feature: PremiumFeature) {
+        activeSheet = .paywall(feature)
     }
 
     private var weekLayoutStrategy: WeekLayoutStrategy {

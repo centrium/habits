@@ -10,6 +10,12 @@ import Foundation
 import StoreKit
 import Combine
 
+enum PremiumStatus: Equatable {
+    case unknown
+    case free
+    case premium
+}
+
 protocol PremiumEntitlementTransaction {
     var productID: String { get }
 }
@@ -69,7 +75,11 @@ final class PurchaseService: ObservableObject {
     private var updatesTask: Task<Void, Never>?
 
     @Published var products: [StoreCatalogProduct] = []
-    @Published var isPremiumUnlocked: Bool = false
+    @Published var premiumStatus: PremiumStatus = .unknown
+
+    var isPremiumUnlocked: Bool {
+        premiumStatus == .premium
+    }
 
     var premiumProduct: StoreCatalogProduct? {
         products.first { $0.id == StoreProduct.premiumLifetime.id }
@@ -200,7 +210,7 @@ extension PurchaseService {
 
     func unlockPremiumIfNeeded(for transaction: any PremiumEntitlementTransaction) {
         guard transaction.productID == StoreProduct.premiumLifetime.id else { return }
-        isPremiumUnlocked = true
+        premiumStatus = .premium
     }
 
 }
@@ -237,9 +247,7 @@ extension PurchaseService {
 extension PurchaseService {
 
     func unlockPremium() {
-
-        isPremiumUnlocked = true
-
+        premiumStatus = .premium
     }
 
 }
@@ -248,17 +256,18 @@ extension PurchaseService {
 
     func updateCurrentEntitlements() async {
         print("Checking entitlements...")
-
-        isPremiumUnlocked = false
-
         let entitlements = await currentEntitlementsLoader()
 
         print("Entitlements count:", entitlements.count)
 
+        var resolvedStatus: PremiumStatus = .free
         for transaction in entitlements {
             print("Transaction:", transaction.productID)
-            unlockPremiumIfNeeded(for: transaction)
+            if transaction.productID == StoreProduct.premiumLifetime.id {
+                resolvedStatus = .premium
+            }
         }
+        premiumStatus = resolvedStatus
     }
 
 }
@@ -281,8 +290,7 @@ extension PurchaseService {
 extension PurchaseService {
 
     func hasAccess(to feature: PremiumFeature) -> Bool {
-
-        if isPremiumUnlocked {
+        if premiumStatus == .premium {
             return true
         }
 

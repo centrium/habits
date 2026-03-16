@@ -11,6 +11,7 @@ import SwiftUI
 struct CalendarDayCell: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var pulseScale: CGFloat = 1
+    @State private var pressScale: CGFloat = 1
 
     private enum Layout {
         static let cellWidth: CGFloat = 43
@@ -57,6 +58,7 @@ struct CalendarDayCell: View {
     let accent: Color
     let isInDisplayedMonth: Bool
     let isDisabled: Bool
+    let isLocked: Bool
     let isSelected: Bool
     let isToday: Bool
     let calendar: Calendar
@@ -66,6 +68,10 @@ struct CalendarDayCell: View {
     private var backgroundFill: Color {
         if isDisabled {
             return Color.primary.opacity(isInDisplayedMonth ? Layout.disabledBackgroundOpacity : Layout.disabledOutOfMonthBackgroundOpacity)
+        }
+
+        if isLocked {
+            return Color.white.opacity(colorScheme == .dark ? 0.08 : 0.28)
         }
 
         return accent.opacity(backgroundOpacity)
@@ -105,6 +111,10 @@ struct CalendarDayCell: View {
             return Color.primary.opacity(isInDisplayedMonth ? 0.38 : 0.24)
         }
 
+        if isLocked {
+            return Color.primary.opacity(isInDisplayedMonth ? 0.7 : 0.45)
+        }
+
         if isSelected {
             return .white.opacity(0.95)
         }
@@ -117,7 +127,15 @@ struct CalendarDayCell: View {
     }
 
     private var contentOpacity: Double {
-        isDisabled ? Layout.disabledContentOpacity : 1
+        if isDisabled {
+            return Layout.disabledContentOpacity
+        }
+
+        if isLocked {
+            return 0.92
+        }
+
+        return 1
     }
 
     private var showsIndicator: Bool {
@@ -149,21 +167,21 @@ struct CalendarDayCell: View {
             }
         }
         .opacity(contentOpacity)
-        .scaleEffect(pulseScale)
+        .scaleEffect(pulseScale * pressScale)
         .frame(width: Layout.cellWidth, height: Layout.cellHeight)
         .overlay(selectionOverlay)
         .contentShape(Rectangle())
         .gesture(dayGesture)
         .allowsHitTesting(!isDisabled)
         .contextMenu {
-            if !isDisabled {
+            if !isDisabled && !isLocked {
                 Button("Open Day Actions") {
                     onLongPress()
                 }
             }
         }
         .accessibilityAction(named: Text("Open Day Actions")) {
-            guard !isDisabled else { return }
+            guard !isDisabled, !isLocked else { return }
             onLongPress()
         }
         .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: intensity)
@@ -187,9 +205,20 @@ struct CalendarDayCell: View {
 
                 switch value {
                 case .first(true):
+                    guard !isLocked else { return }
                     onLongPress()
                 case .second:
-                    onTap()
+                    if isLocked {
+                        pressScale = 0.92
+                        withAnimation(.spring(response: 0.2, dampingFraction: 0.72)) {
+                            pressScale = 1
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                            onTap()
+                        }
+                    } else {
+                        onTap()
+                    }
                 default:
                     break
                 }
@@ -214,7 +243,9 @@ struct CalendarDayCell: View {
         return ZStack {
             RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
                 .strokeBorder(
-                    Color.white.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
+                    isLocked
+                    ? Color.white.opacity(colorScheme == .dark ? 0.18 : 0.36)
+                    : Color.white.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
                     lineWidth: Layout.baseStrokeWidth
                 )
 

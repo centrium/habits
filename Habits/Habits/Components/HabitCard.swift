@@ -11,6 +11,7 @@ import SwiftData
 struct HabitCard: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject var deepLinkManager: DeepLinkManager
     @Bindable var habit: Habit
     @State private var isDetailPresented = false
@@ -18,6 +19,7 @@ struct HabitCard: View {
     @State private var selectedDetent: PresentationDetent = .large
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
+    @State private var showHeatmapPaywall = false
     private let onDeleted: (() -> Void)?
 
     private let headerHeight: CGFloat = 40
@@ -69,6 +71,9 @@ struct HabitCard: View {
                     isInteractive: false,
                     onSelectDay: { day in
                         selectedDate = day
+                    },
+                    onTapLockedDay: { _ in
+                        showHeatmapPaywall = true
                     }
                 )
             }
@@ -109,6 +114,10 @@ struct HabitCard: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)
             }
+        }
+        .sheet(isPresented: $showHeatmapPaywall) {
+            PaywallView(feature: .fullHeatmapHistory)
+                .environmentObject(purchaseService)
         }
         .onAppear {
             if service == nil {

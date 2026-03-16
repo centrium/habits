@@ -9,8 +9,10 @@
 import SwiftUI
 
 struct HeatCell: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
     @State private var pulseScale: CGFloat = 1
+    @State private var pressScale: CGFloat = 1
 
     let date: Date
     let accent: Color
@@ -21,6 +23,8 @@ struct HeatCell: View {
     let isSelected: Bool
     let isToday: Bool
     let isInteractive: Bool
+    let isLocked: Bool
+    let inactiveEmphasis: Double
     let onTap: () -> Void
 
     var body: some View {
@@ -32,17 +36,29 @@ struct HeatCell: View {
                     .strokeBorder(borderColor, lineWidth: pixelLineWidth)
             )
             .overlay(selectionOverlay)
-            .scaleEffect((isActive ? 1 : 0.96) * pulseScale)
+            .scaleEffect((isActive ? 1 : 0.96) * pulseScale * pressScale)
             .shadow(
                 color: accent.opacity(streakEmphasis.shadowOpacity),
                 radius: streakEmphasis.shadowRadius
             )
             .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
-            .onTapGesture {
-                guard isInteractive else { return }
-                onTap()
-            }
+            .highPriorityGesture(
+                TapGesture().onEnded {
+                    guard isInteractive else { return }
+                    if isLocked {
+                        pressScale = 0.92
+                        withAnimation(.spring(response: 0.2, dampingFraction: 0.72)) {
+                            pressScale = 1
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                            onTap()
+                        }
+                    } else {
+                        onTap()
+                    }
+                }
+            )
             .accessibilityLabel(Text(formatted(date)))
             .animation(style.activationSpring, value: isActive)
             .animation(AppMotion.quickFade, value: visualIntensity)
@@ -93,16 +109,28 @@ struct HeatCell: View {
     }
 
     private var fillColor: Color {
+        if isLocked {
+            return Color.white.opacity(colorScheme == .dark ? 0.08 : 0.28)
+        }
+
         guard isActive else {
-            return style.inactiveStrokeColor.opacity(style.inactiveFillOpacity)
+            return style.inactiveStrokeColor.opacity(
+                min(style.inactiveFillOpacity * inactiveEmphasis, 1)
+            )
         }
 
         return accent.opacity(emphasizedIntensity)
     }
 
     private var borderColor: Color {
+        if isLocked {
+            return Color.white.opacity(colorScheme == .dark ? 0.16 : 0.4)
+        }
+
         guard isActive else {
-            return style.inactiveStrokeColor.opacity(style.inactiveStrokeOpacity)
+            return style.inactiveStrokeColor.opacity(
+                min(style.inactiveStrokeOpacity * inactiveEmphasis, 1)
+            )
         }
 
         return accent.opacity(max(style.activeBorderOpacity(for: intensity), emphasizedIntensity * 0.22))

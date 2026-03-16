@@ -15,9 +15,11 @@ struct GitHubHeatmapGrid: View {
     let weeks: [Week]
     let selectedDate: Date
     let isInteractive: Bool
+    let premiumHistoryGate: PremiumHistoryGate.Context
     let intensityFor: (Date) -> Double
     let streakEmphasisFor: (Date) -> HeatmapStreakEmphasis
     let onTapDay: (Date) -> Void
+    let onTapLockedDay: (Date) -> Void
 
     private let rows: CGFloat = 7
 
@@ -55,7 +57,6 @@ struct GitHubHeatmapGrid: View {
     private var monthLabels: some View {
         LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
             ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
-
                 let isMonthBoundary = index == 0 || week.month != weeks[index - 1].month
 
                 let shouldShowLabel: Bool = {
@@ -82,6 +83,13 @@ struct GitHubHeatmapGrid: View {
                                 .fixedSize(horizontal: true, vertical: false)
                         }
                     }
+                    .overlay(alignment: .center) {
+                        if premiumBoundaryWeekIndex == index {
+                            PremiumBoundaryIndicator()
+                                .offset(y: 8)
+                                .allowsHitTesting(false)
+                        }
+                    }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -90,28 +98,53 @@ struct GitHubHeatmapGrid: View {
 
     private var gridColumns: some View {
         LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
-            ForEach(weeks, id: \.id) { week in
+            ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
                 VStack(spacing: style.verticalSpacing) {
                     ForEach(week.days.indices, id: \.self) { i in
                         let day = week.days[i]
 
                         if let day {
+                            let isLockedDay = premiumHistoryGate.isLocked(date: day)
                             HeatCell(
                                 date: day,
                                 accent: accent,
-                                intensity: intensityFor(day),
+                                intensity: premiumHistoryGate.visibleIntensity(
+                                    for: intensityFor(day),
+                                    on: day
+                                ),
                                 streakEmphasis: streakEmphasisFor(day),
                                 size: style.cellSize,
                                 style: style,
                                 isSelected: calendarProvider.calendar.isDate(day, inSameDayAs: selectedDate),
                                 isToday: calendarProvider.calendar.isDateInToday(day),
-                                isInteractive: isInteractive,
-                                onTap: { onTapDay(day) }
+                                isInteractive: isInteractive || isLockedDay,
+                                isLocked: premiumHistoryGate.usesLockedStyle(on: day),
+                                inactiveEmphasis: premiumBoundaryWeekIndex == index ? 1.45 : 1,
+                                onTap: {
+                                    if isLockedDay {
+                                        onTapLockedDay(day)
+                                    } else {
+                                        onTapDay(day)
+                                    }
+                                }
                             )
                         } else {
                             Color.clear
                                 .frame(width: style.cellSize, height: style.cellSize)
                         }
+                    }
+                }
+                .overlay {
+                    if premiumBoundaryWeekIndex == index,
+                       let premiumBoundaryDate {
+                        Rectangle()
+                            .fill(.clear)
+                            .contentShape(Rectangle())
+                            .highPriorityGesture(
+                                TapGesture().onEnded {
+                                    onTapLockedDay(premiumBoundaryDate)
+                                }
+                            )
                     }
                 }
             }
@@ -157,5 +190,52 @@ struct GitHubHeatmapGrid: View {
 
     private var gridHeight: CGFloat {
         (style.cellSize * rows) + (style.verticalSpacing * (rows - 1))
+    }
+
+    private var boundaryLockedDate: Date? {
+        weeks
+            .flatMap(\.days)
+            .compactMap { $0 }
+            .last(where: { premiumHistoryGate.isLocked(date: $0) })
+    }
+
+    private var premiumBoundaryWeekIndex: Int? {
+        guard premiumHistoryGate.premiumStatus == .free else {
+            return nil
+        }
+
+        let accessibleWeekCount = premiumHistoryGate.premiumBoundaryWeekCount
+        guard weeks.count > accessibleWeekCount else {
+            return nil
+        }
+
+        return weeks.index(weeks.endIndex, offsetBy: -(accessibleWeekCount + 1))
+    }
+
+    private var premiumBoundaryDate: Date? {
+        guard let premiumBoundaryWeekIndex else {
+            return boundaryLockedDate
+        }
+
+        return weeks[premiumBoundaryWeekIndex].days.compactMap { $0 }.max()
+    }
+}
+
+private struct PremiumBoundaryIndicator: View {
+    var body: some View {
+        VStack(spacing: 2) {
+            Image(systemName: "lock.fill")
+                .font(.caption2.weight(.semibold))
+
+            Text("Premium")
+                .font(.caption2.weight(.medium))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(.secondarySystemBackground).opacity(0.96))
+        )
     }
 }

@@ -9,6 +9,8 @@ import SwiftUI
 
 
 struct HabitHeatmap: View {
+    @EnvironmentObject private var purchaseService: PurchaseService
+
     let habit: Habit
     let service: HabitLogService
     let calendarProvider: CalendarProvider
@@ -16,6 +18,7 @@ struct HabitHeatmap: View {
     let selectedDate: Date
     let isInteractive: Bool
     let onSelectDay: (Date) -> Void
+    let onTapLockedDay: (Date) -> Void
     @State private var timeline: HeatmapTimeline
 
     init(
@@ -24,7 +27,8 @@ struct HabitHeatmap: View {
         calendarProvider: CalendarProvider,
         selectedDate: Date,
         isInteractive: Bool,
-        onSelectDay: @escaping (Date) -> Void
+        onSelectDay: @escaping (Date) -> Void,
+        onTapLockedDay: @escaping (Date) -> Void = { _ in }
     ) {
         self.habit = habit
         self.service = service
@@ -32,6 +36,7 @@ struct HabitHeatmap: View {
         self.selectedDate = selectedDate
         self.isInteractive = isInteractive
         self.onSelectDay = onSelectDay
+        self.onTapLockedDay = onTapLockedDay
         _timeline = State(
             initialValue: HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
         )
@@ -51,6 +56,11 @@ struct HabitHeatmap: View {
 
     var body: some View {
         let now = Date()
+        let premiumHistoryGate = PremiumHistoryGate.Context(
+            calendar: calendarProvider.calendar,
+            premiumStatus: purchaseService.premiumStatus,
+            now: now
+        )
         let streakDays = HeatmapStreakCellsResolver.currentStreakDays(
             for: habit,
             endingAt: now,
@@ -69,6 +79,7 @@ struct HabitHeatmap: View {
             weeks: timeline.weeks,
             selectedDate: selectedDate,
             isInteractive: isInteractive,
+            premiumHistoryGate: premiumHistoryGate,
             intensityFor: { day in
                 service.intensity(for: habit, on: day)
             },
@@ -78,6 +89,9 @@ struct HabitHeatmap: View {
             },
             onTapDay: { day in
                 onSelectDay(day)
+            },
+            onTapLockedDay: { day in
+                onTapLockedDay(day)
             }
         )
         .padding(.top, style.titleToGridSpacing)
