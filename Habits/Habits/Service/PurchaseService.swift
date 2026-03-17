@@ -307,6 +307,9 @@ extension PurchaseService {
 
         case .dataExport:
             return false
+
+        case .multipleReminders:
+            return false
         }
     }
 }

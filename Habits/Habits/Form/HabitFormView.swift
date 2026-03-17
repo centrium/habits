@@ -74,7 +74,15 @@ private struct HabitReminderEditorItem: Identifiable, Equatable {
     let isNew: Bool
 }
 
+enum ReminderEntitlementPolicy {
+    static func canAddReminder(reminderCount: Int, isPremiumUnlocked: Bool) -> Bool {
+        isPremiumUnlocked || reminderCount < 1
+    }
+}
+
 struct HabitFormView: View {
+    @EnvironmentObject private var purchaseService: PurchaseService
+
     @Binding var name: String
     @Binding var subtitle: String
     @Binding var selectedHex: String
@@ -96,6 +104,7 @@ struct HabitFormView: View {
     @State private var showingFrequencyTargetEditor = false
     @State private var showingCumulativeTargetEditor = false
     @State private var editingReminder: HabitReminderEditorItem?
+    @State private var activePaywallContext: PaywallContext?
     @FocusState private var focusedField: Field?
 
     private enum Field {
@@ -233,11 +242,21 @@ struct HabitFormView: View {
                 }
 
                 Button {
-                    addReminder()
+                    if canAddReminder {
+                        addReminder()
+                    } else {
+                        activePaywallContext = .multipleReminders
+                    }
                 } label: {
                     Label("Add Reminder", systemImage: "plus")
                 }
                 .buttonStyle(TactileButtonStyle())
+
+                if showsMultipleReminderUpgradeHint {
+                    Text("Add multiple reminders with Premium")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if showsDelete {
@@ -289,6 +308,12 @@ struct HabitFormView: View {
                 .presentationDragIndicator(.visible)
                 
             }
+        }
+        .sheet(item: $activePaywallContext) { context in
+            PaywallView(context: context)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showIconPicker) {
             IconPickerSheet(
@@ -379,6 +404,17 @@ struct HabitFormView: View {
         let reminder = HabitReminderDraft.makeDefault()
         reminders.append(reminder)
         editingReminder = HabitReminderEditorItem(id: reminder.id, isNew: true)
+    }
+
+    private var canAddReminder: Bool {
+        ReminderEntitlementPolicy.canAddReminder(
+            reminderCount: reminders.count,
+            isPremiumUnlocked: purchaseService.isPremiumUnlocked
+        )
+    }
+
+    private var showsMultipleReminderUpgradeHint: Bool {
+        !purchaseService.isPremiumUnlocked && reminders.count >= 1
     }
 
     private func deleteReminders(at offsets: IndexSet) {

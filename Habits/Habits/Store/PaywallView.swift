@@ -1,6 +1,14 @@
 import SwiftUI
 import StoreKit
 
+enum PaywallContext: Equatable, Hashable, Identifiable {
+    case multipleReminders
+    case dataExport
+    case general
+
+    var id: Self { self }
+}
+
 struct PaywallView: View {
     enum PreviewKind: Equatable {
         case unlimitedHabits
@@ -25,22 +33,44 @@ struct PaywallView: View {
     }
 
     let feature: PremiumFeature?
+    let context: PaywallContext
 
     @EnvironmentObject private var purchaseService: PurchaseService
     @Environment(\.dismiss) private var dismiss
     @State private var highlightedBenefitVisible = false
     @State private var previewVisible = false
 
+    init(
+        feature: PremiumFeature? = nil,
+        context: PaywallContext? = nil
+    ) {
+        self.feature = feature
+        self.context = context ?? Self.context(for: feature)
+    }
+
     var purchaseButtonTitle: String {
         Self.purchaseButtonTitle(feature: feature, price: purchaseService.premiumProduct?.displayPrice)
     }
 
     var benefits: [BenefitContent] {
-        Self.benefits(for: feature)
+        if context == .general && feature != nil {
+            return Self.benefits(for: feature)
+        }
+
+        return Self.benefits(for: context)
     }
 
     var preview: PreviewContent? {
         Self.preview(for: feature)
+    }
+
+    static func context(for feature: PremiumFeature?) -> PaywallContext {
+        switch feature {
+        case .multipleReminders:
+            return .multipleReminders
+        case .advancedInsights, .unlimitedHabits, .fullHeatmapHistory, .dataExport, nil:
+            return .general
+        }
     }
 
     static func purchaseButtonTitle(feature: PremiumFeature?, price: String?) -> String {
@@ -55,6 +85,8 @@ struct PaywallView: View {
             title = "Unlock Full History"
         case .dataExport:
             title = "Unlock Data Export"
+        case .multipleReminders:
+            title = "Unlock Premium"
         case nil:
             title = "Unlock Premium"
         }
@@ -80,8 +112,21 @@ struct PaywallView: View {
             return "Unlock Your Full Habit History"
         case .dataExport:
             return "Export Your Habit Data"
+        case .multipleReminders:
+            return title(for: PaywallContext.multipleReminders)
         case nil:
             return "Upgrade to Premium"
+        }
+    }
+
+    static func title(for context: PaywallContext) -> String {
+        switch context {
+        case .multipleReminders:
+            return "Stay consistent throughout the day"
+        case .dataExport:
+            return "Export your progress"
+        case .general:
+            return "Unlock Premium"
         }
     }
 
@@ -110,6 +155,12 @@ struct PaywallView: View {
                 icon: "square.and.arrow.up",
                 title: "Data Export",
                 description: "Export your habit data whenever you need."
+            ),
+            BenefitContent(
+                feature: .multipleReminders,
+                icon: "bell.badge",
+                title: "Multiple reminders to stay on track throughout the day",
+                description: "Add more than one reminder to reinforce a habit when it matters."
             )
         ]
 
@@ -122,6 +173,21 @@ struct PaywallView: View {
         let prioritizedBenefit = orderedBenefits.remove(at: index)
         orderedBenefits.insert(prioritizedBenefit, at: 0)
         return orderedBenefits
+    }
+
+    static func benefits(for context: PaywallContext) -> [BenefitContent] {
+        switch context {
+        case .multipleReminders:
+            return benefits(for: PremiumFeature.multipleReminders)
+        case .dataExport:
+            return benefits(for: PremiumFeature.dataExport)
+        case .general:
+            return benefits(for: nil)
+        }
+    }
+
+    static func features(for context: PaywallContext) -> [String] {
+        benefits(for: context).map(\.title)
     }
 
     static func preview(for feature: PremiumFeature?) -> PreviewContent? {
@@ -150,6 +216,8 @@ struct PaywallView: View {
                 title: "Export Preview",
                 rows: ["CSV Export", "Last Export: -"]
             )
+        case .multipleReminders:
+            return nil
         case nil:
             return nil
         }
@@ -196,6 +264,16 @@ struct PaywallView: View {
 }
 
 private extension PaywallView {
+    var highlightedFeature: PremiumFeature? {
+        switch context {
+        case .multipleReminders:
+            return .multipleReminders
+        case .dataExport:
+            return .dataExport
+        case .general:
+            return feature
+        }
+    }
 
     // MARK: Hero
 
@@ -301,10 +379,10 @@ private extension PaywallView {
                     icon: benefit.icon,
                     title: benefit.title,
                     description: benefit.description,
-                    isRecommended: index == 0 && benefit.feature == feature
+                    isRecommended: index == 0 && benefit.feature == highlightedFeature
                 )
-                .opacity(index == 0 && benefit.feature == feature && !highlightedBenefitVisible ? 0.84 : 1)
-                .scaleEffect(index == 0 && benefit.feature == feature && !highlightedBenefitVisible ? 0.97 : 1)
+                .opacity(index == 0 && benefit.feature == highlightedFeature && !highlightedBenefitVisible ? 0.84 : 1)
+                .scaleEffect(index == 0 && benefit.feature == highlightedFeature && !highlightedBenefitVisible ? 0.97 : 1)
             }
 
         }
@@ -314,7 +392,7 @@ private extension PaywallView {
                 .fill(Color(.secondarySystemBackground))
         )
         .onAppear {
-            guard feature != nil else { return }
+            guard highlightedFeature != nil else { return }
             highlightedBenefitVisible = false
             withAnimation(.easeInOut(duration: 0.22)) {
                 highlightedBenefitVisible = true
@@ -539,12 +617,24 @@ private extension PaywallView {
     // MARK: Title
 
     var title: String {
-        Self.title(for: feature)
+        if context == .multipleReminders || context == .dataExport || feature == nil {
+            return Self.title(for: context)
+        }
+
+        return Self.title(for: feature)
     }
 
     // MARK: Description
 
     var description: String {
+        switch context {
+        case .multipleReminders:
+            return "Add multiple reminders to reinforce your habits without missing the moments that matter."
+        case .dataExport:
+            return "Download your habit data anytime."
+        case .general:
+            break
+        }
 
         switch feature {
 
@@ -560,8 +650,11 @@ private extension PaywallView {
         case .dataExport:
             return "Export your habit data for backup or analysis."
 
+        case .multipleReminders:
+            return "Add multiple reminders to reinforce your habits without missing the moments that matter."
+
         case nil:
-            return "Unlock the full power of Habits with premium features."
+            return "Get more out of your habits with premium features."
         }
     }
 }

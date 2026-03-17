@@ -11,6 +11,7 @@ enum PremiumFeature: Equatable, Hashable, Identifiable {
     case advancedInsights
     case fullHeatmapHistory
     case dataExport
+    case multipleReminders
 
     var id: Self { self }
 }

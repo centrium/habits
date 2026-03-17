@@ -145,6 +145,29 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertEqual(premiumStatus, .unknown)
     }
 
+    func testFreeUserCanOnlyAddOneReminder() {
+        let canAddFirstReminder = ReminderEntitlementPolicy.canAddReminder(
+            reminderCount: 0,
+            isPremiumUnlocked: false
+        )
+        let canAddSecondReminder = ReminderEntitlementPolicy.canAddReminder(
+            reminderCount: 1,
+            isPremiumUnlocked: false
+        )
+
+        XCTAssertTrue(canAddFirstReminder)
+        XCTAssertFalse(canAddSecondReminder)
+    }
+
+    func testPremiumUserCanAddMultipleReminders() {
+        let canAddReminder = ReminderEntitlementPolicy.canAddReminder(
+            reminderCount: 3,
+            isPremiumUnlocked: true
+        )
+
+        XCTAssertTrue(canAddReminder)
+    }
+
     private func makeService(
         productLoader: @escaping ([String]) async throws -> [StoreCatalogProduct] = { _ in [] },
         currentEntitlementsLoader: @escaping () async -> [any PremiumEntitlementTransaction] = { [] }

@@ -8,7 +8,8 @@ final class PaywallViewTests: XCTestCase {
                 PaywallView.title(for: .advancedInsights),
                 PaywallView.title(for: .unlimitedHabits),
                 PaywallView.title(for: .fullHeatmapHistory),
-                PaywallView.title(for: .dataExport),
+                PaywallView.title(for: PremiumFeature.dataExport),
+                PaywallView.title(for: PremiumFeature.multipleReminders),
                 PaywallView.title(for: nil)
             ]
         }
@@ -17,7 +18,8 @@ final class PaywallViewTests: XCTestCase {
         XCTAssertEqual(titles[1], "Track Unlimited Habits")
         XCTAssertEqual(titles[2], "Unlock Your Full Habit History")
         XCTAssertEqual(titles[3], "Export Your Habit Data")
-        XCTAssertEqual(titles[4], "Upgrade to Premium")
+        XCTAssertEqual(titles[4], "Stay consistent throughout the day")
+        XCTAssertEqual(titles[5], "Upgrade to Premium")
     }
 
     func testTriggeredFeatureAppearsFirstInBenefits() async {
@@ -27,7 +29,7 @@ final class PaywallViewTests: XCTestCase {
 
         XCTAssertEqual(
             features,
-            [.advancedInsights, .unlimitedHabits, .fullHeatmapHistory, .dataExport]
+            [.advancedInsights, .unlimitedHabits, .fullHeatmapHistory, .dataExport, .multipleReminders]
         )
     }
 
@@ -84,5 +86,21 @@ final class PaywallViewTests: XCTestCase {
         }
 
         XCTAssertNil(preview)
+    }
+
+    func testPaywallContextMultipleReminders() async {
+        let title = await MainActor.run {
+            PaywallView.title(for: PaywallContext.multipleReminders)
+        }
+
+        XCTAssertTrue(title.localizedCaseInsensitiveContains("consistent") || title.localizedCaseInsensitiveContains("reminder"))
+    }
+
+    func testPaywallIncludesMultipleRemindersFeature() async {
+        let features = await MainActor.run {
+            PaywallView.features(for: PaywallContext.multipleReminders)
+        }
+
+        XCTAssertTrue(features.contains(where: { $0.localizedCaseInsensitiveContains("reminder") }))
     }
 }
