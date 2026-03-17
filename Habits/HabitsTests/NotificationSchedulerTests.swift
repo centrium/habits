@@ -125,6 +125,31 @@ final class NotificationSchedulerTests: XCTestCase {
         XCTAssertTrue(schedule.isEmpty)
     }
 
+    func testDisabledReminderProducesNoNotification() throws {
+        // Given
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(
+            name: "Habit A",
+            createdAt: referenceDate,
+            calendar: calendar
+        )
+        habit.reminders = [
+            HabitReminder(hour: 20, minute: 0, isEnabled: false)
+        ]
+
+        persistence.insert(habit)
+        try persistence.save()
+
+        // When
+        let schedule = try scheduler.schedule(
+            using: persistence.context,
+            referenceDate: referenceDate
+        )
+
+        // Then
+        XCTAssertTrue(schedule.isEmpty)
+    }
+
     func testBundleReductionAfterOneHabitCompletionUpdatesContent() throws {
         // Given
         let persistence = try TestPersistence()
@@ -202,12 +227,13 @@ final class NotificationSchedulerTests: XCTestCase {
         XCTAssertFalse(notification.body.contains("remaining"))
     }
 
-    func testBundleBodyFormattingWithOneHabitShowsFullName() throws {
+    func testSingleHabitNotificationUsesHumanCopy() throws {
         // Given / When
-        let body = try bundledBody(for: ["Meditate Twice A Day"])
+        let notification = try singleNotification(for: "Meditate Twice A Day")
 
         // Then
-        XCTAssertEqual(body, "1 habit ready: Meditate Twice A Day")
+        XCTAssertEqual(notification.title, "Time for your habit")
+        XCTAssertEqual(notification.body, "Your \"Meditate Twice A Day\" habit is waiting")
     }
 
     func testBundleBodyFormattingWithTwoHabitsShowsBothNames() throws {
@@ -251,6 +277,28 @@ final class NotificationSchedulerTests: XCTestCase {
 
         // Then
         XCTAssertEqual(body, "5 habits ready: Meditate Twice A Day • Save 200 A Month +3 more")
+    }
+
+    func testSingleHabitWithMultipleRemindersProducesMultipleNotifications() throws {
+        // Given
+        let persistence = try TestPersistence()
+        let habit = makeReminderHabit(name: "Read", hour: 8, minute: 0)
+        habit.reminders.append(HabitReminder(hour: 20, minute: 0))
+        persistence.insert(habit)
+        try persistence.save()
+
+        // When
+        let schedule = try scheduler.schedule(
+            using: persistence.context,
+            referenceDate: referenceDate
+        )
+
+        // Then
+        XCTAssertEqual(schedule.count, 2)
+        XCTAssertEqual(schedule[0].deliveryDate, dateAt(hour: 8, minute: 0))
+        XCTAssertEqual(schedule[1].deliveryDate, dateAt(hour: 20, minute: 0))
+        XCTAssertEqual(schedule[0].body, "Your \"Read\" habit is waiting")
+        XCTAssertEqual(schedule[1].body, "Your \"Read\" habit is waiting")
     }
 
     func testScheduleOrderingIsDeterministicAndSortedByDeliveryDate() throws {
@@ -298,9 +346,7 @@ final class NotificationSchedulerTests: XCTestCase {
             entries: entries,
             calendar: calendar
         )
-        habit.reminderEnabled = true
-        habit.reminderHour = hour
-        habit.reminderMinute = minute
+        habit.reminders = [HabitReminder(hour: hour, minute: minute)]
         return habit
     }
 
@@ -322,5 +368,19 @@ final class NotificationSchedulerTests: XCTestCase {
 
         XCTAssertEqual(schedule.count, 1)
         return try XCTUnwrap(schedule.first?.body)
+    }
+
+    private func singleNotification(for name: String) throws -> ScheduledNotification {
+        let persistence = try TestPersistence()
+        persistence.insert(makeReminderHabit(name: name, hour: 11, minute: 56))
+        try persistence.save()
+
+        let schedule = try scheduler.schedule(
+            using: persistence.context,
+            referenceDate: referenceDate
+        )
+
+        XCTAssertEqual(schedule.count, 1)
+        return try XCTUnwrap(schedule.first)
     }
 }

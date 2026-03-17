@@ -9,6 +9,7 @@ struct TestPersistence {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         container = try ModelContainer(
             for: Habit.self,
+            HabitReminder.self,
             HabitLog.self,
             configurations: configuration
         )

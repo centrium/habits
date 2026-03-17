@@ -8,6 +8,17 @@
 import Foundation
 import SwiftData
 
+enum HabitReminderNotificationCopy {
+    static let singleHabitTitle = "Time for your habit"
+    static let singleHabitFallbackBody = "Keep your streak going"
+
+    static func body(for habitName: String) -> String {
+        let trimmedName = habitName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return singleHabitFallbackBody }
+        return "Your \"\(trimmedName)\" habit is waiting"
+    }
+}
+
 struct ScheduledNotification: Equatable {
     let id: String
     let deliveryDate: Date
@@ -48,29 +59,34 @@ struct NotificationScheduler {
         let referenceDayStart = calendar.startOfDay(for: referenceDate)
 
         let candidates = habits
-            .filter(\.reminderEnabled)
-            .compactMap { habit -> ReminderCandidate? in
-                guard
-                    let reminderDate = calendar.date(
-                        bySettingHour: habit.reminderHour,
-                        minute: habit.reminderMinute,
-                        second: 0,
-                        of: referenceDayStart
+            .flatMap { habit in
+                habit.reminders.compactMap { reminder -> ReminderCandidate? in
+                    guard reminder.isEnabled else {
+                        return nil
+                    }
+
+                    guard
+                        let reminderDate = calendar.date(
+                            bySettingHour: reminder.hour,
+                            minute: reminder.minute,
+                            second: 0,
+                            of: referenceDayStart
+                        )
+                    else {
+                        return nil
+                    }
+
+                    let isLoggedToday = isLoggedToday(
+                        habit: habit,
+                        referenceDate: referenceDayStart
                     )
-                else {
-                    return nil
+
+                    return ReminderCandidate(
+                        habit: habit,
+                        requestedDate: reminderDate,
+                        isLoggedToday: isLoggedToday
+                    )
                 }
-
-                let isLoggedToday = isLoggedToday(
-                    habit: habit,
-                    referenceDate: referenceDayStart
-                )
-
-                return ReminderCandidate(
-                    habit: habit,
-                    requestedDate: reminderDate,
-                    isLoggedToday: isLoggedToday
-                )
             }
 
         let groupedByRequestedDate = Dictionary(grouping: candidates, by: \.requestedDate)
@@ -80,6 +96,7 @@ struct NotificationScheduler {
             let activeHabits = grouped
                 .filter { !$0.isLoggedToday }
                 .map(\.habit)
+                .uniqued(by: \.id)
                 .sorted {
                     let nameOrder = $0.name.localizedCaseInsensitiveCompare($1.name)
                     if nameOrder == .orderedSame {
@@ -92,7 +109,7 @@ struct NotificationScheduler {
 
             return ReminderGroup(
                 requestedDate: requestedDate,
-                totalHabitCountAtTime: grouped.count,
+                totalHabitCountAtTime: Set(grouped.map(\.habit.id)).count,
                 activeHabits: activeHabits
             )
         }
@@ -146,8 +163,8 @@ struct NotificationScheduler {
         for group: ReminderGroup,
         deliveryDate: Date
     ) -> String {
-        if group.totalHabitCountAtTime == 1, let habit = group.activeHabits.first {
-            return "Time to log \(habit.name)"
+        if group.activeHabits.count == 1 {
+            return HabitReminderNotificationCopy.singleHabitTitle
         }
 
         let hour = calendar.component(.hour, from: deliveryDate)
@@ -164,6 +181,10 @@ struct NotificationScheduler {
     }
 
     private func notificationBody(for group: ReminderGroup) -> String {
+        if let habit = group.activeHabits.only {
+            return HabitReminderNotificationCopy.body(for: habit.name)
+        }
+
         let names = group.activeHabits.map(\.name)
         let count = names.count
         let noun = count == 1 ? "habit" : "habits"
@@ -200,4 +221,18 @@ private struct ReminderGroup {
     let requestedDate: Date
     let totalHabitCountAtTime: Int
     let activeHabits: [Habit]
+}
+
+private extension Array {
+    var only: Element? {
+        count == 1 ? first : nil
+    }
+
+    func uniqued<Value: Hashable>(by keyPath: KeyPath<Element, Value>) -> [Element] {
+        var seen: Set<Value> = []
+
+        return filter { element in
+            seen.insert(element[keyPath: keyPath]).inserted
+        }
+    }
 }

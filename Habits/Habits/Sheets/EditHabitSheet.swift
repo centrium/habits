@@ -20,8 +20,7 @@ struct EditHabitSheet: View {
     @State private var unit: String
     @State private var allowsDecimals: Bool
 
-    @State private var reminderEnabled: Bool
-    @State private var reminderTime: Date
+    @State private var reminders: [HabitReminderDraft]
     @State private var showDeleteConfirmation: Bool = false
 
     private let palette: [(String, String)] = [
@@ -49,17 +48,7 @@ struct EditHabitSheet: View {
         _targetValue = State(initialValue: habit.targetValue ?? 1)
         _unit = State(initialValue: habit.unit ?? "")
         _allowsDecimals = State(initialValue: habit.allowsDecimals)
-
-        _reminderEnabled = State(initialValue: habit.reminderEnabled)
-
-        let date = Calendar.current.date(
-            from: DateComponents(
-                hour: habit.reminderHour,
-                minute: habit.reminderMinute
-            )
-        ) ?? Date()
-
-        _reminderTime = State(initialValue: date)
+        _reminders = State(initialValue: HabitReminderDraft.makeDrafts(from: habit.reminders))
     }
 
     var body: some View {
@@ -76,8 +65,7 @@ struct EditHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
-                reminderEnabled: $reminderEnabled,
-                reminderTime: $reminderTime,
+                reminders: $reminders,
                 palette: palette,
                 showsDelete: true,
                 onDelete: {
@@ -125,9 +113,6 @@ struct EditHabitSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let hour = Calendar.current.component(.hour, from: reminderTime)
-        let minute = Calendar.current.component(.minute, from: reminderTime)
-
         return trimmedName == habit.name &&
                (trimmedSubtitle.isEmpty ? nil : trimmedSubtitle) == habit.subtitle &&
                selectedHex == habit.colorHex &&
@@ -139,9 +124,7 @@ struct EditHabitSheet: View {
                targetValue == (habit.targetValue ?? 1) &&
                unit == (habit.unit ?? "") &&
                allowsDecimals == habit.allowsDecimals &&
-               reminderEnabled == habit.reminderEnabled &&
-               hour == habit.reminderHour &&
-               minute == habit.reminderMinute
+               reminders == HabitReminderDraft.makeDrafts(from: habit.reminders)
     }
 
     private var canSave: Bool {
@@ -185,11 +168,7 @@ struct EditHabitSheet: View {
         habit.unit = finalUnit
         habit.allowsDecimals = allowsDecimals
 
-        let components = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
-
-        habit.reminderEnabled = reminderEnabled
-        habit.reminderHour = components.hour ?? 20
-        habit.reminderMinute = components.minute ?? 0
+        applyReminderDrafts()
 
         if habit.goalType == .cumulative {
             _ = habit.normalizeCumulativeLogs()
@@ -200,9 +179,29 @@ struct EditHabitSheet: View {
         dismiss()
 
         Task {
-            await NotificationService.shared.syncHabitReminder(for: habit)
+            await NotificationService.shared.syncNotifications(for: habit)
             await NotificationService.shared.syncEveningReflectionFromStoredSettings()
         }
+    }
+
+    private func applyReminderDrafts() {
+        let existingByID = Dictionary(
+            uniqueKeysWithValues: habit.reminders.map { ($0.id, $0) }
+        )
+
+        var updatedReminders: [HabitReminder] = []
+        updatedReminders.reserveCapacity(reminders.count)
+
+        for draft in reminders {
+            let reminder = existingByID[draft.id] ?? draft.makeReminder()
+            reminder.id = draft.id
+            reminder.hour = draft.hour
+            reminder.minute = draft.minute
+            reminder.isEnabled = draft.isEnabled
+            updatedReminders.append(reminder)
+        }
+
+        habit.reminders = updatedReminders
     }
 }
 

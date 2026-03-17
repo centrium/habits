@@ -8,9 +8,12 @@ struct SettingsView: View {
     }
 
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject private var purchaseService: PurchaseService
+    
     @Environment(\.modelContext) private var modelContext
     @State private var sharePayload: SharePayload?
     @State private var previewIndex = 0
+    @State private var activePaywall: PremiumFeature?
     private let previewTimer = Timer.publish(every: 3.5, on: .main, in: .common).autoconnect()
 
     private var eveningReflectionTime: Binding<Date> {
@@ -153,15 +156,30 @@ struct SettingsView: View {
             
             Section("Data") {
                 Button {
-                    exportCSV()
+                    if purchaseService.hasAccess(to: .dataExport) {
+                        exportCSV()
+                    } else {
+                        activePaywall = .dataExport
+                    }
                 } label: {
-                    Label("Export Data (CSV)", systemImage: "square.and.arrow.up")
+                    HStack {
+                        Label("Export Data", systemImage: "square.and.arrow.up")
+                        Spacer()
+                        if !purchaseService.hasAccess(to: .dataExport) {
+                            Text("Premium")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Settings")
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.urls)
+        }
+        .sheet(item: $activePaywall) { feature in
+            PaywallView(feature: feature)
         }
     }
     

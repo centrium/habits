@@ -18,10 +18,7 @@ struct AddHabitSheet: View {
     @State private var allowsDecimals = false
     @State private var nextIndex: Int = 0
 
-    @State private var reminderEnabled: Bool = false
-    @State private var reminderTime: Date = Calendar.current.date(
-        from: DateComponents(hour: 20, minute: 0)
-    ) ?? Date()
+    @State private var reminders: [HabitReminderDraft] = []
 
     private let onHabitAdded: ((Habit) -> Void)?
 
@@ -52,8 +49,7 @@ struct AddHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
-                reminderEnabled: $reminderEnabled,
-                reminderTime: $reminderTime,
+                reminders: $reminders,
                 palette: palette,
             )
             .navigationTitle("New Habit")
@@ -106,8 +102,6 @@ struct AddHabitSheet: View {
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalUnit = trimmedUnit.isEmpty ? nil : trimmedUnit
 
-        let timeComponents = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
-
         let habit = Habit(
             name: trimmedName,
             colorHex: selectedHex,
@@ -120,18 +114,17 @@ struct AddHabitSheet: View {
             targetValue: finalUnit == nil ? nil : targetValue,
             unit: finalUnit,
             allowsDecimals: allowsDecimals,
-            orderIndex: nextIndex,
-            reminderEnabled: reminderEnabled,
-            reminderHour: timeComponents.hour ?? 20,
-            reminderMinute: timeComponents.minute ?? 0
+            orderIndex: nextIndex
         )
+
+        habit.reminders = reminders.map { $0.makeReminder() }
 
         modelContext.insert(habit)
         try? modelContext.save()
         onHabitAdded?(habit)
 
         Task {
-            await NotificationService.shared.syncHabitReminder(for: habit)
+            await NotificationService.shared.syncNotifications(for: habit)
             await NotificationService.shared.syncEveningReflectionFromStoredSettings()
 
             await MainActor.run {

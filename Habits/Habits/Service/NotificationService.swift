@@ -178,21 +178,37 @@ final class NotificationService {
         "habit-reminder-\(habitID.uuidString)"
     }
 
-    func removeHabitReminder(habitID: UUID) {
-        let identifier = habitReminderIdentifier(for: habitID)
-        notificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
+    nonisolated func habitReminderIdentifier(
+        for habitID: UUID,
+        reminderID: UUID
+    ) -> String {
+        "habit-reminder-\(habitID.uuidString)-\(reminderID.uuidString)"
+    }
+
+    func removeHabitReminder(for habit: Habit) {
+        let identifiers =
+            [habitReminderIdentifier(for: habit.id)] +
+            habit.reminders.map { reminder in
+                habitReminderIdentifier(for: habit.id, reminderID: reminder.id)
+            }
+
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+        notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
     
-    func syncHabitReminder(for habit: Habit) async {
-
-        removeHabitReminder(habitID: habit.id)
+    func syncNotifications(for habit: Habit) async {
+        removeHabitReminder(for: habit)
 
         if let context = resolvedModelContext() {
             await syncAllHabitReminders(in: context)
             return
         }
 
-        await syncSingleHabitReminderWithoutBundling(for: habit)
+        await syncSingleHabitRemindersWithoutBundling(for: habit)
+    }
+
+    func syncHabitReminder(for habit: Habit) async {
+        await syncNotifications(for: habit)
     }
 
     func syncAllHabitReminders(referenceDate: Date = Date()) async {
@@ -239,9 +255,7 @@ final class NotificationService {
         notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
-    private func syncSingleHabitReminderWithoutBundling(for habit: Habit) async {
-        guard habit.reminderEnabled else { return }
-
+    private func syncSingleHabitRemindersWithoutBundling(for habit: Habit) async {
         if let context = resolvedModelContext() {
             let logService = HabitLogService(modelContext: context)
             if logService.isHabitCompletedToday(habit) {
@@ -258,7 +272,9 @@ final class NotificationService {
 
         guard status == .authorized || status == .provisional else { return }
 
-        await scheduleHabitReminder(for: habit)
+        for reminder in habit.reminders where reminder.isEnabled {
+            await scheduleHabitReminder(for: habit, reminder: reminder)
+        }
     }
 
     private func submit(_ scheduledNotification: ScheduledNotification) async {
@@ -302,15 +318,24 @@ final class NotificationService {
     }
     
     func scheduleHabitReminder(for habit: Habit) async {
-        let identifier = habitReminderIdentifier(for: habit.id)
+        for reminder in habit.reminders {
+            await scheduleHabitReminder(for: habit, reminder: reminder)
+        }
+    }
+
+    private func scheduleHabitReminder(
+        for habit: Habit,
+        reminder: HabitReminder
+    ) async {
+        let identifier = habitReminderIdentifier(for: habit.id, reminderID: reminder.id)
 
         notificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
 
-        guard habit.reminderEnabled else { return }
+        guard reminder.isEnabled else { return }
 
         let content = UNMutableNotificationContent()
-        content.title = "Time to log \(habit.name)"
-        content.body = "Stay consistent today."
+        content.title = HabitReminderNotificationCopy.singleHabitTitle
+        content.body = HabitReminderNotificationCopy.body(for: habit.name)
         content.sound = .default
         content.categoryIdentifier = NotificationCategoryID.habitReminder
         content.userInfo = [
@@ -318,8 +343,8 @@ final class NotificationService {
         ]
 
         var components = DateComponents()
-        components.hour = habit.reminderHour
-        components.minute = habit.reminderMinute
+        components.hour = reminder.hour
+        components.minute = reminder.minute
 
         let trigger = UNCalendarNotificationTrigger(
             dateMatching: components,

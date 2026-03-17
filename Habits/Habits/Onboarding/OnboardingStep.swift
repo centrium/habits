@@ -131,8 +131,7 @@ struct OnboardingFlowController {
             hasStreakGoal: true,
             goalPeriod: .daily,
             goalType: .frequency,
-            streakTarget: 1,
-            reminderEnabled: false
+            streakTarget: 1
         )
 
         modelContext.insert(habit)

@@ -174,6 +174,24 @@ enum HabitLogKind: String, Codable {
 }
 
 @Model
+final class HabitReminder: Identifiable {
+    @Attribute(.unique) var id: UUID
+
+    var hour: Int
+    var minute: Int
+    var isEnabled: Bool
+    var createdAt: Date
+
+    init(hour: Int, minute: Int, isEnabled: Bool = true) {
+        self.id = UUID()
+        self.hour = hour
+        self.minute = minute
+        self.isEnabled = isEnabled
+        self.createdAt = .now
+    }
+}
+
+@Model
 final class Habit: Identifiable {
     @Attribute(.unique) var id: UUID
 
@@ -194,10 +212,9 @@ final class Habit: Identifiable {
 
     var createdAt: Date
     var orderIndex: Int
-    
-    var reminderEnabled: Bool
-    var reminderHour: Int
-    var reminderMinute: Int
+
+    @Relationship(deleteRule: .cascade)
+    var reminders: [HabitReminder] = []
 
     // Logs
     @Relationship(deleteRule: .cascade)
@@ -235,10 +252,7 @@ final class Habit: Identifiable {
         unit: String? = nil,
         allowsDecimals: Bool = false,
         createdAt: Date = .now,
-        orderIndex: Int = 0,
-        reminderEnabled: Bool = false,
-        reminderHour: Int = 20,
-        reminderMinute: Int = 0
+        orderIndex: Int = 0
     ) {
         self.id = UUID()
         self.name = name
@@ -256,10 +270,6 @@ final class Habit: Identifiable {
 
         self.createdAt = createdAt
         self.orderIndex = orderIndex
-        self.reminderEnabled = reminderEnabled
-        self.reminderHour = reminderHour
-        self.reminderMinute = reminderMinute
-        
     }
 }
 

@@ -6,9 +6,11 @@
 //
 
 
-enum PremiumFeature: Equatable, Hashable {
+enum PremiumFeature: Equatable, Hashable, Identifiable {
     case unlimitedHabits
     case advancedInsights
     case fullHeatmapHistory
     case dataExport
+
+    var id: Self { self }
 }

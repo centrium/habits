@@ -10,6 +10,7 @@ enum Persistence {
 
         return try ModelContainer(
             for: Habit.self,
+            HabitReminder.self,
             HabitLog.self
         )
     }
@@ -19,6 +20,11 @@ enum Persistence {
             isStoredInMemoryOnly: true
         )
 
-        return try ModelContainer(for: Habit.self, HabitLog.self, configurations: config)
+        return try ModelContainer(
+            for: Habit.self,
+            HabitReminder.self,
+            HabitLog.self,
+            configurations: config
+        )
     }
 }

@@ -11,10 +11,7 @@ import SwiftData
 
 protocol NotificationReminderSyncing {
     @MainActor
-    func syncHabitReminder(for habit: Habit) async
-
-    nonisolated
-    func habitReminderIdentifier(for habitID: UUID) -> String
+    func syncNotifications(for habit: Habit) async
 }
 
 protocol HabitLogServiceProtocol {
@@ -84,13 +81,15 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
     ) async {
         await handleAction(
             actionIdentifier: response.actionIdentifier,
-            userInfo: response.notification.request.content.userInfo
+            userInfo: response.notification.request.content.userInfo,
+            notificationIdentifier: response.notification.request.identifier
         )
     }
 
     func handleAction(
         actionIdentifier: String,
-        userInfo: [AnyHashable: Any]
+        userInfo: [AnyHashable: Any],
+        notificationIdentifier: String? = nil
     ) async {
 
         guard
@@ -99,7 +98,10 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
         else { return }
 
         if actionIdentifier == NotificationActionID.logHabit {
-            await logHabit(habitID: habitID)
+            await logHabit(
+                habitID: habitID,
+                deliveredNotificationIdentifier: notificationIdentifier
+            )
         }
         
         if actionIdentifier == NotificationActionID.openHabit ||
@@ -109,7 +111,10 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
-    private func logHabit(habitID: UUID) async {
+    private func logHabit(
+        habitID: UUID,
+        deliveredNotificationIdentifier: String?
+    ) async {
 
         guard let context = modelContextProviderStorage?() ?? defaultModelContextProvider() else { return }
 
@@ -125,10 +130,12 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
 
         try? context.save()
         
-        await notificationService.syncHabitReminder(for: habit)
+        await notificationService.syncNotifications(for: habit)
 
-        notificationCenter.removeDeliveredNotifications(
-            withIdentifiers: [notificationService.habitReminderIdentifier(for: habitID)]
-        )
+        if let deliveredNotificationIdentifier {
+            notificationCenter.removeDeliveredNotifications(
+                withIdentifiers: [deliveredNotificationIdentifier]
+            )
+        }
     }
 }
