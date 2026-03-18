@@ -17,7 +17,6 @@ struct GitHubHeatmapGrid: View {
     let isInteractive: Bool
     let premiumHistoryGate: PremiumHistoryGate.Context
     let intensityFor: (Date) -> Double
-    let streakEmphasisFor: (Date) -> HeatmapStreakEmphasis
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
@@ -105,14 +104,15 @@ struct GitHubHeatmapGrid: View {
 
                         if let day {
                             let isLockedDay = premiumHistoryGate.isLocked(date: day)
+                            let rawIntensity = intensityFor(day)
+                            let adjustedIntensity = HeatmapIntensityCalculator.level(for: rawIntensity)
                             HeatCell(
                                 date: day,
                                 accent: accent,
                                 intensity: premiumHistoryGate.visibleIntensity(
-                                    for: intensityFor(day),
+                                    for: adjustedIntensity,
                                     on: day
                                 ),
-                                streakEmphasis: streakEmphasisFor(day),
                                 size: style.cellSize,
                                 style: style,
                                 isSelected: calendarProvider.calendar.isDate(day, inSameDayAs: selectedDate),

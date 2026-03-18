@@ -17,7 +17,6 @@ struct HeatCell: View {
     let date: Date
     let accent: Color
     let intensity: Double
-    let streakEmphasis: HeatmapStreakEmphasis
     let size: CGFloat
     let style: HeatmapStyleConfiguration
     let isSelected: Bool
@@ -37,10 +36,6 @@ struct HeatCell: View {
             )
             .overlay(selectionOverlay)
             .scaleEffect((isActive ? 1 : 0.96) * pulseScale * pressScale)
-            .shadow(
-                color: accent.opacity(streakEmphasis.shadowOpacity),
-                radius: streakEmphasis.shadowRadius
-            )
             .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
             .highPriorityGesture(
@@ -104,10 +99,6 @@ struct HeatCell: View {
         visualIntensity > 0
     }
 
-    private var emphasizedIntensity: Double {
-        streakEmphasis.adjustedIntensity(from: visualIntensity)
-    }
-
     private var fillColor: Color {
         if isLocked {
             return Color.white.opacity(colorScheme == .dark ? 0.08 : 0.28)
@@ -119,7 +110,7 @@ struct HeatCell: View {
             )
         }
 
-        return accent.opacity(emphasizedIntensity)
+        return accent.opacity(visualIntensity)
     }
 
     private var borderColor: Color {
@@ -133,7 +124,7 @@ struct HeatCell: View {
             )
         }
 
-        return accent.opacity(max(style.activeBorderOpacity(for: intensity), emphasizedIntensity * 0.22))
+        return accent.opacity(max(style.activeBorderOpacity(for: intensity), visualIntensity * 0.22))
     }
 
     private var pixelLineWidth: CGFloat {

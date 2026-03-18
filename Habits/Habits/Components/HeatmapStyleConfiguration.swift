@@ -47,8 +47,8 @@ struct HeatmapStyleConfiguration {
         inactiveStrokeOpacity: 0.070,
         inactiveStrokeColor: Color(red: 0.63, green: 0.70, blue: 0.79),
         inactiveFillOpacity: 0.065,
-        intensityScale: [0.0, 0.25, 0.55, 0.96, 0.96],
-        activeBorderOpacityByLevel: [0.0, 0.10, 0.16, 0.24, 0.24],
+        intensityScale: [0.0, 0.20, 0.42, 0.74, 0.98],
+        activeBorderOpacityByLevel: [0.0, 0.10, 0.17, 0.24, 0.30],
         selectedStrokeOpacity: 0.40,
         selectedStrokeWidth: 1.5,
         todayStrokeOpacity: 0.22,
@@ -66,11 +66,11 @@ struct HeatmapStyleConfiguration {
         guard rawIntensity > 0 else { return 0 }
 
         switch rawIntensity {
-        case ..<0.32:
+        case ..<0.25:
             return 1
-        case ..<0.48:
+        case ..<0.5:
             return 2
-        case ..<0.71:
+        case ..<0.75:
             return 3
         default:
             return 4

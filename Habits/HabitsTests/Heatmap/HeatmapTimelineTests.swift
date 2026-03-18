@@ -76,16 +76,4 @@ final class HeatmapTimelineTests: XCTestCase {
         XCTAssertLessThan(marchWeekIndex + 1, timeline.weeks.count)
         XCTAssertEqual(timeline.weeks[marchWeekIndex + 1].month, 3)
     }
-
-    func testIntensityUsesHighestLogValue() {
-        let low = HeatmapNormalizer.intensity(forTier: 1)
-        let medium = HeatmapNormalizer.intensity(forTier: 2)
-        let high = HeatmapNormalizer.intensity(forTier: 3)
-
-        let resolved = HeatmapNormalizer.highestIntensity(from: [low, high, medium])
-        let empty = HeatmapNormalizer.highestIntensity(from: [])
-
-        XCTAssertEqual(resolved, high)
-        XCTAssertEqual(empty, 0)
-    }
 }

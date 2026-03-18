@@ -10,10 +10,6 @@ import QuartzCore
 import SwiftData
 
 final class HabitLogService {
-    private enum HeatmapConstants {
-        static let visibleWindowDays = 140
-    }
-
     private let modelContext: ModelContext
     private(set) var calendar: Calendar
     private let lastValueStore: any LastValueStore
@@ -76,35 +72,6 @@ final class HabitLogService {
     private func normalizeLogsIfNeeded(for habit: Habit) {
         guard habit.normalizeCumulativeLogs(calendar: calendar) else { return }
         try? modelContext.save()
-    }
-
-    private func heatmapWindow(for endDate: Date) -> DateInterval {
-        let end = calendar.startOfDay(for: endDate)
-        let start = calendar.date(byAdding: .day, value: -(HeatmapConstants.visibleWindowDays - 1), to: end) ?? end
-        let intervalEnd = calendar.date(byAdding: .day, value: 1, to: end) ?? end
-        return DateInterval(start: start, end: intervalEnd)
-    }
-
-    private func heatmapReferenceDate(for habit: Habit, requested date: Date) -> Date {
-        let normalizedRequestedDate = calendar.startOfDay(for: date)
-        let normalizedToday = calendar.startOfDay(for: Date())
-        let latestLoggedDay = habit.logs.map(\.day).max() ?? normalizedRequestedDate
-        return max(normalizedToday, max(normalizedRequestedDate, latestLoggedDay))
-    }
-
-    private func maxDailyCumulativeValueInHeatmapWindow(for habit: Habit, endingAt endDate: Date) -> Double {
-        guard habit.goalType == .cumulative else { return 0 }
-
-        let interval = heatmapWindow(for: endDate)
-        var dailyTotals: [Date: Double] = [:]
-
-        for log in habit.logs where log.day >= interval.start && log.day < interval.end {
-            let value = log.numericValue
-            guard value > 0 else { continue }
-            dailyTotals[log.day, default: 0] += value
-        }
-
-        return dailyTotals.values.max() ?? 0
     }
 }
 
@@ -219,28 +186,12 @@ extension HabitLogService {
 extension HabitLogService {
     func intensity(for habit: Habit, on date: Date) -> Double {
         normalizeLogsIfNeeded(for: habit)
-        let normalizedDate = calendar.startOfDay(for: date)
-        let dayLogs = habit.logs(on: normalizedDate, calendar: calendar)
-        guard !dayLogs.isEmpty else { return 0 }
-
-        let referenceDate = heatmapReferenceDate(for: habit, requested: normalizedDate)
-        let maxDailyValueInWindow = maxDailyCumulativeValueInHeatmapWindow(for: habit, endingAt: referenceDate)
-
-        let intensities = dayLogs.map { log in
-            let tier = HeatmapNormalizer.tier(
-                for: HeatmapNormalizationContext(
-                    goalType: habit.goalType,
-                    hasGoal: habit.hasGoal,
-                    targetValue: habit.effectiveTargetValue,
-                    dailyLogCount: max(0, log.frequencyContribution),
-                    dailyLogValue: max(0, log.numericValue),
-                    maxDailyValueInWindow: maxDailyValueInWindow
-                )
-            )
-            return HeatmapNormalizer.intensity(forTier: tier)
-        }
-
-        return HeatmapNormalizer.highestIntensity(from: intensities)
+        return HeatmapIntensityCalculator.intensity(
+            for: date,
+            habit: habit,
+            logs: habit.logs,
+            calendar: calendar
+        )
     }
 }
 
