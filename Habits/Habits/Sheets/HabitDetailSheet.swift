@@ -70,15 +70,11 @@ struct HabitDetailSheet: View {
 
             return progressSnapshot?.visibleMonthText
         }()
-        let today = service.calendar.startOfDay(for: now)
-        let streakSnapshot = HabitInsightsEngine.snapshot(
-            for: habit,
-            anchorDate: today,
-            respectCreatedAtBoundary: false,
+        let displayedStreak = habit.displayStreak(
+            referenceDate: now,
             calendar: service.calendar,
-            weekStartPreference: userSettings.weekStartPreference,
-            now: now
-        ).streak
+            weekStartPreference: userSettings.weekStartPreference
+        )
 
         NavigationStack {
             ScrollView {
@@ -92,7 +88,7 @@ struct HabitDetailSheet: View {
                             showsQuickLogButton: true,
                             showsInlineProgressText: false,
                             secondaryTextOverride: loggingContextText,
-                            currentStreak: streakSnapshot.current,
+                            currentStreak: displayedStreak,
                             progressFractionOverride: progressSnapshot?.progressFraction,
                             isCompleteOverride: progressSnapshot?.isComplete,
                             onQuickLog: { date in

@@ -971,25 +971,38 @@ struct HabitInsightsEngine {
         let periodEnd = foundation.currentPeriodEnd
         guard periodEnd > periodStart else { return nil }
 
-        let bestWeek = strongestSevenDayWindow(
-            logs: habit.logs,
-            goalType: habit.goalType,
+        let windowDays = projectionWindowDays(
             periodStart: periodStart,
             periodEnd: periodEnd,
             calendar: calendar
         )
-        guard bestWeek > 0 else { return nil }
+        let bestWindow = strongestWindow(
+            logs: habit.logs,
+            goalType: habit.goalType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            windowDays: windowDays,
+            calendar: calendar
+        )
+        guard bestWindow > 0 else { return nil }
 
         let nowClamped = min(max(now, periodStart), periodEnd)
-        let remainingDays = max(0, calendar.dateComponents([.day], from: nowClamped, to: periodEnd).day ?? 0)
-        let remainingWeeks = max(Int(ceil(Double(remainingDays) / 7.0)), 0)
-        let potential = currentProgress + (bestWeek * Double(remainingWeeks))
+        let remainingSeconds = max(0, periodEnd.timeIntervalSince(nowClamped))
+        guard remainingSeconds > 0 else { return nil }
+
+        let secondsPerDay = 86_400.0
+        let remainingDays = remainingSeconds / secondsPerDay
+        let projectedGain = bestWindow * (remainingDays / Double(windowDays))
+        let potential = currentProgress + projectedGain
 
         guard potential > currentProgress else { return nil }
 
         let projectedText = habit.formatProgressValue(potential)
+        let currentText = habit.formatProgressValue(currentProgress)
+        guard projectedText != currentText else { return nil }
+
         let targetText = habit.formatProgressValue(target)
-        let headline = "Your strongest week suggests you could reach \(projectedText) this \(habit.goalPeriod.unit)."
+        let headline = "Your strongest recent stretch suggests you could reach \(projectedText) this \(habit.goalPeriod.unit)."
         let support: String = {
             if potential >= target {
                 return "That pace would put you ahead of target."
@@ -1005,11 +1018,21 @@ struct HabitInsightsEngine {
         )
     }
 
-    private static func strongestSevenDayWindow(
+    private static func projectionWindowDays(
+        periodStart: Date,
+        periodEnd: Date,
+        calendar: Calendar
+    ) -> Int {
+        let periodDays = max(1, calendar.dateComponents([.day], from: periodStart, to: periodEnd).day ?? 1)
+        return min(7, periodDays)
+    }
+
+    private static func strongestWindow(
         logs: [HabitLog],
         goalType: GoalType,
         periodStart: Date,
         periodEnd: Date,
+        windowDays: Int,
         calendar: Calendar
     ) -> Double {
         let relevantLogs = logs
@@ -1025,7 +1048,7 @@ struct HabitInsightsEngine {
         let orderedDays = dayTotals.keys.sorted()
         var bestWindow: Double = 0
         for day in orderedDays {
-            guard let windowEnd = calendar.date(byAdding: .day, value: 7, to: day) else { continue }
+            guard let windowEnd = calendar.date(byAdding: .day, value: windowDays, to: day) else { continue }
             let sum = dayTotals.reduce(0) { partial, item in
                 guard item.key >= day && item.key < windowEnd else { return partial }
                 return partial + item.value

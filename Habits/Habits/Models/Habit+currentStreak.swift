@@ -46,6 +46,42 @@ extension Habit {
         currentStreak(referenceDate: .now, calendar: calendar, weekStartPreference: weekStartPreference)
     }
 
+    func displayStreak(
+        referenceDate: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Int {
+        guard hasGoal else { return 0 }
+
+        let activeStreak = currentStreak(
+            referenceDate: referenceDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        if activeStreak > 0 {
+            return activeStreak
+        }
+
+        let currentPeriodStart = goalPeriod.periodStart(
+            for: referenceDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        let previousPeriodStart = goalPeriod.previousPeriodStart(
+            before: currentPeriodStart,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+
+        guard previousPeriodStart < currentPeriodStart else { return 0 }
+
+        return currentStreak(
+            referenceDate: previousPeriodStart,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+    }
+
     private func previousPeriod(
         from interval: DateInterval,
         calendar: Calendar,

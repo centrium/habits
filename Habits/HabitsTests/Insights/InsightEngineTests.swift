@@ -580,6 +580,69 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(overview.averageStreak, expected.averageStreak)
     }
 
+    func testGreigModeAppearsForDailyGoalWhenTimeRemainsInPeriod() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 11, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            period: .daily,
+            target: 3,
+            entries: [
+                .init(timestamp: TestDateFactory.date(2026, 3, 11, hour: 8, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.date(2026, 3, 11, hour: 9, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            greigModeEnabled: true,
+            now: now
+        )
+
+        // Then
+        guard let greig = greigBlock(from: viewModel) else {
+            return XCTFail("Expected Greig Mode card for a daily habit with remaining time and positive pace")
+        }
+        XCTAssertEqual(greig.heading, "Greig Mode")
+    }
+
+    func testGreigModeRespectsSettingsToggle() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 10, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            period: .weekly,
+            target: 3,
+            entries: [
+                .init(timestamp: TestDateFactory.date(2026, 3, 9, hour: 8, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 8, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let enabledViewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            greigModeEnabled: true,
+            now: now
+        )
+        let disabledViewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            greigModeEnabled: false,
+            now: now
+        )
+
+        // Then
+        XCTAssertNotNil(greigBlock(from: enabledViewModel))
+        XCTAssertNil(greigBlock(from: disabledViewModel))
+    }
+
     private func trendBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsTrendBlock? {
         for card in viewModel.cards {
             if case .trend(let block) = card {
@@ -619,6 +682,15 @@ final class InsightEngineTests: XCTestCase {
     private func overviewBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsOverviewBlock? {
         for card in viewModel.cards {
             if case .overview(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func greigBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsGreigModeBlock? {
+        for card in viewModel.cards {
+            if case .greigMode(let block) = card {
                 return block
             }
         }

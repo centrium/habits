@@ -321,4 +321,55 @@ final class StreakCalculationTests: XCTestCase {
         // Then
         XCTAssertEqual(streak, 2)
     }
+
+    func testDisplayStreakFallsBackToPreviousRunWhenCurrentPeriodIsIncomplete() {
+        // Given
+        let day1 = TestDateFactory.date(2026, 3, 9, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 10, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 3, 11, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 1,
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let displayStreak = habit.displayStreak(
+            referenceDate: day3,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+
+        // Then
+        XCTAssertEqual(displayStreak, 2)
+    }
+
+    func testDisplayStreakUsesCurrentRunWhenCurrentPeriodIsComplete() {
+        // Given
+        let day1 = TestDateFactory.date(2026, 3, 9, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 10, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 3, 11, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 1,
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day3, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let displayStreak = habit.displayStreak(
+            referenceDate: day3,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+
+        // Then
+        XCTAssertEqual(displayStreak, 3)
+    }
 }
