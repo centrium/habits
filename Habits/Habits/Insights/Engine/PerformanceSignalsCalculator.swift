@@ -1,7 +1,7 @@
 import Foundation
 
 enum PerformanceSignalsCalculator {
-    private static let momentumLabels = ["Declining", "Stable", "Improving", "Surging"]
+    private static let momentumLabels = ["Low", "Building", "Strong", "High"]
     private static let riskLabels = ["Low", "Moderate", "High", "Critical"]
     private static let strengthLabels = ["Weak", "Developing", "Strong", "Automatic"]
 
@@ -32,7 +32,7 @@ enum PerformanceSignalsCalculator {
                     labels: momentumLabels,
                     explanation: momentumExplanation(for: momentum)
                 ),
-                displayValue: signedDisplayValue(momentum)
+                displayValue: "\(Int(momentum.rounded()))"
             ),
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
@@ -70,23 +70,9 @@ enum PerformanceSignalsCalculator {
         calendar: Calendar,
         now: Date
     ) -> Double {
-        let windows = signalWindows(calendar: calendar, now: now)
-        let trackingStart = calendar.startOfDay(for: habit.createdAt)
-        let activity = activitySummary(logs: logs, windowEnd: windows.windowEnd)
-        let recentRate = completionRate(
-            in: windows.recent,
-            trackingStart: trackingStart,
-            activeDays: activity.activeDays,
-            calendar: calendar
-        )
-        let previousRate = completionRate(
-            in: windows.previous,
-            trackingStart: trackingStart,
-            activeDays: activity.activeDays,
-            calendar: calendar
-        )
-
-        return clamp(recentRate - previousRate, lower: -1, upper: 1)
+        _ = logs
+        let score = MomentumService(calendar: calendar).score(for: habit, now: now)
+        return Double(score)
     }
 
     static func habitRiskScore(
@@ -174,13 +160,16 @@ enum PerformanceSignalsCalculator {
     }
 
     static func momentumExplanation(for score: Double) -> String {
-        if score < -0.15 {
-            return "Your recent activity has dropped compared to your usual pattern."
+        switch Int(score.rounded()) {
+        case ...30:
+            return "Momentum is low right now. A small action today can restart consistency."
+        case ...60:
+            return "Momentum is building. Keep showing up to lock in the routine."
+        case ...80:
+            return "Momentum is strong and your recent consistency is holding."
+        default:
+            return "Momentum is high with strong streak and completion signals."
         }
-        if score > 0.15 {
-            return "Your recent activity is improving and momentum is building."
-        }
-        return "Your habit activity is stable compared with recent weeks."
     }
 
     static func riskExplanation(for score: Double) -> String {
@@ -295,7 +284,7 @@ private extension PerformanceSignalsCalculator {
     }
 
     static func normalizeMomentum(_ score: Double) -> Double {
-        clamp((score + 1) / 2, lower: 0, upper: 1)
+        clamp(score / 100, lower: 0, upper: 1)
     }
 
     static func signedDisplayValue(_ value: Double) -> String {

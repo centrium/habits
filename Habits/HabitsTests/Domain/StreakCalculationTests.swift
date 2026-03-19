@@ -54,33 +54,31 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertEqual(streak, 1)
     }
 
-    func testWeeklyStreakRequiresTargetEveryWeek() {
+    func testStreakAlwaysMeasuredInDaysForWeeklyGoal() {
         // Given
-        let week3Monday = TestDateFactory.date(2026, 3, 16, calendar: calendar)
-        let week2Monday = TestDateFactory.date(2026, 3, 9, calendar: calendar)
-        let week1Monday = TestDateFactory.date(2026, 3, 2, calendar: calendar)
+        let day1 = TestDateFactory.date(2026, 3, 16, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 17, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 3, 18, calendar: calendar)
         let habit = TestHabitFactory.frequency(
             period: .weekly,
-            target: 2,
+            target: 1,
             entries: [
-                .init(timestamp: week3Monday, value: 1),
-                .init(timestamp: TestDateFactory.addingDays(1, to: week3Monday, calendar: calendar), value: 1),
-                .init(timestamp: week2Monday, value: 1),
-                .init(timestamp: TestDateFactory.addingDays(1, to: week2Monday, calendar: calendar), value: 1),
-                .init(timestamp: week1Monday, value: 1),
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day3, value: 1),
             ],
             calendar: calendar
         )
 
         // When
         let streak = habit.currentStreak(
-            referenceDate: week3Monday,
+            referenceDate: day3,
             calendar: calendar,
             weekStartPreference: .monday
         )
 
         // Then
-        XCTAssertEqual(streak, 2)
+        XCTAssertEqual(streak, 3)
     }
 
     func testOpenGoalNewStreakShowsCorrectly() {
@@ -326,25 +324,23 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertEqual(streak, 0)
     }
 
-    func testWeeklyStreakContinuesAcrossYearBoundary() {
+    func testDailyStreakForWeeklyGoalContinuesAcrossYearBoundary() {
         // Given
-        let week2Start = TestDateFactory.date(2026, 1, 2, calendar: calendar)
-        let week1Start = TestDateFactory.date(2025, 12, 26, calendar: calendar)
+        let dec31 = TestDateFactory.date(2025, 12, 31, calendar: calendar)
+        let jan1 = TestDateFactory.date(2026, 1, 1, calendar: calendar)
         let habit = TestHabitFactory.frequency(
             period: .weekly,
-            target: 2,
+            target: 1,
             entries: [
-                .init(timestamp: week1Start, value: 1),
-                .init(timestamp: TestDateFactory.addingDays(1, to: week1Start, calendar: calendar), value: 1),
-                .init(timestamp: week2Start, value: 1),
-                .init(timestamp: TestDateFactory.addingDays(1, to: week2Start, calendar: calendar), value: 1),
+                .init(timestamp: dec31, value: 1),
+                .init(timestamp: jan1, value: 1),
             ],
             calendar: calendar
         )
 
         // When
         let streak = habit.currentStreak(
-            referenceDate: week2Start,
+            referenceDate: jan1,
             calendar: calendar,
             weekStartPreference: .monday
         )

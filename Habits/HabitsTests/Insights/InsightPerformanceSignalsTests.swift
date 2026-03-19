@@ -4,11 +4,11 @@ import XCTest
 final class InsightPerformanceSignalsTests: XCTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
-    func testMomentumScoreImprovesWhenRecentActivityOutpacesHistory() {
+    func testMomentumScoreIsHighForStrongRecentStreak() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
-            offsets: [0, -1, -2, -4, -6, -8, -11, -14]
+            offsets: [0, -1, -2, -3, -4, -5]
         )
 
         let score = PerformanceSignalsCalculator.momentumScore(
@@ -17,14 +17,14 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertGreaterThan(score, 0.15)
+        XCTAssertGreaterThan(score, 80)
         XCTAssertEqual(
             PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Your recent activity is improving and momentum is building."
+            "Momentum is high with strong streak and completion signals."
         )
     }
 
-    func testMomentumScoreDeclinesWhenRecentActivityDropsBelowHistory() {
+    func testMomentumScoreIsLowWhenPatternIsBroken() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
@@ -37,18 +37,18 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertLessThan(score, -0.15)
+        XCTAssertLessThan(score, 30)
         XCTAssertEqual(
             PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Your recent activity has dropped compared to your usual pattern."
+            "Momentum is low right now. A small action today can restart consistency."
         )
     }
 
-    func testMomentumScoreIsStableWhenRecentActivityMatchesHistory() {
+    func testMomentumScoreIsBuildingForModerateRecentConsistency() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
-            offsets: [0, -3, -8, -11, -14, -17, -20, -23]
+            offsets: [0, -1, -3, -5]
         )
 
         let score = PerformanceSignalsCalculator.momentumScore(
@@ -57,10 +57,11 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(score, 0, accuracy: 0.0001)
+        XCTAssertGreaterThan(score, 30)
+        XCTAssertLessThanOrEqual(score, 60)
         XCTAssertEqual(
             PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Your habit activity is stable compared with recent weeks."
+            "Momentum is building. Keep showing up to lock in the routine."
         )
     }
 

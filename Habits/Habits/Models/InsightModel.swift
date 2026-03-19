@@ -222,9 +222,12 @@ struct HabitInsightsAchievementBlock {
 }
 
 struct HabitInsightsMomentumBlock {
+    let score: Int
+    let momentumLabel: String
     let currentStreakText: String
     let longestStreakText: String
     let paceText: String
+    let supportingText: String
 }
 
 struct HabitInsightsConsistencyBlock {

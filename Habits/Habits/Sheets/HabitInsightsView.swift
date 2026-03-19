@@ -312,20 +312,34 @@ private struct MomentumCardView: View {
                 Text("Momentum")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(block.score)")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(block.momentumLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
                 Text(block.currentStreakText)
                     .font(.title3.weight(.bold))
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(block.longestStreakText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !block.longestStreakText.isEmpty {
+                        Text(block.longestStreakText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if minHeight == nil {
                         Text(block.paceText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    Text(block.supportingText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

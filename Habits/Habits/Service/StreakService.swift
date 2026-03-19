@@ -11,14 +11,13 @@ struct StreakService {
     }
 
     private let calendar: Calendar
-    private let weekStartPreference: WeekStartPreference
 
     init(
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) {
         self.calendar = calendar
-        self.weekStartPreference = weekStartPreference
+        _ = weekStartPreference
     }
 
     // Goal-type completion rules are centralized here.
@@ -26,11 +25,9 @@ struct StreakService {
         goal: Habit,
         on date: Date
     ) -> Bool {
-        let interval = goal.periodRange(
-            for: date,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
+        let dayStart = calendar.startOfDay(for: date)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        let interval = DateInterval(start: dayStart, end: dayEnd)
 
         if !goal.hasGoal {
             return goal.totalCount(in: interval) > 0
@@ -50,11 +47,14 @@ struct StreakService {
         referenceDate: Date = .now
     ) -> Int {
         var streak = 0
-        var cursor = periodStart(for: goal, date: referenceDate)
+        var cursor = calendar.startOfDay(for: referenceDate)
 
         while isDayComplete(goal: goal, on: cursor) {
             streak += 1
-            cursor = previousPeriodStart(for: goal, before: cursor)
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else {
+                break
+            }
+            cursor = previousDay
         }
 
         return streak
@@ -86,19 +86,19 @@ struct StreakService {
             return activeStreak
         }
 
-        let currentPeriodStart = periodStart(for: goal, date: referenceDate)
-        let previousPeriodStart = previousPeriodStart(for: goal, before: currentPeriodStart)
-        guard previousPeriodStart < currentPeriodStart else { return 0 }
-
-        return currentStreak(for: goal, referenceDate: previousPeriodStart)
+        let today = calendar.startOfDay(for: referenceDate)
+        guard let previousDay = calendar.date(byAdding: .day, value: -1, to: today) else {
+            return 0
+        }
+        return currentStreak(for: goal, referenceDate: previousDay)
     }
 
     func streakLengths(
         for goal: Habit,
         through referenceDate: Date = .now
     ) -> [Int] {
-        let completedStarts = completedPeriodStarts(for: goal, through: referenceDate)
-        return streakLengths(from: completedStarts, cadence: goal.goalPeriod)
+        let completedDays = completedDayStarts(for: goal, through: referenceDate)
+        return streakLengths(from: Set(completedDays))
     }
 
     func currentStreak(
@@ -132,52 +132,23 @@ struct StreakService {
 }
 
 private extension StreakService {
-    func periodStart(for goal: Habit, date: Date) -> Date {
-        goal.goalPeriod.periodStart(
-            for: date,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-    }
-
-    func previousPeriodStart(for goal: Habit, before date: Date) -> Date {
-        goal.goalPeriod.previousPeriodStart(
-            before: date,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-    }
-
-    func completedPeriodStarts(
+    func completedDayStarts(
         for goal: Habit,
         through referenceDate: Date
     ) -> [Date] {
-        let periodStarts: Set<Date> = Set(
+        let days: Set<Date> = Set(
             goal.logs.compactMap { log -> Date? in
                 let timestamp = log.effectiveTimestamp
                 guard timestamp <= referenceDate else { return nil }
-                return periodStart(for: goal, date: timestamp)
+                return calendar.startOfDay(for: timestamp)
             }
         )
 
-        let completed = periodStarts.filter { start in
-            isDayComplete(goal: goal, on: start)
+        let completed = days.filter { day in
+            isDayComplete(goal: goal, on: day)
         }
 
         return completed.sorted()
-    }
-
-    func streakLengths(
-        from sortedStarts: [Date],
-        cadence: GoalPeriod
-    ) -> [Int] {
-        streakLengths(from: sortedStarts) { previous in
-            cadence.nextPeriodStart(
-                after: previous,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-        }
     }
 
     func streakLengths(

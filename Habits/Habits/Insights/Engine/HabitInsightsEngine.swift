@@ -58,6 +58,21 @@ struct HabitInsightsEngine {
             weekStartPreference: weekStartPreference,
             now: now
         ).streak
+        let momentumBreakdown = MomentumService(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).breakdown(
+            for: habit,
+            now: now
+        )
+        let streakService = StreakService(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        let loggedToday = streakService.isDayComplete(
+            goal: habit,
+            on: now
+        )
 
         let metrics = MetricsCalculator.calculate(
             foundation: foundation,
@@ -77,18 +92,10 @@ struct HabitInsightsEngine {
             ? analysedBehaviour
             : behaviourWithoutPatternSignals(analysedBehaviour)
 
-        let generatedInsights = InsightGenerator.generate(
-            metrics: metrics,
-            behaviour: behaviour
-        )
-
         let coaching = coachingTemplate(
             habit: habit,
             metrics: metrics,
-            behaviour: behaviour,
-            generatedInsights: generatedInsights,
-            calendar: calendar,
-            now: now
+            loggedToday: loggedToday
         )
 
         let isOpenEnded = foundation.achievement.target == nil
@@ -142,7 +149,9 @@ struct HabitInsightsEngine {
         let greigModeBlock = greigModeBlock(
             for: habit,
             foundation: foundation,
+            momentum: momentumBreakdown,
             calendar: calendar,
+            weekStartPreference: weekStartPreference,
             now: now
         )
         let overviewSnapshot = HabitInsightsService(calendar: calendar).snapshot(
@@ -212,15 +221,18 @@ struct HabitInsightsEngine {
         cards.append(
             .momentum(
                 HabitInsightsMomentumBlock(
-                    currentStreakText: momentumPrimaryText(streakSnapshot.current, cadence: habit.goalPeriod),
-                    longestStreakText: momentumBestText(streakSnapshot.longest, cadence: habit.goalPeriod),
-                    paceText: momentumSupportText(
+                    score: momentumBreakdown.score,
+                    momentumLabel: momentumBreakdown.momentumLabel,
+                    currentStreakText: momentumPrimaryText(
                         current: streakSnapshot.current,
-                        longest: streakSnapshot.longest,
-                        cadence: habit.goalPeriod,
-                        behaviour: behaviour,
-                        coaching: coaching
-                    )
+                        loggedToday: loggedToday
+                    ),
+                    longestStreakText: momentumBestText(
+                        current: streakSnapshot.current,
+                        longest: streakSnapshot.longest
+                    ),
+                    paceText: momentumTrendText(momentumBreakdown.score),
+                    supportingText: momentumSupportingSentence(momentumBreakdown)
                 )
             )
         )
@@ -291,81 +303,27 @@ struct HabitInsightsEngine {
     private static func coachingTemplate(
         habit: Habit,
         metrics: HabitMetricsSnapshot,
-        behaviour: HabitBehaviourSnapshot,
-        generatedInsights: [HabitInsight],
-        calendar: Calendar,
-        now: Date
+        loggedToday: Bool
     ) -> CoachingTemplate {
-        if let streakProtection = streakProtectionMessage(habit: habit, metrics: metrics, calendar: calendar, now: now) {
+        _ = habit
+
+        if metrics.currentStreak >= 2 {
             return CoachingTemplate(
                 id: .streakProtection,
                 priority: 1,
-                headline: "Your streak is active",
-                supportingText: streakProtection,
+                headline: "You've shown up \(metrics.currentStreak) days in a row",
+                supportingText: "Keep your streak alive today",
                 iconName: "sparkles",
                 tone: .encouragement
             )
         }
 
-        if let streakGuard = streakGuardMessage(habit: habit, metrics: metrics, calendar: calendar, now: now) {
-            return CoachingTemplate(
-                id: .streakProtection,
-                priority: 1,
-                headline: "Streak guard update",
-                supportingText: streakGuard,
-                iconName: "shield",
-                tone: .encouragement
-            )
-        }
-
-        if let nearCompletion = nearCompletionTemplate(habit: habit, metrics: metrics) {
-            return nearCompletion
-        }
-
-        if let behindPace = behindPaceTemplate(habit: habit, metrics: metrics, behaviour: behaviour) {
-            return behindPace
-        }
-
-        if let streakMilestone = streakMilestoneTemplate(current: metrics.currentStreak, longest: metrics.longestStreak, cadence: habit.goalPeriod) {
-            return streakMilestone
-        }
-
-        if let behaviourTemplate = behaviourInsightTemplate(
-            from: behaviour,
-            calendar: calendar,
-            now: now
-        ) {
-            return behaviourTemplate
-        }
-
-        if let milestone = milestoneMessage(habit: habit, metrics: metrics) {
-            return CoachingTemplate(
-                id: .milestone,
-                priority: 5,
-                headline: "Milestone reached",
-                supportingText: milestone,
-                iconName: "sparkles",
-                tone: .celebration
-            )
-        }
-
-        if let activity = behaviour.activitySummary {
-            return CoachingTemplate(
-                id: .weeklyActivity,
-                priority: 6,
-                headline: "You've logged this habit \(activity.entriesThisWeek) \(activity.entriesThisWeek == 1 ? "time" : "times") this week",
-                supportingText: "Average \(activity.averageEntriesPerWeek.formatted(.number.precision(.fractionLength(1)))) entries per week",
-                iconName: "sparkles",
-                tone: .encouragement
-            )
-        }
-
-        if let topInsight = generatedInsights.first {
+        if loggedToday {
             return CoachingTemplate(
                 id: .generalEncouragement,
-                priority: 7,
-                headline: topInsight.message,
-                supportingText: "Keep going with a small check-in today",
+                priority: 1,
+                headline: "Nice - you've logged today",
+                supportingText: "One more check-in tomorrow starts a streak",
                 iconName: "sparkles",
                 tone: .encouragement
             )
@@ -373,9 +331,9 @@ struct HabitInsightsEngine {
 
         return CoachingTemplate(
             id: .generalEncouragement,
-            priority: 7,
-            headline: "You're building momentum",
-            supportingText: "A quick check-in today keeps your routine strong",
+            priority: 1,
+            headline: "A quick check-in today keeps your streak alive",
+            supportingText: "No active streak yet",
             iconName: "sparkles",
             tone: .encouragement
         )
@@ -453,11 +411,12 @@ struct HabitInsightsEngine {
         longest: Int,
         cadence: GoalPeriod
     ) -> CoachingTemplate? {
+        _ = cadence
         guard current > 0, longest > current else { return nil }
         let delta = longest - current
         guard delta <= 2 else { return nil }
         let support = delta == 1
-            ? "One more log will beat your longest \(streakUnit(cadence, count: longest)) streak"
+            ? "One more log will beat your longest \(longest)-day streak"
             : "\(delta) more logs will beat your longest streak"
         return CoachingTemplate(
             id: .streakMilestone,
@@ -620,8 +579,7 @@ struct HabitInsightsEngine {
             return nil
         }
 
-        let unit = streakUnit(habit.goalPeriod, count: metrics.currentStreak)
-        return "Log today to keep your \(metrics.currentStreak) \(unit) streak alive"
+        return "Log today to keep your \(metrics.currentStreak)-day streak alive"
     }
 
     private static func streakGuardMessage(
@@ -687,67 +645,44 @@ struct HabitInsightsEngine {
     }
 
     private static func momentumPrimaryText(
-        _ streak: Int,
-        cadence: GoalPeriod
+        current: Int,
+        loggedToday: Bool
     ) -> String {
-        guard streak > 0 else { return "No streak yet" }
-        return "\(streak) \(streakUnit(cadence, count: streak)) streak"
+        if current >= 2 {
+            return "🔥 \(current)-day streak"
+        }
+        if loggedToday {
+            return "Logged today"
+        }
+        return "No active streak"
     }
 
     private static func momentumBestText(
-        _ longest: Int,
-        cadence: GoalPeriod
-    ) -> String {
-        guard longest > 0 else { return "Start today to begin your streak" }
-        return "Best: \(longest) \(pluralized(unit: cadence.streakUnit, count: longest))"
-    }
-
-    private static func momentumSupportText(
         current: Int,
-        longest: Int,
-        cadence: GoalPeriod,
-        behaviour: HabitBehaviourSnapshot,
-        coaching: CoachingTemplate
+        longest: Int
     ) -> String {
-        if current == 0 {
-            return "Your streak begins with the next log"
+        guard longest > 0 else { return "" }
+        if current == longest, current >= 2 {
+            return "You're matching your best streak"
         }
-
-        if current == longest, current > 0 {
-            return "You're matching your longest streak"
-        }
-
-        if longest > current {
-            let delta = longest - current
-            let unit = streakUnit(cadence, count: delta)
-            if delta == 1 {
-                return "You're one \(unit) away from a new record"
-            }
-            return "\(delta) \(unit)s away from your record"
-        }
-
-        if behaviour.momentumMessage != coaching.headline {
-            return behaviour.momentumMessage
-        }
-
-        return "Keep your routine going"
+        return "Best: \(longest)-day streak"
     }
 
-    private static func streakUnit(
-        _ cadence: GoalPeriod,
-        count: Int
+    private static func momentumTrendText(
+        _ score: Int
     ) -> String {
-        _ = count
-        switch cadence {
-        case .daily:
-            return "day"
-        case .weekly:
-            return "week"
-        case .monthly:
-            return "month"
-        case .yearly:
-            return "year"
+        PerformanceSignalsCalculator.momentumExplanation(for: Double(score))
+    }
+
+    private static func momentumSupportingSentence(
+        _ breakdown: MomentumBreakdown
+    ) -> String {
+        let completionLine = "You've completed \(breakdown.completedDays) of the last \(breakdown.totalDays) days"
+        guard breakdown.streak > 0 else {
+            return "\(completionLine)."
         }
+
+        return "\(completionLine), with a \(breakdown.streak)-\(pluralized(unit: "day", count: breakdown.streak)) streak."
     }
 
     private static func pluralized(
@@ -959,7 +894,9 @@ struct HabitInsightsEngine {
     private static func greigModeBlock(
         for habit: Habit,
         foundation: HabitInsightSnapshot,
+        momentum: MomentumBreakdown,
         calendar: Calendar,
+        weekStartPreference: WeekStartPreference,
         now: Date
     ) -> HabitInsightsGreigModeBlock? {
         let goal: GreigInsightGoal = {
@@ -988,14 +925,107 @@ struct HabitInsightsEngine {
             return nil
         }
 
+        let momentumSupport = greigMomentumSupportText(
+            for: habit,
+            mode: foundation.mode,
+            momentum: momentum,
+            foundation: foundation,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference,
+            now: now
+        )
+        let baseSupport = insight.body ?? "Keep this rhythm going."
+        let supportText = "\(momentumSupport) \(baseSupport)"
+
         return HabitInsightsGreigModeBlock(
             heading: "Greig Mode",
             headline: insight.title,
-            supportText: insight.body ?? "Keep this rhythm going.",
+            supportText: supportText,
             iconName: "brain",
             confidence: insight.confidence,
             status: insight.status
         )
+    }
+
+    private static func greigMomentumSupportText(
+        for habit: Habit,
+        mode: HabitInsightMode,
+        momentum: MomentumBreakdown,
+        foundation: HabitInsightSnapshot,
+        calendar: Calendar,
+        weekStartPreference: WeekStartPreference,
+        now: Date
+    ) -> String {
+        switch mode {
+        case .openEnded:
+            if momentum.streak > 0 {
+                let remainingToWeek = max(7 - momentum.streak, 1)
+                if remainingToWeek == 1 {
+                    return "You're on a \(momentum.streak)-day streak. Keep this up and you'll build a 7-day streak tomorrow."
+                }
+                return "You're on a \(momentum.streak)-day streak. Keep this up and you'll build a 7-day streak in \(remainingToWeek) days."
+            }
+            return "You've completed \(momentum.completedDays) of the last \(momentum.totalDays) days."
+
+        case .frequency:
+            return "You've hit your target \(momentum.completedDays) out of \(momentum.totalDays) days - \(momentum.momentumLabel.lowercased())."
+
+        case .cumulative:
+            if let target = foundation.achievement.target,
+               let pace = foundation.pace,
+               let daysEarly = projectedDaysEarly(
+                target: target,
+                progress: foundation.achievement.progress,
+                periodStart: foundation.currentPeriodStart,
+                periodEnd: foundation.currentPeriodEnd,
+                now: now,
+                calendar: calendar
+               ),
+               pace.projectedTotal >= target {
+                if daysEarly > 0 {
+                    return "At your current pace, you'll reach your goal \(daysEarly) days early."
+                }
+                return "At your current pace, you'll reach your goal this period."
+            }
+
+            let streak = StreakService(
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            ).currentStreak(
+                for: habit,
+                referenceDate: now
+            )
+            if streak > 0 {
+                return "You're on a \(streak)-day streak with \(momentum.momentumLabel.lowercased())."
+            }
+            return "You've contributed on \(momentum.completedDays) of the last \(momentum.totalDays) days."
+        }
+    }
+
+    private static func projectedDaysEarly(
+        target: Double,
+        progress: Double,
+        periodStart: Date,
+        periodEnd: Date,
+        now: Date,
+        calendar: Calendar
+    ) -> Int? {
+        let elapsedDays = max(
+            calendar.dateComponents([.day], from: periodStart, to: now).day ?? 0,
+            1
+        )
+        let remainingDays = max(
+            calendar.dateComponents([.day], from: now, to: periodEnd).day ?? 0,
+            0
+        )
+
+        let pacePerDay = progress / Double(elapsedDays)
+        guard pacePerDay > 0, target > progress else { return nil }
+
+        let daysToTarget = (target - progress) / pacePerDay
+        guard daysToTarget.isFinite else { return nil }
+        let rawEarly = Double(remainingDays) - daysToTarget
+        return max(Int(rawEarly.rounded(.down)), 0)
     }
 
     private static func behaviourInsightsBlock(

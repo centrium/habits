@@ -646,6 +646,127 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertNil(greigBlock(from: disabledViewModel))
     }
 
+    func testGreigModeSupportTextIncludesMomentumContext() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [
+                .init(timestamp: now, value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-1, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-2, to: now, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            greigModeEnabled: true,
+            now: now
+        )
+
+        // Then
+        guard let greig = greigBlock(from: viewModel) else {
+            return XCTFail("Expected Greig mode block")
+        }
+        XCTAssertTrue(greig.supportText.contains("3-day streak"))
+    }
+
+    func testNoPeriodStreakTerminology() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            period: .weekly,
+            target: 1,
+            entries: [
+                .init(timestamp: now, value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-1, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-2, to: now, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            greigModeEnabled: true,
+            now: now
+        )
+
+        // Then
+        let allText = flattenedCardText(from: viewModel).lowercased()
+        XCTAssertFalse(allText.contains("period streak"))
+        XCTAssertFalse(allText.contains("week streak"))
+        XCTAssertFalse(allText.contains("monthly streak"))
+    }
+
+    func testCoachingUsesDailyStreak() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 1,
+            entries: [
+                .init(timestamp: now, value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-1, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-2, to: now, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let motivation = motivationBlock(from: viewModel) else {
+            return XCTFail("Expected motivation card")
+        }
+        XCTAssertTrue(motivation.headline.contains("3 days in a row"))
+    }
+
+    func testMomentumUsesSameStreakAsStreakService() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [
+                .init(timestamp: now, value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-1, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-2, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-3, to: now, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+        let expected = StreakService(
+            calendar: calendar,
+            weekStartPreference: .monday
+        ).currentStreak(
+            for: habit,
+            referenceDate: now
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let momentum = momentumBlock(from: viewModel) else {
+            return XCTFail("Expected momentum card")
+        }
+        XCTAssertTrue(momentum.currentStreakText.contains("\(expected)-day streak"))
+    }
+
     private func trendBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsTrendBlock? {
         for card in viewModel.cards {
             if case .trend(let block) = card {
@@ -698,5 +819,45 @@ final class InsightEngineTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    private func motivationBlock(from viewModel: HabitInsightsViewModel) -> MotivationCard? {
+        for card in viewModel.cards {
+            if case .motivation(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func momentumBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsMomentumBlock? {
+        for card in viewModel.cards {
+            if case .momentum(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func flattenedCardText(from viewModel: HabitInsightsViewModel) -> String {
+        var values: [String] = []
+        for card in viewModel.cards {
+            switch card {
+            case .motivation(let block):
+                values.append(block.headline)
+                values.append(block.supportingText)
+            case .momentum(let block):
+                values.append(block.currentStreakText)
+                values.append(block.longestStreakText)
+                values.append(block.paceText)
+                values.append(block.supportingText)
+            case .greigMode(let block):
+                values.append(block.headline)
+                values.append(block.supportText)
+            default:
+                continue
+            }
+        }
+        return values.joined(separator: " ")
     }
 }
