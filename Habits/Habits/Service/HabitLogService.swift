@@ -10,11 +10,25 @@ import QuartzCore
 import SwiftData
 
 final class HabitLogService {
+    private struct CachedDayMetrics {
+        let revision: Int
+        let timeZoneIdentifier: String
+        let hasStreakGoal: Bool
+        let goalType: GoalType
+        let target: Double
+        let metricsByDay: [Date: HabitDayMetrics]
+    }
+
     private let modelContext: ModelContext
     private(set) var calendar: Calendar
     private let lastValueStore: any LastValueStore
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.1
+    private var pendingSaveWorkItem: DispatchWorkItem?
+    private var pendingSyncReferenceDate: Date?
+    private let saveCoalescingDelay: TimeInterval = 0.12
+    private var metricsRevisions: [UUID: Int] = [:]
+    private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
 
     init(
         modelContext: ModelContext,
@@ -28,6 +42,7 @@ final class HabitLogService {
 
     func updateCalendar(_ calendar: Calendar) {
         self.calendar = calendar
+        dayMetricsCache.removeAll()
     }
 
     private func playHaptic(becameComplete: Bool) {
@@ -46,18 +61,37 @@ final class HabitLogService {
     }
 
     private func saveAndPlayHaptic(for habit: Habit, referenceDate: Date, wasComplete: Bool) {
-        try? modelContext.save()
-
-        Task { @MainActor in
-            await NotificationService.shared.syncEveningReflectionFromStoredSettings(
-                referenceDate: referenceDate
-            )
-        }
+        schedulePersistAndReflectionSync(referenceDate: referenceDate)
 
         let isComplete = habit.isComplete(for: referenceDate, calendar: calendar)
         DispatchQueue.main.async {
             self.playHaptic(becameComplete: !wasComplete && isComplete)
         }
+    }
+
+    private func schedulePersistAndReflectionSync(referenceDate: Date) {
+        pendingSyncReferenceDate = referenceDate
+        pendingSaveWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [self] in
+            let syncReferenceDate = pendingSyncReferenceDate ?? referenceDate
+            pendingSyncReferenceDate = nil
+            pendingSaveWorkItem = nil
+
+            try? modelContext.save()
+
+            Task { @MainActor in
+                await NotificationService.shared.syncEveningReflectionFromStoredSettings(
+                    referenceDate: syncReferenceDate
+                )
+            }
+        }
+
+        pendingSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + saveCoalescingDelay,
+            execute: workItem
+        )
     }
 
     private func logs(for habit: Habit, on date: Date) -> [HabitLog] {
@@ -71,8 +105,22 @@ final class HabitLogService {
 
     private func normalizeLogsIfNeeded(for habit: Habit) {
         guard habit.normalizeCumulativeLogs(calendar: calendar) else { return }
+        invalidateMetricsCache(for: habit.id)
         try? modelContext.save()
     }
+
+    private func invalidateMetricsCache(for habitID: UUID) {
+        metricsRevisions[habitID, default: 0] += 1
+        dayMetricsCache.removeValue(forKey: habitID)
+    }
+}
+
+struct HabitDayMetrics {
+    let count: Int
+    let value: Double
+    let intensity: Double
+
+    static let zero = HabitDayMetrics(count: 0, value: 0, intensity: 0)
 }
 
 extension HabitLogService {
@@ -115,6 +163,103 @@ extension HabitLogService {
 
     func daysForMonth(_ month: Date) -> [Date] {
         CalendarGridHelper.daysForMonth(month, calendarProvider: calendarProvider)
+    }
+
+    func dayMetrics(for habit: Habit, on days: [Date]) -> [Date: HabitDayMetrics] {
+        normalizeLogsIfNeeded(for: habit)
+
+        let normalizedDays = Set(days.map { calendar.startOfDay(for: $0) })
+        guard !normalizedDays.isEmpty else { return [:] }
+
+        let target = max(0, habit.effectiveTargetValue ?? 0)
+        let revision = metricsRevisions[habit.id, default: 0]
+        let resolvedMetricsByDay: [Date: HabitDayMetrics]
+
+        if let cached = dayMetricsCache[habit.id],
+           cached.revision == revision,
+           cached.timeZoneIdentifier == calendar.timeZone.identifier,
+           cached.hasStreakGoal == habit.hasStreakGoal,
+           cached.goalType == habit.goalType,
+           cached.target == target {
+            resolvedMetricsByDay = cached.metricsByDay
+        } else {
+            var countsByDay: [Date: Int] = [:]
+            var valuesByDay: [Date: Double] = [:]
+            var frequencyIntensityByDay: [Date: Double] = [:]
+            var cumulativeIntensityByDay: [Date: Double] = [:]
+            var hasCompletionByDay: Set<Date> = []
+
+            for log in habit.logs {
+                let countDay = log.day
+                countsByDay[countDay, default: 0] += log.frequencyContribution
+                valuesByDay[countDay, default: 0] += log.numericValue
+
+                let intensityDay = calendar.startOfDay(for: log.effectiveTimestamp)
+                if log.frequencyContribution > 0 || log.numericValue > 0 {
+                    hasCompletionByDay.insert(intensityDay)
+                }
+
+                frequencyIntensityByDay[intensityDay, default: 0] += Double(max(0, log.frequencyContribution))
+                cumulativeIntensityByDay[intensityDay, default: 0] += max(0, log.numericValue)
+            }
+
+            var allKnownDays = Set(countsByDay.keys)
+            allKnownDays.formUnion(valuesByDay.keys)
+            allKnownDays.formUnion(frequencyIntensityByDay.keys)
+            allKnownDays.formUnion(cumulativeIntensityByDay.keys)
+            allKnownDays.formUnion(hasCompletionByDay)
+
+            var rebuiltMetricsByDay: [Date: HabitDayMetrics] = [:]
+            rebuiltMetricsByDay.reserveCapacity(allKnownDays.count)
+
+            for day in allKnownDays {
+                let count = countsByDay[day, default: 0]
+                let value = valuesByDay[day, default: 0]
+
+                let intensity: Double
+                if !habit.hasStreakGoal {
+                    intensity = hasCompletionByDay.contains(day) ? 1 : 0
+                } else if target > 0 {
+                    switch habit.goalType {
+                    case .frequency:
+                        intensity = clamp(
+                            frequencyIntensityByDay[day, default: 0] / target
+                        )
+                    case .cumulative:
+                        intensity = clamp(
+                            cumulativeIntensityByDay[day, default: 0] / target
+                        )
+                    }
+                } else {
+                    intensity = 0
+                }
+
+                rebuiltMetricsByDay[day] = HabitDayMetrics(
+                    count: count,
+                    value: value,
+                    intensity: intensity
+                )
+            }
+
+            dayMetricsCache[habit.id] = CachedDayMetrics(
+                revision: revision,
+                timeZoneIdentifier: calendar.timeZone.identifier,
+                hasStreakGoal: habit.hasStreakGoal,
+                goalType: habit.goalType,
+                target: target,
+                metricsByDay: rebuiltMetricsByDay
+            )
+            resolvedMetricsByDay = rebuiltMetricsByDay
+        }
+
+        var requestedMetrics: [Date: HabitDayMetrics] = [:]
+        requestedMetrics.reserveCapacity(normalizedDays.count)
+
+        for day in normalizedDays {
+            requestedMetrics[day] = resolvedMetricsByDay[day] ?? .zero
+        }
+
+        return requestedMetrics
     }
 }
 
@@ -183,6 +328,12 @@ extension HabitLogService {
     }
 }
 
+private extension HabitLogService {
+    func clamp(_ value: Double) -> Double {
+        min(max(value, 0), 1)
+    }
+}
+
 extension HabitLogService {
     func intensity(for habit: Habit, on date: Date) -> Double {
         normalizeLogsIfNeeded(for: habit)
@@ -205,6 +356,7 @@ extension HabitLogService {
 
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
         habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: calendar))
+        invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
 
         return habit.value(on: normalizedDay, calendar: calendar)
@@ -232,6 +384,7 @@ extension HabitLogService {
             habit.logs.append(HabitLog(timestamp: timestamp, value: amount, calendar: calendar))
         }
 
+        invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return habit.value(on: normalizedDay, calendar: calendar)
     }
@@ -244,6 +397,7 @@ extension HabitLogService {
 
         habit.logs.removeAll { $0.id == entry.id }
 
+        invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return habit.value(on: normalizedDay, calendar: calendar)
     }
@@ -254,6 +408,7 @@ extension HabitLogService {
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
         removeLogs(for: habit, on: normalizedDay)
+        invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return 0
     }
@@ -288,6 +443,7 @@ extension HabitLogService {
             return 0
         }
 
+        invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return count(for: habit, on: normalizedDay)
     }
@@ -307,6 +463,7 @@ extension HabitLogService {
             }
         }
 
+        invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return value
     }

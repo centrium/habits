@@ -56,6 +56,8 @@ struct HabitHeatmap: View {
 
     var body: some View {
         let now = Date()
+        let heatmapDays = timeline.weeks.flatMap(\.days).compactMap { $0 }
+        let dayMetrics = service.dayMetrics(for: habit, on: heatmapDays)
         let premiumHistoryGate = PremiumHistoryGate.Context(
             calendar: calendarProvider.calendar,
             premiumStatus: purchaseService.premiumStatus,
@@ -71,7 +73,8 @@ struct HabitHeatmap: View {
             isInteractive: isInteractive,
             premiumHistoryGate: premiumHistoryGate,
             intensityFor: { day in
-                service.intensity(for: habit, on: day)
+                let normalizedDay = service.calendar.startOfDay(for: day)
+                return dayMetrics[normalizedDay]?.intensity ?? 0
             },
             onTapDay: { day in
                 onSelectDay(day)

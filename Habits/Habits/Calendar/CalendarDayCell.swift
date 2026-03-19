@@ -10,8 +10,6 @@ import SwiftUI
 
 struct CalendarDayCell: View {
     @Environment(\.colorScheme) private var colorScheme
-    @State private var pulseScale: CGFloat = 1
-    @State private var pressScale: CGFloat = 1
 
     private enum Layout {
         static let cellWidth: CGFloat = 43
@@ -167,11 +165,19 @@ struct CalendarDayCell: View {
             }
         }
         .opacity(contentOpacity)
-        .scaleEffect(pulseScale * pressScale)
         .frame(width: Layout.cellWidth, height: Layout.cellHeight)
         .overlay(selectionOverlay)
         .contentShape(Rectangle())
-        .gesture(dayGesture)
+        .onTapGesture {
+            onTap()
+        }
+        .onLongPressGesture(minimumDuration: 0.35) {
+            guard !isLocked else { return }
+            onLongPress()
+        }
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .allowsHitTesting(!isDisabled)
         .contextMenu {
             if !isDisabled && !isLocked {
@@ -184,45 +190,7 @@ struct CalendarDayCell: View {
             guard !isDisabled, !isLocked else { return }
             onLongPress()
         }
-        .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: intensity)
-        .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: count)
-        .animation(isDisabled ? nil : .easeInOut(duration: 0.18), value: indicatorText)
-        .onChange(of: count) { oldValue, newValue in
-            guard !isDisabled, newValue > oldValue else { return }
-            pulseScale = 1.04
-            withAnimation(AppMotion.feedback) {
-                pulseScale = 1
-            }
-        }
         .disabled(isDisabled)
-    }
-
-    private var dayGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.35)
-            .exclusively(before: TapGesture())
-            .onEnded { value in
-                guard !isDisabled else { return }
-
-                switch value {
-                case .first(true):
-                    guard !isLocked else { return }
-                    onLongPress()
-                case .second:
-                    if isLocked {
-                        pressScale = 0.92
-                        withAnimation(.spring(response: 0.2, dampingFraction: 0.72)) {
-                            pressScale = 1
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
-                            onTap()
-                        }
-                    } else {
-                        onTap()
-                    }
-                default:
-                    break
-                }
-            }
     }
 
     private var selectionOverlay: some View {

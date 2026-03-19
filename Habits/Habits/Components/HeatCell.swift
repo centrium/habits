@@ -11,8 +11,6 @@ import SwiftUI
 struct HeatCell: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
-    @State private var pulseScale: CGFloat = 1
-    @State private var pressScale: CGFloat = 1
 
     let date: Date
     let accent: Color
@@ -35,36 +33,18 @@ struct HeatCell: View {
                     .strokeBorder(borderColor, lineWidth: pixelLineWidth)
             )
             .overlay(selectionOverlay)
-            .scaleEffect((isActive ? 1 : 0.96) * pulseScale * pressScale)
+            .scaleEffect(isActive ? 1 : 0.96)
             .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
             .highPriorityGesture(
                 TapGesture().onEnded {
                     guard isInteractive else { return }
-                    if isLocked {
-                        pressScale = 0.92
-                        withAnimation(.spring(response: 0.2, dampingFraction: 0.72)) {
-                            pressScale = 1
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
-                            onTap()
-                        }
-                    } else {
-                        onTap()
-                    }
+                    onTap()
                 }
             )
             .accessibilityLabel(Text(formatted(date)))
-            .animation(style.activationSpring, value: isActive)
-            .animation(AppMotion.quickFade, value: visualIntensity)
-            .animation(style.animationStyle, value: isSelected)
-            .animation(style.animationStyle, value: isToday)
-            .onChange(of: visualIntensity) { oldValue, newValue in
-                guard oldValue == 0, newValue > 0 else { return }
-                pulseScale = 1.07
-                withAnimation(AppMotion.feedback) {
-                    pulseScale = 1
-                }
+            .transaction { transaction in
+                transaction.animation = nil
             }
     }
 
@@ -132,8 +112,6 @@ struct HeatCell: View {
     }
 
     private func formatted(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        return f.string(from: date)
+        date.formatted(date: .abbreviated, time: .omitted)
     }
 }

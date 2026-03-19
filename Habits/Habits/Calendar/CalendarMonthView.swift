@@ -70,6 +70,7 @@ struct CalendarMonthView: View {
 
     var body: some View {
         let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
+        let dayMetrics = service.dayMetrics(for: habit, on: days)
 
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
@@ -93,17 +94,19 @@ struct CalendarMonthView: View {
 
                     LazyVGrid(columns: columns, spacing: verticalSpacing) {
                         ForEach(days, id: \.self) { day in
+                            let normalizedDay = calendar.startOfDay(for: day)
+                            let metrics = dayMetrics[normalizedDay] ?? .zero
                             let isInDisplayedMonth = isDisplayedMonth(day)
                             let isDisabledDay = isFutureDate(day)
                             let isLockedDay = premiumHistoryGate.isLocked(date: day)
-                            let count = isLockedDay ? 0 : service.count(for: habit, on: day)
-                            let indicatorText = isLockedDay ? nil : (habit.goalType == .cumulative
-                                ? service.formattedValue(for: habit, on: day)
-                                : nil)
+                            let count = isLockedDay ? 0 : metrics.count
+                            let indicatorText = isLockedDay || habit.goalType != .cumulative || metrics.value <= 0
+                                ? nil
+                                : service.formatValue(metrics.value, for: habit)
 
                             CalendarDayCell(
                                 date: day,
-                                intensity: isLockedDay ? 0 : service.intensity(for: habit, on: day),
+                                intensity: isLockedDay ? 0 : metrics.intensity,
                                 count: count,
                                 indicatorText: indicatorText,
                                 accent: Color(hex: habit.colorHex),
@@ -318,9 +321,7 @@ struct CalendarMonthView: View {
     }
 
     private func selectDay(_ day: Date) {
-        withAnimation(AppMotion.quickFade) {
-            onSelectDay(day)
-        }
+        onSelectDay(day)
         focusMonthIfNeeded(for: day)
     }
 
@@ -344,9 +345,7 @@ struct CalendarMonthView: View {
             slideDirection = nil
         }
 
-        withAnimation(monthAnimation) {
-            month = targetMonth
-        }
+        month = targetMonth
     }
 
     private var canGoForward: Bool {
