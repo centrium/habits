@@ -340,6 +340,8 @@ struct HabitInsightsGreigModeBlock {
     let headline: String
     let supportText: String
     let iconName: String
+    let confidence: ConfidenceLevel
+    let status: InsightStatus
 }
 
 struct HabitInsightsDebugBlock {

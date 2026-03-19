@@ -1004,6 +1004,28 @@ private struct GreigModeCardView: View {
     let block: HabitInsightsGreigModeBlock
     let accent: Color
 
+    private var confidenceText: String {
+        switch block.confidence {
+        case .high:
+            return "High confidence"
+        case .medium:
+            return "Moderate confidence"
+        case .low:
+            return "Low confidence"
+        }
+    }
+
+    private var confidenceColor: Color {
+        switch block.confidence {
+        case .high:
+            return Color(red: 0.26, green: 0.63, blue: 0.43)
+        case .medium:
+            return Color(red: 0.75, green: 0.54, blue: 0.24)
+        case .low:
+            return Color(red: 0.74, green: 0.35, blue: 0.34)
+        }
+    }
+
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 12) {
@@ -1018,6 +1040,17 @@ private struct GreigModeCardView: View {
                         .opacity(0.8)
                 }
                 .padding(.bottom, 7)
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(confidenceColor)
+                        .frame(width: 6, height: 6)
+
+                    Text(confidenceText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 2)
 
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: block.iconName)

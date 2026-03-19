@@ -580,7 +580,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(overview.averageStreak, expected.averageStreak)
     }
 
-    func testGreigModeAppearsForDailyGoalWhenTimeRemainsInPeriod() {
+    func testGreigModeUsesEarlyFallbackForSparseGoalData() {
         // Given
         let now = TestDateFactory.date(2026, 3, 11, hour: 12, calendar: calendar)
         let habit = TestHabitFactory.frequency(
@@ -607,6 +607,9 @@ final class InsightEngineTests: XCTestCase {
             return XCTFail("Expected Greig Mode card for a daily habit with remaining time and positive pace")
         }
         XCTAssertEqual(greig.heading, "Greig Mode")
+        XCTAssertFalse(greig.headline.isEmpty)
+        XCTAssertEqual(greig.confidence, .low)
+        XCTAssertEqual(greig.status, .neutral)
     }
 
     func testGreigModeRespectsSettingsToggle() {

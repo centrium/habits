@@ -962,100 +962,40 @@ struct HabitInsightsEngine {
         calendar: Calendar,
         now: Date
     ) -> HabitInsightsGreigModeBlock? {
-        guard let target = foundation.achievement.target, target > 0 else {
+        let goal: GreigInsightGoal = {
+            switch foundation.mode {
+            case .openEnded:
+                return GreigInsightGoal(kind: .open, period: habit.goalPeriod)
+            case .frequency(let target, _):
+                return GreigInsightGoal(kind: .frequency(target: target), period: habit.goalPeriod)
+            case .cumulative(let target, _):
+                return GreigInsightGoal(kind: .cumulative(target: target), period: habit.goalPeriod)
+            }
+        }()
+
+        let progress = GreigInsightProgress(
+            currentTotal: foundation.achievement.progress,
+            periodStart: foundation.currentPeriodStart,
+            periodEnd: foundation.currentPeriodEnd,
+            now: now,
+            logs: habit.logs,
+            unit: habit.trimmedUnit ?? "",
+            formatValue: { value in habit.formatProgressValue(value) }
+        )
+
+        let service = GreigInsightService(calendar: calendar)
+        guard let insight = service.generateInsight(for: goal, progress: progress) else {
             return nil
         }
 
-        let currentProgress = foundation.achievement.progress
-        let periodStart = foundation.currentPeriodStart
-        let periodEnd = foundation.currentPeriodEnd
-        guard periodEnd > periodStart else { return nil }
-
-        let windowDays = projectionWindowDays(
-            periodStart: periodStart,
-            periodEnd: periodEnd,
-            calendar: calendar
-        )
-        let bestWindow = strongestWindow(
-            logs: habit.logs,
-            goalType: habit.goalType,
-            periodStart: periodStart,
-            periodEnd: periodEnd,
-            windowDays: windowDays,
-            calendar: calendar
-        )
-        guard bestWindow > 0 else { return nil }
-
-        let nowClamped = min(max(now, periodStart), periodEnd)
-        let remainingSeconds = max(0, periodEnd.timeIntervalSince(nowClamped))
-        guard remainingSeconds > 0 else { return nil }
-
-        let secondsPerDay = 86_400.0
-        let remainingDays = remainingSeconds / secondsPerDay
-        let projectedGain = bestWindow * (remainingDays / Double(windowDays))
-        let potential = currentProgress + projectedGain
-
-        guard potential > currentProgress else { return nil }
-
-        let projectedText = habit.formatProgressValue(potential)
-        let currentText = habit.formatProgressValue(currentProgress)
-        guard projectedText != currentText else { return nil }
-
-        let targetText = habit.formatProgressValue(target)
-        let headline = "Your strongest recent stretch suggests you could reach \(projectedText) this \(habit.goalPeriod.unit)."
-        let support: String = {
-            if potential >= target {
-                return "That pace would put you ahead of target."
-            }
-            return "Exploring that pace would move you closer to your goal."
-        }()
-
         return HabitInsightsGreigModeBlock(
             heading: "Greig Mode",
-            headline: headline,
-            supportText: support + " Goal: \(targetText).",
-            iconName: "brain"
+            headline: insight.title,
+            supportText: insight.body ?? "Keep this rhythm going.",
+            iconName: "brain",
+            confidence: insight.confidence,
+            status: insight.status
         )
-    }
-
-    private static func projectionWindowDays(
-        periodStart: Date,
-        periodEnd: Date,
-        calendar: Calendar
-    ) -> Int {
-        let periodDays = max(1, calendar.dateComponents([.day], from: periodStart, to: periodEnd).day ?? 1)
-        return min(7, periodDays)
-    }
-
-    private static func strongestWindow(
-        logs: [HabitLog],
-        goalType: GoalType,
-        periodStart: Date,
-        periodEnd: Date,
-        windowDays: Int,
-        calendar: Calendar
-    ) -> Double {
-        let relevantLogs = logs
-            .filter { $0.effectiveTimestamp >= periodStart && $0.effectiveTimestamp < periodEnd }
-            .sorted { $0.effectiveTimestamp < $1.effectiveTimestamp }
-        guard !relevantLogs.isEmpty else { return 0 }
-
-        let dayTotals = relevantLogs.reduce(into: [Date: Double]()) { partialResult, log in
-            let day = calendar.startOfDay(for: log.effectiveTimestamp)
-            partialResult[day, default: 0] += valueContribution(for: log, goalType: goalType)
-        }
-
-        let orderedDays = dayTotals.keys.sorted()
-        var bestWindow: Double = 0
-        for day in orderedDays {
-            guard let windowEnd = calendar.date(byAdding: .day, value: windowDays, to: day) else { continue }
-            let sum = dayTotals.reduce(0) { partial, item in
-                guard item.key >= day && item.key < windowEnd else { return partial }
-                return partial + item.value
-            }
-            bestWindow = max(bestWindow, sum)
-        }
-        return bestWindow
     }
 
     private static func behaviourInsightsBlock(
