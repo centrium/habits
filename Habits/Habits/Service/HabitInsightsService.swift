@@ -30,7 +30,7 @@ struct HabitInsightsService {
             trackingStart: trackingStart,
             today: today
         )
-        let streaks = streakLengths(from: allCompletionDays)
+        let streaks = streakLengths(for: habit, logs: logs, now: now)
 
         return HabitInsightsMetricsSnapshot(
             consistency: consistencyPercentage(
@@ -53,12 +53,17 @@ struct HabitInsightsService {
         logs: [HabitLog]? = nil,
         now: Date = .now
     ) -> [Int] {
-        let today = calendar.startOfDay(for: now)
-        let completionDays = normalizedCompletionDays(
-            from: logs ?? habit.logs,
-            today: today
-        )
-        return streakLengths(from: completionDays)
+        let streakService = StreakService(calendar: calendar)
+        if let logs {
+            let today = calendar.startOfDay(for: now)
+            let completionDays = normalizedCompletionDays(
+                from: logs,
+                today: today
+            )
+            return streakService.streakLengths(from: completionDays)
+        }
+
+        return streakService.streakLengths(for: habit, through: now)
     }
 }
 
@@ -174,41 +179,11 @@ private extension HabitInsightsService {
         return weekdayName(forMondayFirstIndex: mostMissedIndex)
     }
 
-    func streakLengths(from completionDays: Set<Date>) -> [Int] {
-        let sortedDays = completionDays.sorted()
-        guard !sortedDays.isEmpty else { return [] }
-
-        var streakLengths: [Int] = []
-        var currentLength = 1
-
-        for index in 1..<sortedDays.count {
-            let previousDay = sortedDays[index - 1]
-            let currentDay = sortedDays[index]
-
-            if isNextCalendarDay(previousDay, currentDay) {
-                currentLength += 1
-            } else {
-                streakLengths.append(currentLength)
-                currentLength = 1
-            }
-        }
-
-        streakLengths.append(currentLength)
-        return streakLengths
-    }
-
     func averageStreakLength(streaks: [Int]) -> Int {
         guard !streaks.isEmpty else { return 0 }
         let total = streaks.reduce(0, +)
         let average = Double(total) / Double(streaks.count)
         return Int(average.rounded())
-    }
-
-    func isNextCalendarDay(_ previousDay: Date, _ currentDay: Date) -> Bool {
-        guard let expectedNextDay = calendar.date(byAdding: .day, value: 1, to: previousDay) else {
-            return false
-        }
-        return calendar.isDate(expectedNextDay, inSameDayAs: currentDay)
     }
 
     func monthName(for date: Date) -> String {

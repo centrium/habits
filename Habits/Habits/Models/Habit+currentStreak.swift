@@ -13,30 +13,13 @@ extension Habit {
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) -> Int {
-        guard hasGoal else { return 0 }
-
-        var streak = 0
-        var interval = periodRange(
-            for: referenceDate,
+        StreakService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
+        ).currentStreak(
+            for: self,
+            referenceDate: referenceDate
         )
-
-        while true {
-            if hasHitTarget(in: interval) {
-                streak += 1
-            } else {
-                break
-            }
-
-            interval = previousPeriod(
-                from: interval,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-        }
-
-        return streak
     }
 
     func currentStreak(
@@ -51,51 +34,30 @@ extension Habit {
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) -> Int {
-        guard hasGoal else { return 0 }
-
-        let activeStreak = currentStreak(
-            referenceDate: referenceDate,
+        StreakService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        )
-        if activeStreak > 0 {
-            return activeStreak
-        }
-
-        let currentPeriodStart = goalPeriod.periodStart(
-            for: referenceDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-        let previousPeriodStart = goalPeriod.previousPeriodStart(
-            before: currentPeriodStart,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-
-        guard previousPeriodStart < currentPeriodStart else { return 0 }
-
-        return currentStreak(
-            referenceDate: previousPeriodStart,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
+        ).displayStreak(
+            for: self,
+            referenceDate: referenceDate
         )
     }
 
-    private func previousPeriod(
-        from interval: DateInterval,
-        calendar: Calendar,
-        weekStartPreference: WeekStartPreference
-    ) -> DateInterval {
-        let previousDate = goalPeriod.previousPeriodStart(
-            before: interval.start,
+    func bestStreak(
+        referenceDate: Date = .now,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Int {
+        StreakService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
+        ).bestStreak(
+            for: self,
+            through: referenceDate
         )
-        return periodRange(
-            for: previousDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
+    }
+
+    var isOnStreak: Bool {
+        currentStreak() >= 2
     }
 }

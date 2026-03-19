@@ -288,26 +288,8 @@ private extension PerformanceSignalsCalculator {
         from activeDays: Set<Date>,
         calendar: Calendar
     ) -> Double {
-        let sortedDays = activeDays.sorted()
-        guard !sortedDays.isEmpty else { return 0 }
-
-        var streakLengths: [Int] = []
-        var currentLength = 1
-
-        for index in 1..<sortedDays.count {
-            let previousDay = sortedDays[index - 1]
-            let currentDay = sortedDays[index]
-            let expectedNextDay = calendar.date(byAdding: .day, value: 1, to: previousDay)
-
-            if let expectedNextDay, calendar.isDate(expectedNextDay, inSameDayAs: currentDay) {
-                currentLength += 1
-            } else {
-                streakLengths.append(currentLength)
-                currentLength = 1
-            }
-        }
-
-        streakLengths.append(currentLength)
+        let streakLengths = StreakService(calendar: calendar).streakLengths(from: activeDays)
+        guard !streakLengths.isEmpty else { return 0 }
         let total = streakLengths.reduce(0, +)
         return Double(total) / Double(streakLengths.count)
     }

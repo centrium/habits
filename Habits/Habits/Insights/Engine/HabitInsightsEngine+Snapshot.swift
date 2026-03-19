@@ -357,29 +357,17 @@ extension HabitInsightsEngine {
             isCompleted: foundation.mode.goalTarget.map { foundation.achievement.progress >= $0 }
         )
 
-        let logs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
-        let cadence = habit.goalPeriod
-        let buckets = InsightBucketBuilder.goalPeriodBuckets(
-            logs: logs,
-            cadence: cadence,
+        let streak = StreakService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        )
-
-        let sortedStarts = buckets.keys.sorted()
-        let streak = StreakCalculator.calculate(
-            cadence: cadence,
-            mode: foundation.mode,
-            buckets: buckets,
-            sortedStarts: sortedStarts,
-            currentPeriodStart: foundation.currentPeriodStart,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
+        ).streak(
+            for: habit,
+            referenceDate: anchorDate
         )
 
         return Snapshot(
             currentPeriod: period,
-            streak: Snapshot.Streak(current: streak.current, longest: streak.longest)
+            streak: Snapshot.Streak(current: streak.current, longest: streak.best)
         )
     }
 
@@ -487,20 +475,6 @@ extension HabitInsightsEngine {
             currentPeriodEnd: currentPeriodEnd
         )
     }
-
-    static func completionMet(
-        bucket: InsightPeriodBucket,
-        mode: HabitInsightMode
-    ) -> Bool {
-        switch mode {
-        case .openEnded:
-            return bucket.frequencyTotal > 0
-        case .frequency(let target, _):
-            return Double(bucket.frequencyTotal) >= target
-        case .cumulative(let target, _):
-            return bucket.cumulativeTotal >= target
-        }
-    }
 }
 
 private extension HabitInsightsEngine {
@@ -519,187 +493,6 @@ private extension HabitInsightsEngine {
         case .cumulative:
             return inRange.reduce(0) { $0 + $1.cumulativeValue }
         }
-    }
-}
-
-private enum StreakCalculator {
-    struct Result {
-        let current: Int
-        let longest: Int
-    }
-
-    static func calculate(
-        cadence: GoalPeriod,
-        mode: HabitInsightMode,
-        buckets: [Date: InsightPeriodBucket],
-        sortedStarts: [Date],
-        currentPeriodStart: Date,
-        calendar: Calendar,
-        weekStartPreference: WeekStartPreference
-    ) -> Result {
-        // For goal-based habits, evaluate every period from the first known period
-        // through the current period, so gaps break streaks correctly and the
-        // current in-progress period counts if target is already met.
-        let completionByStart = completionMap(
-            cadence: cadence,
-            mode: mode,
-            buckets: buckets,
-            sortedStarts: sortedStarts,
-            currentPeriodStart: currentPeriodStart,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-
-        if cadence == .monthly {
-            emitMonthlyDebug(
-                cadence: cadence,
-                mode: mode,
-                buckets: buckets,
-                completionByStart: completionByStart,
-                calendar: calendar
-            )
-        }
-
-        var running = 0
-        var longest = 0
-
-        for (_, isComplete) in completionByStart {
-            if isComplete {
-                running += 1
-                longest = max(longest, running)
-            } else {
-                running = 0
-            }
-        }
-
-        var current = 0
-        for (_, isComplete) in completionByStart.reversed() {
-            if isComplete {
-                current += 1
-            } else {
-                break
-            }
-        }
-
-        return Result(current: current, longest: longest)
-    }
-
-    private static func completionMap(
-        cadence: GoalPeriod,
-        mode: HabitInsightMode,
-        buckets: [Date: InsightPeriodBucket],
-        sortedStarts: [Date],
-        currentPeriodStart: Date,
-        calendar: Calendar,
-        weekStartPreference: WeekStartPreference
-    ) -> [(Date, Bool)] {
-        if sortedStarts.isEmpty {
-            let currentBucket = buckets[currentPeriodStart] ?? emptyBucket(
-                start: currentPeriodStart,
-                cadence: cadence,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-            return [(currentPeriodStart, HabitInsightsEngine.completionMet(bucket: currentBucket, mode: mode))]
-        }
-
-        let firstStart = min(sortedStarts.first ?? currentPeriodStart, currentPeriodStart)
-        var starts: [Date] = []
-        var cursor = firstStart
-
-        while cursor <= currentPeriodStart {
-            starts.append(cursor)
-            cursor = cadence.nextPeriodStart(
-                after: cursor,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-        }
-
-        return starts.map { start in
-            let bucket = buckets[start] ?? emptyBucket(
-                start: start,
-                cadence: cadence,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-            return (start, HabitInsightsEngine.completionMet(bucket: bucket, mode: mode))
-        }
-    }
-
-    private static func emptyBucket(
-        start: Date,
-        cadence: GoalPeriod,
-        calendar: Calendar,
-        weekStartPreference: WeekStartPreference
-    ) -> InsightPeriodBucket {
-        InsightPeriodBucket(
-            start: start,
-            end: cadence.nextPeriodStart(
-                after: start,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            ),
-            frequencyTotal: 0,
-            cumulativeTotal: 0,
-            activeDays: 0
-        )
-    }
-
-    private static func emitMonthlyDebug(
-        cadence: GoalPeriod,
-        mode: HabitInsightMode,
-        buckets: [Date: InsightPeriodBucket],
-        completionByStart: [(Date, Bool)],
-        calendar: Calendar
-    ) {
-        #if DEBUG
-        guard cadence == .monthly else { return }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = calendar.locale ?? .current
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("MMM yyyy")
-
-        for (start, isComplete) in completionByStart {
-            let bucket = buckets[start]
-            let progress: Double = {
-                switch mode {
-                case .openEnded:
-                    return Double(bucket?.frequencyTotal ?? 0)
-                case .frequency:
-                    return Double(bucket?.frequencyTotal ?? 0)
-                case .cumulative:
-                    return bucket?.cumulativeTotal ?? 0
-                }
-            }()
-            let target: String = {
-                switch mode {
-                case .openEnded:
-                    return "nil"
-                case .frequency(let t, _):
-                    return String(format: "%.2f", t)
-                case .cumulative(let t, _):
-                    return String(format: "%.2f", t)
-                }
-            }()
-            print("[HabitInsightsEngine][Streak] \(formatter.string(from: start)): progress \(String(format: "%.2f", progress)), target \(target), complete \(isComplete)")
-        }
-
-        let current = completionByStart.reversed().prefix { $0.1 }.count
-        var longest = 0
-        var running = 0
-        for (_, complete) in completionByStart {
-            if complete {
-                running += 1
-                longest = max(longest, running)
-            } else {
-                running = 0
-            }
-        }
-        print("[HabitInsightsEngine][Streak] current streak = \(current)")
-        print("[HabitInsightsEngine][Streak] longest streak = \(longest)")
-        #endif
     }
 }
 

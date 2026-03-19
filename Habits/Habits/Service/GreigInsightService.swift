@@ -639,16 +639,10 @@ private extension GreigInsightService {
         from daySet: Set<Date>,
         asOf now: Date
     ) -> Int {
-        var day = calendar.startOfDay(for: now)
-        var streak = 0
-
-        while daySet.contains(day) {
-            streak += 1
-            guard let previous = calendar.date(byAdding: .day, value: -1, to: day) else { break }
-            day = previous
-        }
-
-        return streak
+        StreakService(calendar: calendar).currentStreak(
+            from: daySet,
+            asOf: now
+        )
     }
 
     func openConfidenceSignals(

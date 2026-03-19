@@ -83,19 +83,50 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertEqual(streak, 2)
     }
 
-    func testOpenEndedHabitHasZeroCurrentStreak() {
+    func testOpenGoalNewStreakShowsCorrectly() {
         // Given
-        let day = TestDateFactory.date(2026, 3, 11, calendar: calendar)
+        let day1 = TestDateFactory.date(2026, 3, 17, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 18, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
-            entries: [.init(timestamp: day, value: 1)],
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day3, value: 1),
+            ],
             calendar: calendar
         )
 
         // When
-        let streak = habit.currentStreak(referenceDate: day, calendar: calendar)
+        let streak = habit.currentStreak(
+            referenceDate: day3,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
 
         // Then
-        XCTAssertEqual(streak, 0)
+        XCTAssertEqual(streak, 3)
+    }
+
+    func testOpenGoalSingleDayNoStreakIndicator() {
+        // Given
+        let today = TestDateFactory.date(2026, 3, 19, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [.init(timestamp: today, value: 1)],
+            calendar: calendar
+        )
+
+        // When
+        let currentStreak = habit.currentStreak(
+            referenceDate: today,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+        let shouldShowIndicator = StreakIndicatorPresentation.shouldShow(streak: currentStreak)
+
+        // Then
+        XCTAssertEqual(currentStreak, 1)
+        XCTAssertFalse(shouldShowIndicator)
     }
 
     func testCurrentStreakIsZeroWhenCurrentPeriodIsIncomplete() {
@@ -143,7 +174,7 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertEqual(streak, 1)
     }
 
-    func testCumulativeStreakUsesSummedValueWithinEachDay() {
+    func testCumulativeGoalAnyProgressCountsTowardStreak() {
         // Given
         let day1 = TestDateFactory.date(2026, 3, 9, calendar: calendar)
         let day2 = TestDateFactory.date(2026, 3, 10, calendar: calendar)
@@ -168,7 +199,7 @@ final class StreakCalculationTests: XCTestCase {
         )
 
         // Then
-        XCTAssertEqual(streak, 2)
+        XCTAssertEqual(streak, 3)
     }
 
     func testDailyStreakContinuesAcrossMonthBoundary() {
@@ -371,5 +402,86 @@ final class StreakCalculationTests: XCTestCase {
 
         // Then
         XCTAssertEqual(displayStreak, 3)
+    }
+
+    func testFrequencyGoalStreakCountsWhenTargetMet() {
+        // Given
+        let day1 = TestDateFactory.date(2026, 3, 17, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 18, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 3, 19, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 2,
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day3, value: 1),
+                .init(timestamp: day3, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let streak = habit.currentStreak(
+            referenceDate: day3,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+
+        // Then
+        XCTAssertEqual(streak, 3)
+    }
+
+    func testStreakBreaksOnMissedDay() {
+        // Given
+        let day1 = TestDateFactory.date(2026, 3, 17, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 18, calendar: calendar)
+        let day4 = TestDateFactory.date(2026, 3, 20, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day4, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let streak = habit.currentStreak(
+            referenceDate: day4,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+
+        // Then
+        XCTAssertEqual(streak, 1)
+    }
+
+    func testOpenGoalThreeDayStreakShowsIndicatorWithoutBestStreakDependency() {
+        // Given
+        let day1 = TestDateFactory.date(2026, 3, 17, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 3, 18, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 3, 19, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+                .init(timestamp: day3, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let currentStreak = habit.currentStreak(
+            referenceDate: day3,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+        let shouldShowIndicator = StreakIndicatorPresentation.shouldShow(streak: currentStreak)
+
+        // Then
+        XCTAssertEqual(currentStreak, 3)
+        XCTAssertTrue(shouldShowIndicator)
     }
 }
