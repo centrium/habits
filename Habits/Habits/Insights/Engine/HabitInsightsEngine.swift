@@ -894,9 +894,9 @@ struct HabitInsightsEngine {
     private static func greigModeBlock(
         for habit: Habit,
         foundation: HabitInsightSnapshot,
-        momentum: MomentumBreakdown,
+        momentum _: MomentumBreakdown,
         calendar: Calendar,
-        weekStartPreference: WeekStartPreference,
+        weekStartPreference _: WeekStartPreference,
         now: Date
     ) -> HabitInsightsGreigModeBlock? {
         let goal: GreigInsightGoal = {
@@ -925,17 +925,7 @@ struct HabitInsightsEngine {
             return nil
         }
 
-        let momentumSupport = greigMomentumSupportText(
-            for: habit,
-            mode: foundation.mode,
-            momentum: momentum,
-            foundation: foundation,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference,
-            now: now
-        )
-        let baseSupport = insight.body ?? "Keep this rhythm going."
-        let supportText = "\(momentumSupport) \(baseSupport)"
+        let supportText = insight.body ?? "Keep logging to build a clearer projection."
 
         return HabitInsightsGreigModeBlock(
             heading: "Greig Mode",
@@ -945,87 +935,6 @@ struct HabitInsightsEngine {
             confidence: insight.confidence,
             status: insight.status
         )
-    }
-
-    private static func greigMomentumSupportText(
-        for habit: Habit,
-        mode: HabitInsightMode,
-        momentum: MomentumBreakdown,
-        foundation: HabitInsightSnapshot,
-        calendar: Calendar,
-        weekStartPreference: WeekStartPreference,
-        now: Date
-    ) -> String {
-        switch mode {
-        case .openEnded:
-            if momentum.streak > 0 {
-                let remainingToWeek = max(7 - momentum.streak, 1)
-                if remainingToWeek == 1 {
-                    return "You're on a \(momentum.streak)-day streak. Keep this up and you'll build a 7-day streak tomorrow."
-                }
-                return "You're on a \(momentum.streak)-day streak. Keep this up and you'll build a 7-day streak in \(remainingToWeek) days."
-            }
-            return "You've completed \(momentum.completedDays) of the last \(momentum.totalDays) days."
-
-        case .frequency:
-            return "You've hit your target \(momentum.completedDays) out of \(momentum.totalDays) days - \(momentum.momentumLabel.lowercased())."
-
-        case .cumulative:
-            if let target = foundation.achievement.target,
-               let pace = foundation.pace,
-               let daysEarly = projectedDaysEarly(
-                target: target,
-                progress: foundation.achievement.progress,
-                periodStart: foundation.currentPeriodStart,
-                periodEnd: foundation.currentPeriodEnd,
-                now: now,
-                calendar: calendar
-               ),
-               pace.projectedTotal >= target {
-                if daysEarly > 0 {
-                    return "At your current pace, you'll reach your goal \(daysEarly) days early."
-                }
-                return "At your current pace, you'll reach your goal this period."
-            }
-
-            let streak = StreakService(
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            ).currentStreak(
-                for: habit,
-                referenceDate: now
-            )
-            if streak > 0 {
-                return "You're on a \(streak)-day streak with \(momentum.momentumLabel.lowercased())."
-            }
-            return "You've contributed on \(momentum.completedDays) of the last \(momentum.totalDays) days."
-        }
-    }
-
-    private static func projectedDaysEarly(
-        target: Double,
-        progress: Double,
-        periodStart: Date,
-        periodEnd: Date,
-        now: Date,
-        calendar: Calendar
-    ) -> Int? {
-        let elapsedDays = max(
-            calendar.dateComponents([.day], from: periodStart, to: now).day ?? 0,
-            1
-        )
-        let remainingDays = max(
-            calendar.dateComponents([.day], from: now, to: periodEnd).day ?? 0,
-            0
-        )
-
-        let pacePerDay = progress / Double(elapsedDays)
-        guard pacePerDay > 0, target > progress else { return nil }
-
-        let daysToTarget = (target - progress) / pacePerDay
-        guard daysToTarget.isFinite else { return nil }
-        let rawEarly = Double(remainingDays) - daysToTarget
-        return max(Int(rawEarly.rounded(.down)), 0)
     }
 
     private static func behaviourInsightsBlock(
