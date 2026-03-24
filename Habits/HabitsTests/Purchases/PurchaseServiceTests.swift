@@ -4,7 +4,7 @@ import StoreKit
 
 @MainActor
 final class PurchaseServiceTests: XCTestCase {
-    private let premiumProductID = "com.yourapp.habits.premium.lifetime"
+    private let premiumProductID = "com.cadence.lifetime"
 
     func testUnlockPremium_setsPremiumFlag() async {
         let service = await makeService()

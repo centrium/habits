@@ -128,7 +128,7 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
 
         service.quickLog(for: habit, on: Date())
 
-        try? context.save()
+        _ = context.saveAndSyncWidgetData()
         
         await notificationService.syncNotifications(for: habit)
 

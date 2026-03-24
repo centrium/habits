@@ -12,6 +12,7 @@ import SwiftData
 private enum ActiveSheet: Identifiable {
     case addHabit
     case paywall(PremiumFeature)
+    case habitDetail(Habit)
 
     var id: String {
         switch self {
@@ -19,12 +20,16 @@ private enum ActiveSheet: Identifiable {
             return "addHabit"
         case .paywall(let feature):
             return "paywall-\(String(describing: feature))"
+        case .habitDetail(let habit):
+            return "habitDetail-\(habit.id.uuidString)"
         }
     }
 }
 
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var deepLinkManager: DeepLinkManager
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     
@@ -32,12 +37,14 @@ struct HabitsListView: View {
 
     @State private var activeSheet: ActiveSheet?
     @State private var habitPendingDeletion: Habit?
+    @State private var detailPresentationDetent: PresentationDetent = .large
 
     init() {}
 
     var body: some View {
-        Button("Reset Premium (Debug)") {
-            purchaseService.premiumStatus = .free
+        Button("Toggle Premium (Debug)") {
+            purchaseService.premiumStatus =
+                purchaseService.premiumStatus == .premium ? .free : .premium
         }
         NavigationStack {
             List {
@@ -124,10 +131,34 @@ struct HabitsListView: View {
                         .presentationCornerRadius(24)
                 case .paywall(let feature):
                     PaywallView(feature: feature)
+                case .habitDetail(let habit):
+                    HabitDetailSheet(
+                        habit: habit,
+                        modelContext: modelContext,
+                        initialCalendar: calculationCalendar
+                    ) {
+                        activeSheet = nil
+                    }
+                    .presentationDetents([.medium, .large], selection: $detailPresentationDetent)
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(24)
                 }
             }
         }
         .environmentObject(userSettings)
+        .onAppear {
+            presentHabitDetailForDeepLinkIfNeeded()
+        }
+        .onChange(of: deepLinkManager.selectedHabitID) { _, _ in
+            presentHabitDetailForDeepLinkIfNeeded()
+        }
+        .onChange(of: habits.map(\.id)) { _, _ in
+            presentHabitDetailForDeepLinkIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            presentHabitDetailForDeepLinkIfNeeded()
+        }
         .task {
             if userSettings.eveningReflectionEnabled {
                 await NotificationService.shared.scheduleEveningReflection(
@@ -200,6 +231,25 @@ struct HabitsListView: View {
                 habit: habit,
                 modelContext: modelContext
             )
+        }
+    }
+
+    private var weekLayoutStrategy: WeekLayoutStrategy {
+        userSettings.weekLayoutStrategy()
+    }
+
+    private var calculationCalendar: Calendar {
+        weekLayoutStrategy.calendarForCalculations()
+    }
+
+    private func presentHabitDetailForDeepLinkIfNeeded() {
+        guard let deepLinkedHabitID = deepLinkManager.selectedHabitID else { return }
+        guard let habit = habits.first(where: { $0.id == deepLinkedHabitID }) else { return }
+
+        activeSheet = .habitDetail(habit)
+
+        DispatchQueue.main.async {
+            deepLinkManager.clearSelectedHabit(deepLinkedHabitID)
         }
     }
 }

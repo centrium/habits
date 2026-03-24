@@ -179,13 +179,6 @@ struct CalendarDayCell: View {
             transaction.animation = nil
         }
         .allowsHitTesting(!isDisabled)
-        .contextMenu {
-            if !isDisabled && !isLocked {
-                Button("Open Day Actions") {
-                    onLongPress()
-                }
-            }
-        }
         .accessibilityAction(named: Text("Open Day Actions")) {
             guard !isDisabled, !isLocked else { return }
             onLongPress()

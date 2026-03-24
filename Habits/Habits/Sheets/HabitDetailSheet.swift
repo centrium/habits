@@ -30,6 +30,7 @@ struct HabitDetailSheet: View {
     @State private var activeSheet: ActiveSheet?
     @State private var manualLogValue: Double? = nil
     @State private var insightsDetent: PresentationDetent = .large
+    @State private var cachedProgressSnapshot: ProgressAsOfSnapshot?
     private let onDeleted: (() -> Void)?
 
     let habit: Habit
@@ -47,16 +48,9 @@ struct HabitDetailSheet: View {
     }
 
     var body: some View {
-        let progressService = ProgressAsOfService(
-            calendar: service.calendar,
-            weekStartPreference: userSettings.weekStartPreference
-        )
-        let progressSnapshot = progressService.snapshot(
-            for: habit,
-            visibleMonth: selectionState.visibleMonth,
-            selectedDate: selectionState.selectedDate
-        )
+        let progressSnapshot = cachedProgressSnapshot
         let now = Date()
+        let progressRevision = service.metricsRevision(for: habit.id)
         let premiumHistoryGate = PremiumHistoryGate.Context(
             calendar: service.calendar,
             premiumStatus: purchaseService.premiumStatus,
@@ -269,6 +263,7 @@ struct HabitDetailSheet: View {
         .onAppear {
             service.updateCalendar(calculationCalendar)
             service.prepare(habit)
+            refreshProgressSnapshot(now: now)
 
             guard purchaseService.premiumStatus != .premium else { return }
 
@@ -287,6 +282,16 @@ struct HabitDetailSheet: View {
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             service.updateCalendar(calculationCalendar)
+            refreshProgressSnapshot()
+        }
+        .onChange(of: selectionState.selectedDate) { _, _ in
+            refreshProgressSnapshot()
+        }
+        .onChange(of: selectionState.visibleMonth) { _, _ in
+            refreshProgressSnapshot()
+        }
+        .onChange(of: progressRevision) { _, _ in
+            refreshProgressSnapshot()
         }
     }
 
@@ -306,6 +311,26 @@ struct HabitDetailSheet: View {
 
     private func showPaywall(feature: PremiumFeature) {
         activeSheet = .paywall(feature)
+    }
+
+    private func refreshProgressSnapshot(now: Date = Date()) {
+        let progressService = ProgressAsOfService(
+            calendar: service.calendar,
+            weekStartPreference: userSettings.weekStartPreference,
+            now: { now }
+        )
+        let metricDays = progressService.metricDays(
+            for: habit,
+            visibleMonth: selectionState.visibleMonth,
+            selectedDate: selectionState.selectedDate
+        )
+        let dayMetrics = service.dayMetrics(for: habit, on: metricDays)
+        cachedProgressSnapshot = progressService.snapshot(
+            for: habit,
+            visibleMonth: selectionState.visibleMonth,
+            selectedDate: selectionState.selectedDate,
+            dayMetrics: dayMetrics
+        )
     }
 
     private var weekLayoutStrategy: WeekLayoutStrategy {

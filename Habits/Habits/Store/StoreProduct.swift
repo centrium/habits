@@ -7,7 +7,7 @@
 
 
 enum StoreProduct: String, CaseIterable {
-    case premiumLifetime = "com.yourapp.habits.premium.lifetime"
+    case premiumLifetime = "com.cadence.lifetime"
 
     var id: String { rawValue }
 }

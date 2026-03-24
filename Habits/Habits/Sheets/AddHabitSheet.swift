@@ -120,7 +120,7 @@ struct AddHabitSheet: View {
         habit.reminders = reminders.map { $0.makeReminder() }
 
         modelContext.insert(habit)
-        try? modelContext.save()
+        _ = modelContext.saveAndSyncWidgetData()
         onHabitAdded?(habit)
 
         Task {

@@ -174,7 +174,7 @@ struct EditHabitSheet: View {
             _ = habit.normalizeCumulativeLogs()
         }
 
-        try? modelContext.save()
+        _ = modelContext.saveAndSyncWidgetData()
 
         dismiss()
 

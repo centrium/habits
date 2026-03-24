@@ -76,6 +76,9 @@ final class PurchaseService: ObservableObject {
 
     @Published var products: [StoreCatalogProduct] = []
     @Published var premiumStatus: PremiumStatus = .unknown
+    @Published var isLoadingProducts: Bool = false
+    @Published var hasLoadedProducts: Bool = false
+    @Published var productLoadError: String?
 
     var isPremiumUnlocked: Bool {
         premiumStatus == .premium
@@ -132,14 +135,33 @@ extension PurchaseService {
 
     func loadProducts() async {
 
-        do {
-            let ids = StoreProduct.allCases.map { $0.id }
+        isLoadingProducts = true
+        productLoadError = nil
 
-            products = try await productLoader(ids)
+        let ids = StoreProduct.allCases.map(\.id)
+
+        print("Bundle ID:", Bundle.main.bundleIdentifier ?? "nil")
+        print("Requesting product IDs:", ids)
+
+        do {
+            let loadedProducts = try await productLoader(ids)
+
+            products = loadedProducts
+
+            print("Loaded products count:", loadedProducts.count)
+
+            if loadedProducts.isEmpty {
+                productLoadError = "No products returned from App Store Connect"
+            }
 
         } catch {
-            print("Failed to fetch products: \(error)")
+            print("Failed to fetch products:", error)
+            products = []
+            productLoadError = error.localizedDescription
         }
+
+        hasLoadedProducts = true
+        isLoadingProducts = false
 
     }
 
@@ -159,8 +181,8 @@ extension PurchaseService {
 
         case .success(let verification):
             let transaction = try checkVerified(verification)
-            unlockPremiumIfNeeded(for: transaction)
             await transaction.finish()
+            await updateCurrentEntitlements()
             
         case .userCancelled:
             break
@@ -230,9 +252,8 @@ extension PurchaseService {
 
                 let transaction = try checkVerified(result)
 
-                unlockPremiumIfNeeded(for: transaction)
-
                 await transaction.finish()
+                await updateCurrentEntitlements()
 
             } catch {
                 print(error)

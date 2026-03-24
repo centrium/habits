@@ -78,7 +78,7 @@ final class HabitLogService {
             pendingSyncReferenceDate = nil
             pendingSaveWorkItem = nil
 
-            try? modelContext.save()
+            _ = modelContext.saveAndSyncWidgetData()
 
             Task { @MainActor in
                 await NotificationService.shared.syncEveningReflectionFromStoredSettings(
@@ -106,7 +106,7 @@ final class HabitLogService {
     private func normalizeLogsIfNeeded(for habit: Habit) {
         guard habit.normalizeCumulativeLogs(calendar: calendar) else { return }
         invalidateMetricsCache(for: habit.id)
-        try? modelContext.save()
+        _ = modelContext.saveAndSyncWidgetData()
     }
 
     private func invalidateMetricsCache(for habitID: UUID) {
@@ -163,6 +163,10 @@ extension HabitLogService {
 
     func daysForMonth(_ month: Date) -> [Date] {
         CalendarGridHelper.daysForMonth(month, calendarProvider: calendarProvider)
+    }
+
+    func metricsRevision(for habitID: UUID) -> Int {
+        metricsRevisions[habitID, default: 0]
     }
 
     func dayMetrics(for habit: Habit, on days: [Date]) -> [Date: HabitDayMetrics] {

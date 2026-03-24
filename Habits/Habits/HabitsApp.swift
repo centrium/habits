@@ -25,15 +25,23 @@ struct RootView: View {
     @EnvironmentObject private var userSettings: UserSettings
 
     var body: some View {
-        switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
-        case .habitsList:
-            HabitsListView()
-                .environmentObject(userSettings)
-                .environmentObject(deepLinkManager)
-        case .onboarding:
-            OnboardingView()
-                .environmentObject(userSettings)
-                .environmentObject(deepLinkManager)
+        Group {
+            switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
+            case .habitsList:
+                HabitsListView()
+                    .environmentObject(userSettings)
+                    .environmentObject(deepLinkManager)
+            case .onboarding:
+                OnboardingView()
+                    .environmentObject(userSettings)
+                    .environmentObject(deepLinkManager)
+            }
+        }
+        .onAppear {
+            deepLinkManager.processPendingHabitIfNeeded()
+        }
+        .onChange(of: deepLinkManager.pendingHabitID) { _, _ in
+            deepLinkManager.processPendingHabitIfNeeded()
         }
     }
 }
@@ -88,7 +96,9 @@ struct HabitsApp: App {
                 .environmentObject(deepLinkManager)
                 .environmentObject(purchaseService)
                 .preferredColorScheme(.dark)
-            
+                .onOpenURL { url in
+                    deepLinkManager.handle(url: url)
+                }
         }
         .modelContainer(container)
     }

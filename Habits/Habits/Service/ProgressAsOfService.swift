@@ -32,10 +32,11 @@ struct ProgressAsOfService {
     func snapshot(
         for habit: Habit,
         visibleMonth: Date,
-        selectedDate: Date
+        selectedDate: Date,
+        dayMetrics: [Date: HabitDayMetrics] = [:]
     ) -> ProgressAsOfSnapshot? {
 
-        guard habit.effectiveTargetValue != nil else { return nil }
+        guard let target = habit.effectiveTargetValue, target > 0 else { return nil }
 
         let today = now()
 
@@ -46,20 +47,19 @@ struct ProgressAsOfService {
             goalPeriod: habit.goalPeriod
         )
 
-        let canonical = HabitInsightsEngine.snapshot(
-            for: habit,
-            anchorDate: anchor,
-            respectCreatedAtBoundary: false,
+        let periodInterval = habit.goalPeriod.periodRange(
+            for: anchor,
             calendar: calendar,
-            weekStartPreference: weekStartPreference,
-            now: today
+            weekStartPreference: weekStartPreference
         )
-
-        guard let target = canonical.currentPeriod.target else { return nil }
-
-        let progress = canonical.currentPeriod.progress
-        let displayProgress = canonical.currentPeriod.progressClamped
-        let ratio = canonical.currentPeriod.completionRatio ?? 0
+        let progress = periodProgress(
+            for: habit,
+            in: periodInterval,
+            dayMetrics: dayMetrics
+        )
+        let displayProgress = min(progress, target)
+        let ratio = clamp(displayProgress / target)
+        let surplus = max(progress - target, 0)
 
         let details = HabitProgressDetails(
             current: progress,
@@ -85,14 +85,43 @@ struct ProgressAsOfService {
             ),
             overflowText: overflowText(
                 for: habit,
-                surplus: canonical.currentPeriod.surplus
+                surplus: surplus
             ),
-            isComplete: canonical.currentPeriod.isCompleted ?? false,
+            isComplete: progress >= target,
             visibleMonthText: visibleMonthText(
                 for: habit,
-                visibleMonth: visibleMonth
+                visibleMonth: visibleMonth,
+                dayMetrics: dayMetrics
             )
         )
+    }
+
+    func metricDays(
+        for habit: Habit,
+        visibleMonth: Date,
+        selectedDate: Date
+    ) -> [Date] {
+        guard habit.effectiveTargetValue != nil else { return [] }
+
+        let today = now()
+        let anchor = anchorDate(
+            selectedDate: selectedDate,
+            today: today,
+            goalPeriod: habit.goalPeriod
+        )
+        let periodInterval = habit.goalPeriod.periodRange(
+            for: anchor,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+
+        var daySet = Set(days(in: periodInterval))
+        if habit.goalType == .cumulative,
+           let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth) {
+            daySet.formUnion(days(in: monthInterval))
+        }
+
+        return Array(daySet)
     }
 
     // MARK: Anchor Logic
@@ -128,7 +157,8 @@ struct ProgressAsOfService {
 
     private func visibleMonthText(
         for habit: Habit,
-        visibleMonth: Date
+        visibleMonth: Date,
+        dayMetrics: [Date: HabitDayMetrics]
     ) -> String? {
 
         guard habit.goalType == .cumulative else { return nil }
@@ -137,14 +167,11 @@ struct ProgressAsOfService {
 
         guard let interval else { return nil }
 
-        let logs = habit.logs.filter {
-            let ts = $0.effectiveTimestamp
-            return ts >= interval.start && ts < interval.end
-        }
-
-        let total: Double = logs.reduce(0) { partial, log in
-            partial + log.numericValue
-        }
+        let total = monthTotal(
+            for: habit,
+            in: interval,
+            dayMetrics: dayMetrics
+        )
 
         let formatter = DateFormatter()
         formatter.calendar = calendar
@@ -191,5 +218,69 @@ struct ProgressAsOfService {
         }
 
         return "+\(habit.formatProgressValue(surplus)) extra"
+    }
+
+    private func periodProgress(
+        for habit: Habit,
+        in interval: DateInterval,
+        dayMetrics: [Date: HabitDayMetrics]
+    ) -> Double {
+        if !dayMetrics.isEmpty {
+            return days(in: interval).reduce(0) { partial, day in
+                let metrics = dayMetrics[day] ?? .zero
+                switch habit.goalType {
+                case .frequency:
+                    return partial + Double(metrics.count)
+                case .cumulative:
+                    return partial + metrics.value
+                }
+            }
+        }
+
+        return habit.logs.reduce(0) { partial, log in
+            let ts = log.effectiveTimestamp
+            guard ts >= interval.start, ts < interval.end else { return partial }
+
+            switch habit.goalType {
+            case .frequency:
+                return partial + Double(log.frequencyContribution)
+            case .cumulative:
+                return partial + log.numericValue
+            }
+        }
+    }
+
+    private func monthTotal(
+        for habit: Habit,
+        in interval: DateInterval,
+        dayMetrics: [Date: HabitDayMetrics]
+    ) -> Double {
+        if !dayMetrics.isEmpty {
+            return days(in: interval).reduce(0) { partial, day in
+                partial + (dayMetrics[day]?.value ?? 0)
+            }
+        }
+
+        return habit.logs.reduce(0) { partial, log in
+            let ts = log.effectiveTimestamp
+            guard ts >= interval.start, ts < interval.end else { return partial }
+            return partial + log.numericValue
+        }
+    }
+
+    private func days(in interval: DateInterval) -> [Date] {
+        var result: [Date] = []
+        var day = calendar.startOfDay(for: interval.start)
+
+        while day < interval.end {
+            result.append(day)
+            day = calendar.date(byAdding: .day, value: 1, to: day) ?? interval.end
+        }
+
+        return result
+    }
+
+    private func clamp(_ value: Double) -> Double {
+        min(max(value, 0), 1)
     }
 }

@@ -136,6 +136,7 @@ struct OnboardingFlowController {
 
         modelContext.insert(habit)
         try modelContext.save()
+        WidgetDataSync.sync(in: modelContext)
 
         completeOnboarding(userSettings: userSettings)
         return habit
