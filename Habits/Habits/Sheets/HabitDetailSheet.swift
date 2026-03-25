@@ -120,7 +120,6 @@ struct HabitDetailSheet: View {
 
                         HabitHeatmap(
                             habit: habit,
-                            service: service,
                             calendarProvider: heatmapCalendarProvider,
                             selectedDate: selectionState.selectedDate,
                             isInteractive: true,

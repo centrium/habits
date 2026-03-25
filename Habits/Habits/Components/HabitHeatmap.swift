@@ -12,18 +12,15 @@ struct HabitHeatmap: View {
     @EnvironmentObject private var purchaseService: PurchaseService
 
     let habit: Habit
-    let service: HabitLogService
     let calendarProvider: CalendarProvider
     let style: HeatmapStyleConfiguration = .premiumDefault
     let selectedDate: Date
     let isInteractive: Bool
     let onSelectDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
-    @State private var timeline: HeatmapTimeline
 
     init(
         habit: Habit,
-        service: HabitLogService,
         calendarProvider: CalendarProvider,
         selectedDate: Date,
         isInteractive: Bool,
@@ -31,15 +28,11 @@ struct HabitHeatmap: View {
         onTapLockedDay: @escaping (Date) -> Void = { _ in }
     ) {
         self.habit = habit
-        self.service = service
         self.calendarProvider = calendarProvider
         self.selectedDate = selectedDate
         self.isInteractive = isInteractive
         self.onSelectDay = onSelectDay
         self.onTapLockedDay = onTapLockedDay
-        _timeline = State(
-            initialValue: HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
-        )
     }
 
     private var accent: Color {
@@ -56,12 +49,19 @@ struct HabitHeatmap: View {
 
     var body: some View {
         let now = Date()
-        let heatmapDays = timeline.weeks.flatMap(\.days).compactMap { $0 }
-        let dayMetrics = service.dayMetrics(for: habit, on: heatmapDays)
-        let premiumHistoryGate = PremiumHistoryGate.Context(
+        let timeline = HeatmapTimelineBuilder.yearTimeline(
+            endingAt: now,
+            calendar: calendarProvider.calendar,
+        )
+        let cells = HeatmapService(
             calendar: calendarProvider.calendar,
             premiumStatus: purchaseService.premiumStatus,
-            now: now
+            now: { now }
+        ).generateCells(
+            habit: habit,
+            logs: habit.logs,
+            dateRange: timeline.dateRange(calendar: calendarProvider.calendar),
+            goal: HabitGoal.from(habit: habit)
         )
 
         GitHubHeatmapGrid(
@@ -71,11 +71,7 @@ struct HabitHeatmap: View {
             weeks: timeline.weeks,
             selectedDate: selectedDate,
             isInteractive: isInteractive,
-            premiumHistoryGate: premiumHistoryGate,
-            intensityFor: { day in
-                let normalizedDay = service.calendar.startOfDay(for: day)
-                return dayMetrics[normalizedDay]?.intensity ?? 0
-            },
+            cells: cells,
             onTapDay: { day in
                 onSelectDay(day)
             },
@@ -85,11 +81,5 @@ struct HabitHeatmap: View {
         )
         .padding(.top, style.titleToGridSpacing)
         .frame(height: heatmapHeight)
-        .onChange(of: calendarProvider.calendar.firstWeekday) { _, _ in
-            timeline = HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
-        }
-        .onChange(of: calendarProvider.calendar.timeZone.identifier) { _, _ in
-            timeline = HeatmapTimelineBuilder.yearTimeline(calendar: calendarProvider.calendar)
-        }
     }
 }

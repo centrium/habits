@@ -243,6 +243,35 @@ final class HeatmapServiceTests: XCTestCase {
         XCTAssertEqual(listToday, detailToday)
     }
 
+    func testTimelineDateRangeIncludesTimelineEndDate() {
+        // GIVEN
+        let now = TestDateFactory.date(2026, 3, 16, hour: 17, minute: 20, calendar: calendar)
+        let today = calendar.startOfDay(for: now)
+        let timeline = HeatmapTimelineBuilder.yearTimeline(endingAt: now, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [.init(timestamp: now, value: 1)],
+            calendar: calendar
+        )
+
+        // WHEN
+        let cells = HeatmapService(
+            calendar: calendar,
+            premiumStatus: .premium,
+            now: { now }
+        ).generateCells(
+            habit: habit,
+            logs: habit.logs,
+            dateRange: timeline.dateRange(calendar: calendar),
+            goal: .open()
+        )
+
+        // THEN
+        XCTAssertEqual(cells.count, 365)
+        XCTAssertEqual(cells.last?.date, today)
+        XCTAssertEqual(cells.last?.isToday, true)
+        XCTAssertEqual(cells.last?.isCompleted, true)
+    }
+
     private func dateRange(start: Date, endInclusive: Date) -> DateInterval {
         let normalizedStart = calendar.startOfDay(for: start)
         let normalizedEnd = calendar.startOfDay(for: endInclusive)

@@ -57,10 +57,9 @@ struct HabitCard: View {
             )
             .frame(height: headerHeight)
 
-            if let service = service {
+            if service != nil {
                 HabitHeatmap(
                     habit: habit,
-                    service: service,
                     calendarProvider: heatmapCalendarProvider,
                     selectedDate: selectedDate,
                     isInteractive: false,

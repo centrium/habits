@@ -47,8 +47,8 @@ struct HeatmapStyleConfiguration {
         inactiveStrokeOpacity: 0.070,
         inactiveStrokeColor: Color(red: 0.63, green: 0.70, blue: 0.79),
         inactiveFillOpacity: 0.065,
-        intensityScale: [0.0, 0.20, 0.42, 0.74, 0.98],
-        activeBorderOpacityByLevel: [0.0, 0.10, 0.17, 0.24, 0.30],
+        intensityScale: [0.0, 0.14, 0.28, 0.46, 0.70, 0.98],
+        activeBorderOpacityByLevel: [0.0, 0.08, 0.12, 0.18, 0.24, 0.30],
         selectedStrokeOpacity: 0.40,
         selectedStrokeWidth: 1.5,
         todayStrokeOpacity: 0.22,
@@ -62,26 +62,15 @@ struct HeatmapStyleConfiguration {
         activationSpring: AppMotion.press
     )
 
-    func intensityLevel(for rawIntensity: Double) -> Int {
-        guard rawIntensity > 0 else { return 0 }
-
-        switch rawIntensity {
-        case ..<0.25:
-            return 1
-        case ..<0.5:
-            return 2
-        case ..<0.75:
-            return 3
-        default:
-            return 4
-        }
+    func normalizedLevel(_ level: Int) -> Int {
+        min(max(level, 0), intensityScale.count - 1)
     }
 
-    func visualIntensity(for rawIntensity: Double) -> Double {
-        intensityScale[intensityLevel(for: rawIntensity)]
+    func visualIntensity(forLevel level: Int) -> Double {
+        intensityScale[normalizedLevel(level)]
     }
 
-    func activeBorderOpacity(for rawIntensity: Double) -> Double {
-        activeBorderOpacityByLevel[intensityLevel(for: rawIntensity)]
+    func activeBorderOpacity(forLevel level: Int) -> Double {
+        activeBorderOpacityByLevel[normalizedLevel(level)]
     }
 }

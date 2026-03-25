@@ -15,12 +15,33 @@ struct GitHubHeatmapGrid: View {
     let weeks: [Week]
     let selectedDate: Date
     let isInteractive: Bool
-    let premiumHistoryGate: PremiumHistoryGate.Context
-    let intensityFor: (Date) -> Double
+    private let cellsByDate: [Date: HeatmapCell]
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
     private let rows: CGFloat = 7
+
+    init(
+        accent: Color,
+        style: HeatmapStyleConfiguration,
+        calendarProvider: CalendarProvider,
+        weeks: [Week],
+        selectedDate: Date,
+        isInteractive: Bool,
+        cells: [HeatmapCell],
+        onTapDay: @escaping (Date) -> Void,
+        onTapLockedDay: @escaping (Date) -> Void
+    ) {
+        self.accent = accent
+        self.style = style
+        self.calendarProvider = calendarProvider
+        self.weeks = weeks
+        self.selectedDate = selectedDate
+        self.isInteractive = isInteractive
+        self.cellsByDate = Dictionary(uniqueKeysWithValues: cells.map { ($0.date, $0) })
+        self.onTapDay = onTapDay
+        self.onTapLockedDay = onTapLockedDay
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -103,22 +124,18 @@ struct GitHubHeatmapGrid: View {
                         let day = week.days[i]
 
                         if let day {
-                            let isLockedDay = premiumHistoryGate.isLocked(date: day)
-                            let rawIntensity = intensityFor(day)
-                            let adjustedIntensity = HeatmapIntensityCalculator.level(for: rawIntensity)
+                            let cell = cell(for: day)
+                            let isLockedDay = cell.isLocked
                             HeatCell(
                                 date: day,
                                 accent: accent,
-                                intensity: premiumHistoryGate.visibleIntensity(
-                                    for: adjustedIntensity,
-                                    on: day
-                                ),
+                                intensityLevel: cell.normalizedIntensity,
                                 size: style.cellSize,
                                 style: style,
                                 isSelected: calendarProvider.calendar.isDate(day, inSameDayAs: selectedDate),
-                                isToday: calendarProvider.calendar.isDateInToday(day),
+                                isToday: cell.isToday,
                                 isInteractive: isInteractive || isLockedDay,
-                                isLocked: premiumHistoryGate.usesLockedStyle(on: day),
+                                isLocked: isLockedDay,
                                 inactiveEmphasis: premiumBoundaryWeekIndex == index ? 1.45 : 1,
                                 onTap: {
                                     if isLockedDay {
@@ -196,20 +213,15 @@ struct GitHubHeatmapGrid: View {
         weeks
             .flatMap(\.days)
             .compactMap { $0 }
-            .last(where: { premiumHistoryGate.isLocked(date: $0) })
+            .last(where: { cell(for: $0).isLocked })
     }
 
     private var premiumBoundaryWeekIndex: Int? {
-        guard premiumHistoryGate.premiumStatus == .free else {
-            return nil
+        weeks.lastIndex { week in
+            week.days
+                .compactMap { $0 }
+                .contains(where: { cell(for: $0).isLocked })
         }
-
-        let accessibleWeekCount = premiumHistoryGate.premiumBoundaryWeekCount
-        guard weeks.count > accessibleWeekCount else {
-            return nil
-        }
-
-        return weeks.index(weeks.endIndex, offsetBy: -(accessibleWeekCount + 1))
     }
 
     private var premiumBoundaryDate: Date? {
@@ -217,7 +229,20 @@ struct GitHubHeatmapGrid: View {
             return boundaryLockedDate
         }
 
-        return weeks[premiumBoundaryWeekIndex].days.compactMap { $0 }.max()
+        let boundaryWeekDays = weeks[premiumBoundaryWeekIndex].days.compactMap { $0 }
+        return boundaryWeekDays.first(where: { !cell(for: $0).isLocked }) ?? boundaryLockedDate
+    }
+
+    private func cell(for date: Date) -> HeatmapCell {
+        let normalizedDate = calendarProvider.calendar.startOfDay(for: date)
+        return cellsByDate[normalizedDate] ?? HeatmapCell(
+            date: normalizedDate,
+            value: 0,
+            normalizedIntensity: 0,
+            isCompleted: false,
+            isToday: calendarProvider.calendar.isDateInToday(normalizedDate),
+            isLocked: false
+        )
     }
 }
 

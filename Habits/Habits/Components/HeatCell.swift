@@ -14,7 +14,7 @@ struct HeatCell: View {
 
     let date: Date
     let accent: Color
-    let intensity: Double
+    let intensityLevel: Int
     let size: CGFloat
     let style: HeatmapStyleConfiguration
     let isSelected: Bool
@@ -72,11 +72,11 @@ struct HeatCell: View {
     }
 
     private var visualIntensity: Double {
-        style.visualIntensity(for: intensity)
+        style.visualIntensity(forLevel: intensityLevel)
     }
 
     private var isActive: Bool {
-        visualIntensity > 0
+        intensityLevel > 0
     }
 
     private var fillColor: Color {
@@ -104,7 +104,7 @@ struct HeatCell: View {
             )
         }
 
-        return accent.opacity(max(style.activeBorderOpacity(for: intensity), visualIntensity * 0.22))
+        return accent.opacity(max(style.activeBorderOpacity(forLevel: intensityLevel), visualIntensity * 0.22))
     }
 
     private var pixelLineWidth: CGFloat {
