@@ -30,24 +30,37 @@ struct Provider: TimelineProvider {
         let habits = loadHabits()
         let selected = selectTopHabits(habits)
         let entry = HabitsEntry(date: Date(), habits: selected)
-        let nextUpdate = Calendar.current.date(byAdding: .hour, value: 1, to: Date())
-            ?? Date().addingTimeInterval(3600)
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        completion(Timeline(entries: [entry], policy: .atEnd))
     }
 
     private func loadHabits() -> [WidgetHabit] {
-        let suiteName = "group.ma.cadence.shared"
-        let key = "widget_habits"
-
-        guard
-            let defaults = UserDefaults(suiteName: suiteName),
-            let data = defaults.data(forKey: key),
-            let decoded = try? JSONDecoder().decode([WidgetHabit].self, from: data)
-        else {
+        guard let defaults = UserDefaults(suiteName: WidgetDataStore.suiteName) else {
+            assertionFailure("Shared UserDefaults suite unavailable: \(WidgetDataStore.suiteName)")
+            WidgetHabitLogger.logStorageFailure(
+                context: "load",
+                reason: "Failed to resolve shared UserDefaults suite"
+            )
             return []
         }
 
-        return decoded
+        guard
+            let data = defaults.data(forKey: WidgetDataStore.key)
+        else {
+            WidgetHabitLogger.logWidgetRead(count: 0)
+            return []
+        }
+
+        do {
+            let decoded = try JSONDecoder().decode([WidgetHabit].self, from: data)
+            WidgetHabitLogger.logWidgetRead(count: decoded.count)
+            return decoded
+        } catch {
+            WidgetHabitLogger.logStorageFailure(
+                context: "load",
+                reason: "Failed to decode widget habits. Raw data size: \(data.count) bytes. Error: \(error.localizedDescription)"
+            )
+            return  []
+        }
     }
 }
 
@@ -290,7 +303,7 @@ private extension Color {
 }
 
 struct HabitsWidget: Widget {
-    let kind: String = "HabitsWidget"
+    let kind: String = WidgetDataStore.widgetKind
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in

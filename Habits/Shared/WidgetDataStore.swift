@@ -7,16 +7,23 @@
 
 
 import Foundation
-import WidgetKit
 
 final class WidgetDataStore {
     static let shared = WidgetDataStore()
+    static let suiteName = "group.ma.cadence.shared"
+    static let key = "widget_habits"
+    static let widgetKind = "HabitsWidget"
 
-    private let suiteName = "group.ma.cadence.shared"
-    private let key = "widget_habits"
-
-    func save(_ habits: [WidgetHabit]) {
-        guard let defaults = UserDefaults(suiteName: suiteName) else { return }
+    @discardableResult
+    func save(_ habits: [WidgetHabit]) -> Bool {
+        guard let defaults = UserDefaults(suiteName: Self.suiteName) else {
+            assertionFailure("Shared UserDefaults suite unavailable: \(Self.suiteName)")
+            WidgetHabitLogger.logStorageFailure(
+                context: "save",
+                reason: "Failed to resolve shared UserDefaults suite"
+            )
+            return false
+        }
 
         let validatedHabits = habits.map { habit in
             guard habit.goalType == .goal, habit.progress == nil else { return habit }
@@ -39,16 +46,26 @@ final class WidgetDataStore {
             )
         }
 
-        for habit in validatedHabits {
-            WidgetHabitLogger.logCompactSummary(
-                habitName: habit.name,
-                goalType: habit.goalType,
-                progress: habit.progress
-            )
-        }
+        do {
+            let data = try JSONEncoder().encode(validatedHabits)
+            defaults.set(data, forKey: Self.key)
 
-        let data = try? JSONEncoder().encode(validatedHabits)
-        defaults.set(data, forKey: key)
-        WidgetCenter.shared.reloadAllTimelines()
+            for habit in validatedHabits {
+                WidgetHabitLogger.logCompactSummary(
+                    habitName: habit.name,
+                    goalType: habit.goalType,
+                    progress: habit.progress
+                )
+            }
+
+            WidgetHabitLogger.logWidgetWrite(count: validatedHabits.count)
+            return true
+        } catch {
+            WidgetHabitLogger.logStorageFailure(
+                context: "save",
+                reason: "Failed to encode widget habits: \(error.localizedDescription)"
+            )
+            return false
+        }
     }
 }

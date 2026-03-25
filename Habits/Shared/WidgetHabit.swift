@@ -148,11 +148,17 @@ struct WidgetHabit: Codable, Identifiable {
     }
 
     private static func normalizedProgress(for goalType: WidgetGoalType, progress: Double?) -> Double? {
-        goalType == .goal ? clampedGoalProgress(progress) : progress
+        if goalType == .goal {
+            return clampedGoalProgress(progress)
+        }
+
+        guard let progress else { return nil }
+        return progress.isFinite ? progress : nil
     }
 
     private static func clampedGoalProgress(_ progress: Double?) -> Double {
-        min(max(progress ?? 0, 0), 1)
+        guard let progress, progress.isFinite else { return 0 }
+        return min(max(progress, 0), 1)
     }
 
     private static func resolvedHasActivity(
@@ -299,5 +305,22 @@ enum WidgetHabitLogger {
         logger.error(
             "Widget payload validation failure for \(habitName, privacy: .public): \(reason, privacy: .public)"
         )
+    }
+
+    static func logStorageFailure(
+        context: StaticString,
+        reason: String
+    ) {
+        logger.error(
+            "Widget storage failure \(context, privacy: .public): \(reason, privacy: .public)"
+        )
+    }
+
+    static func logWidgetWrite(count: Int) {
+        logger.debug("WIDGET WRITE: \(count, privacy: .public) habits saved")
+    }
+
+    static func logWidgetRead(count: Int) {
+        logger.debug("WIDGET READ: \(count, privacy: .public) habits loaded")
     }
 }

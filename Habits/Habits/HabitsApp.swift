@@ -21,6 +21,8 @@ enum RootViewRouter {
 }
 
 struct RootView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
     @EnvironmentObject private var userSettings: UserSettings
 
@@ -38,10 +40,15 @@ struct RootView: View {
             }
         }
         .onAppear {
+            WidgetDataSync.sync(in: modelContext)
             deepLinkManager.processPendingHabitIfNeeded()
         }
         .onChange(of: deepLinkManager.pendingHabitID) { _, _ in
             deepLinkManager.processPendingHabitIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            WidgetDataSync.sync(in: modelContext)
         }
     }
 }

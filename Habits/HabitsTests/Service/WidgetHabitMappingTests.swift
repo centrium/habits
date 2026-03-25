@@ -203,4 +203,38 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertFalse(widgetHabit.hasActivityToday)
         XCTAssertEqual(widgetHabit.name, "Read")
     }
+
+    func testGoalWidgetHabitWithNonFiniteProgressNormalizesToZeroAndEncodes() throws {
+        let habit = WidgetHabit(
+            id: UUID(),
+            name: "Hydrate",
+            isCompleteToday: false,
+            streak: 0,
+            goalType: .goal,
+            progress: .nan,
+            hasActivityToday: true,
+            iconName: nil,
+            colorHex: "#00AEEF"
+        )
+
+        XCTAssertEqual(habit.progress, 0)
+        XCTAssertEqual(habit.goalProgress, 0)
+        XCTAssertNoThrow(try JSONEncoder().encode(habit))
+    }
+
+    func testNonGoalWidgetHabitWithNonFiniteProgressDropsProgressValue() {
+        let habit = WidgetHabit(
+            id: UUID(),
+            name: "Read",
+            isCompleteToday: true,
+            streak: 5,
+            goalType: .binary,
+            progress: .infinity,
+            hasActivityToday: true,
+            iconName: "book",
+            colorHex: "#1F7A8C"
+        )
+
+        XCTAssertNil(habit.progress)
+    }
 }

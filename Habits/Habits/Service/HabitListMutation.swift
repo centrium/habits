@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import WidgetKit
 
 func mapToWidgetHabits(
     _ habits: [Habit],
@@ -92,15 +93,29 @@ private extension Habit {
             calendar: calendar,
             weekStartPreference: weekStartPreference
         ) ?? 0
-        return min(max(rawProgress, 0), 1)
+        let clamped = min(max(rawProgress, 0), 1)
+        return clamped.isFinite ? clamped : 0
     }
 }
 
 enum WidgetDataSync {
-    static func sync(in modelContext: ModelContext) {
+    @discardableResult
+    static func sync(in modelContext: ModelContext) -> Bool {
         let descriptor = FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.orderIndex)])
         let habits = (try? modelContext.fetch(descriptor)) ?? []
-        WidgetDataStore.shared.save(mapToWidgetHabits(habits))
+        let widgetHabits = mapToWidgetHabits(habits)
+        let didWrite = WidgetDataStore.shared.save(widgetHabits)
+
+        if didWrite {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetDataStore.widgetKind)
+        } else {
+            WidgetHabitLogger.logStorageFailure(
+                context: "sync",
+                reason: "Skipping widget reload because write failed"
+            )
+        }
+
+        return didWrite
     }
 }
 
@@ -109,11 +124,15 @@ extension ModelContext {
     func saveAndSyncWidgetData() -> Bool {
         do {
             try save()
-            WidgetDataSync.sync(in: self)
-            return true
         } catch {
+            WidgetHabitLogger.logStorageFailure(
+                context: "saveAndSync",
+                reason: "ModelContext save failed: \(error.localizedDescription)"
+            )
             return false
         }
+
+        return WidgetDataSync.sync(in: self)
     }
 }
 
