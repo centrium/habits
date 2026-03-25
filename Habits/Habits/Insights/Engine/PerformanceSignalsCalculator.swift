@@ -71,7 +71,7 @@ enum PerformanceSignalsCalculator {
         now: Date
     ) -> Double {
         _ = logs
-        let score = MomentumService(calendar: calendar).score(for: habit, now: now)
+        let score = MomentumScoreService(calendar: calendar).score(for: habit, now: now)
         return Double(score)
     }
 

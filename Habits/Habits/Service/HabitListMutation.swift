@@ -11,6 +11,10 @@ func mapToWidgetHabits(
     habits.map { habit in
         let widgetGoalType = habit.widgetGoalTypeForWidget
         let hasActivityToday = !habit.logs(on: referenceDate, calendar: calendar).isEmpty
+        let momentumScore = MomentumScoreService(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).score(for: habit, now: referenceDate)
         let mappedProgress = habit.widgetProgressForWidget(
             referenceDate: referenceDate,
             calendar: calendar,
@@ -34,7 +38,13 @@ func mapToWidgetHabits(
             progress: mappedProgress,
             hasActivityToday: hasActivityToday,
             iconName: habit.iconName,
-            colorHex: habit.colorHex
+            colorHex: habit.colorHex,
+            momentumScore: momentumScore,
+            heatmapAggregationKind: habit.widgetHeatmapAggregationKind,
+            recentActivity: habit.widgetRecentActivity(
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
         )
 
         if habit.isGoalBasedForWidget, (widgetHabit.goalType != .goal || widgetHabit.progress == nil) {
@@ -51,7 +61,10 @@ func mapToWidgetHabits(
                 progress: mappedProgress ?? 0,
                 hasActivityToday: hasActivityToday,
                 iconName: widgetHabit.iconName,
-                colorHex: widgetHabit.colorHex
+                colorHex: widgetHabit.colorHex,
+                momentumScore: widgetHabit.momentumScore,
+                heatmapAggregationKind: widgetHabit.heatmapAggregationKind,
+                recentActivity: widgetHabit.recentActivity
             )
         }
 
@@ -82,6 +95,17 @@ private extension Habit {
         widgetGoalTypeForWidget == .goal
     }
 
+    var widgetHeatmapAggregationKind: WidgetHeatmapAggregationKind {
+        guard hasStreakGoal else { return .completion }
+
+        switch goalType {
+        case .frequency:
+            return streakTarget <= 1 ? .completion : .count
+        case .cumulative:
+            return .value
+        }
+    }
+
     func widgetProgressForWidget(
         referenceDate: Date,
         calendar: Calendar,
@@ -96,6 +120,44 @@ private extension Habit {
         let clamped = min(max(rawProgress, 0), 1)
         return clamped.isFinite ? clamped : 0
     }
+
+    func widgetRecentActivity(
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> [WidgetActivitySample] {
+        let today = calendar.startOfDay(for: referenceDate)
+
+        return (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -6 + offset, to: today) else {
+                return nil
+            }
+
+            return WidgetActivitySample(
+                date: date,
+                value: widgetActivityValue(on: date, calendar: calendar)
+            )
+        }
+    }
+
+    func widgetActivityValue(
+        on date: Date,
+        calendar: Calendar
+    ) -> Double {
+        let dayLogs = logs(on: date, calendar: calendar)
+
+        switch widgetHeatmapAggregationKind {
+        case .completion:
+            return dayLogs.isEmpty ? 0 : 1
+        case .count:
+            return Double(dayLogs.reduce(0) { partialResult, log in
+                partialResult + max(0, log.frequencyContribution)
+            })
+        case .value:
+            return dayLogs.reduce(0) { partialResult, log in
+                partialResult + max(0, log.numericValue)
+            }
+        }
+    }
 }
 
 enum WidgetDataSync {
@@ -107,7 +169,16 @@ enum WidgetDataSync {
         let didWrite = WidgetDataStore.shared.save(widgetHabits)
 
         if didWrite {
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetDataStore.widgetKind)
+            let widgetKinds = [
+                WidgetDataStore.widgetKind,
+                WidgetDataStore.momentumWidgetKind,
+                WidgetDataStore.focusWidgetKind,
+                WidgetDataStore.consistencyWidgetKind,
+            ]
+
+            for kind in widgetKinds {
+                WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            }
         } else {
             WidgetHabitLogger.logStorageFailure(
                 context: "sync",

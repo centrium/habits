@@ -85,6 +85,87 @@ final class WidgetHabitSelectionTests: XCTestCase {
         XCTAssertEqual(habit.goalProgress, 0)
     }
 
+    func testSelectFocusWidgetHabitPrioritizesHighestStreakWithoutActivityToday() {
+        let lowStreak = makeHabit(name: "Journal", goalType: .openEnded, streak: 2, hasActivityToday: false)
+        let highStreak = makeHabit(name: "Read", goalType: .binary, streak: 8, hasActivityToday: false)
+        let inProgress = makeHabit(name: "Hydrate", goalType: .goal, streak: 6, progress: 0.4, hasActivityToday: true)
+
+        let selected = selectFocusWidgetHabit([lowStreak, inProgress, highStreak])
+
+        XCTAssertEqual(selected?.name, "Read")
+    }
+
+    func testSelectFocusWidgetHabitFallsBackToFirstIncompleteHabit() {
+        let completed = makeHabit(name: "Stretch", goalType: .binary, isCompleteToday: true, hasActivityToday: true)
+        let incompleteGoal = makeHabit(name: "Walk", goalType: .goal, progress: 0, hasActivityToday: false)
+        let incompleteBinary = makeHabit(name: "Meditate", goalType: .binary, hasActivityToday: false)
+
+        let selected = selectFocusWidgetHabit([completed, incompleteGoal, incompleteBinary])
+
+        XCTAssertEqual(selected?.name, "Walk")
+    }
+
+    func testSelectFocusWidgetHabitReturnsNilWhenAllAreComplete() {
+        let firstCompleted = makeHabit(name: "Read", goalType: .goal, isCompleteToday: true, progress: 1, hasActivityToday: true)
+        let secondCompleted = makeHabit(name: "Walk", goalType: .binary, isCompleteToday: true, hasActivityToday: true)
+
+        let selected = selectFocusWidgetHabit([firstCompleted, secondCompleted])
+
+        XCTAssertNil(selected)
+    }
+
+    func testResolveFocusWidgetStateReturnsNoHabitsForEmptyList() {
+        let state = resolveFocusWidgetState([])
+
+        guard case .noHabits = state else {
+            return XCTFail("Expected no habits state")
+        }
+    }
+
+    func testResolveFocusWidgetStateReturnsAllCompleteWhenAllHabitsHaveActivityToday() {
+        let completedGoal = makeHabit(name: "Read", goalType: .goal, isCompleteToday: false, progress: 0.5, hasActivityToday: true)
+        let completedBinary = makeHabit(name: "Walk", goalType: .binary, isCompleteToday: true, hasActivityToday: true)
+
+        let state = resolveFocusWidgetState([completedGoal, completedBinary])
+
+        guard case .allComplete(let primaryHabit, let completedCount) = state else {
+            return XCTFail("Expected all complete state")
+        }
+
+        XCTAssertEqual(primaryHabit.name, "Read")
+        XCTAssertEqual(completedCount, 2)
+        XCTAssertEqual(state.titleText, "All done")
+        XCTAssertEqual(state.subtitleText, "2/2 completed")
+    }
+
+    func testResolveFocusWidgetStateReturnsNeedsAttentionForIncompleteHabit() {
+        let completed = makeHabit(name: "Walk", goalType: .binary, isCompleteToday: true, hasActivityToday: true)
+        let incomplete = makeHabit(name: "Read", goalType: .goal, progress: 0, hasActivityToday: false, streak: 4)
+
+        let state = resolveFocusWidgetState([completed, incomplete])
+
+        guard case .needsAttention(let habit) = state else {
+            return XCTFail("Expected needs attention state")
+        }
+
+        XCTAssertEqual(habit.name, "Read")
+        XCTAssertEqual(state.titleText, "Read")
+        XCTAssertEqual(state.subtitleText, "Don't break streak (4)")
+    }
+
+    func testResolveFocusWidgetStateUsesStartCopyForZeroStreakHabit() {
+        let incomplete = makeHabit(name: "Write", goalType: .binary, hasActivityToday: false, streak: 0)
+
+        let state = resolveFocusWidgetState([incomplete])
+
+        guard case .needsAttention(let habit) = state else {
+            return XCTFail("Expected needs attention state")
+        }
+
+        XCTAssertEqual(habit.name, "Write")
+        XCTAssertEqual(state.subtitleText, "Start your streak")
+    }
+
     private func makeHabit(
         name: String,
         goalType: WidgetGoalType,

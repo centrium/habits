@@ -12,6 +12,9 @@ import SwiftUI
 struct HabitsWidgetBundle: WidgetBundle {
     var body: some Widget {
         HabitsWidget()
+        HabitMomentumWidget()
+        HabitFocusWidget()
+        HabitConsistencyWidget()
         HabitsWidgetControl()
     }
 }

@@ -145,6 +145,7 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertEqual(widgetHabit.goalType, .goal)
         XCTAssertEqual(widgetHabit.progress, 0)
         XCTAssertEqual(widgetHabit.goalProgress, 0)
+        XCTAssertEqual(widgetHabit.momentumScore, 0)
     }
 
     func testOpenEndedHabitUsesExplicitOpenEndedTypeWhenLoggedToday() throws {
@@ -184,6 +185,49 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertFalse(widgetHabit.isCompleteToday)
     }
 
+    func testFrequencyHabitIncludesRecentCountBasedActivitySamplesForWidgetHeatmap() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let date = TestDateFactory.referenceNow
+        let previousDay = TestDateFactory.addingDays(-1, to: date, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 3,
+            entries: [
+                .init(timestamp: date, value: 1),
+                .init(timestamp: date, value: 1),
+                .init(timestamp: previousDay, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        let widgetHabit = try XCTUnwrap(
+            mapToWidgetHabits([habit], referenceDate: date, calendar: calendar).first
+        )
+
+        XCTAssertEqual(widgetHabit.heatmapAggregationKind, .count)
+        XCTAssertEqual(widgetHabit.recentActivity.count, 7)
+        XCTAssertEqual(activityValue(on: date, in: widgetHabit, calendar: calendar), 2)
+        XCTAssertEqual(activityValue(on: previousDay, in: widgetHabit, calendar: calendar), 1)
+    }
+
+    func testOpenEndedHabitIncludesRecentCompletionSamplesForWidgetHeatmap() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let date = TestDateFactory.referenceNow
+        let previousDay = TestDateFactory.addingDays(-2, to: date, calendar: calendar)
+        let habit = TestHabitFactory.openEnded(
+            entries: [.init(timestamp: previousDay, value: 1)],
+            calendar: calendar
+        )
+
+        let widgetHabit = try XCTUnwrap(
+            mapToWidgetHabits([habit], referenceDate: date, calendar: calendar).first
+        )
+
+        XCTAssertEqual(widgetHabit.heatmapAggregationKind, .completion)
+        XCTAssertEqual(widgetHabit.recentActivity.count, 7)
+        XCTAssertEqual(activityValue(on: previousDay, in: widgetHabit, calendar: calendar), 1)
+        XCTAssertEqual(activityValue(on: date, in: widgetHabit, calendar: calendar), 0)
+    }
+
     func testWidgetHabitDecodesLegacyPayloadWithoutExplicitGoalType() throws {
         let legacyJSON = """
         {
@@ -201,7 +245,30 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertEqual(widgetHabit.goalType, .binary)
         XCTAssertNil(widgetHabit.progress)
         XCTAssertFalse(widgetHabit.hasActivityToday)
+        XCTAssertEqual(widgetHabit.momentumScore, 0)
         XCTAssertEqual(widgetHabit.name, "Read")
+    }
+
+    func testMappedWidgetHabitIncludesMomentumScoreFromSharedService() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let date = TestDateFactory.referenceNow
+        let habit = TestHabitFactory.frequency(
+            target: 1,
+            entries: [
+                .init(timestamp: date, value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-1, to: date, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-2, to: date, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        let widgetHabit = try XCTUnwrap(
+            mapToWidgetHabits([habit], referenceDate: date, calendar: calendar).first
+        )
+
+        let expectedScore = MomentumScoreService(calendar: calendar).score(for: habit, now: date)
+
+        XCTAssertEqual(widgetHabit.momentumScore, expectedScore)
     }
 
     func testGoalWidgetHabitWithNonFiniteProgressNormalizesToZeroAndEncodes() throws {
@@ -236,5 +303,16 @@ final class WidgetHabitMappingTests: XCTestCase {
         )
 
         XCTAssertNil(habit.progress)
+    }
+
+    private func activityValue(
+        on date: Date,
+        in widgetHabit: WidgetHabit,
+        calendar: Calendar
+    ) -> Double {
+        let day = calendar.startOfDay(for: date)
+        return widgetHabit.recentActivity.first(where: {
+            calendar.isDate($0.date, inSameDayAs: day)
+        })?.value ?? -1
     }
 }

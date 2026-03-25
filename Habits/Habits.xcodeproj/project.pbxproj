@@ -471,6 +471,7 @@
 				DEVELOPMENT_TEAM = Z2K6ZECPMC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Cadence;
 				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleTypeRole = Editor;
 				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLName = ma.cadence;
 				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLSchemes_0 = habits;
@@ -513,6 +514,7 @@
 				DEVELOPMENT_TEAM = Z2K6ZECPMC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Cadence;
 				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleTypeRole = Editor;
 				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLName = ma.cadence;
 				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLSchemes_0 = habits;
@@ -606,7 +608,7 @@
 				DEVELOPMENT_TEAM = Z2K6ZECPMC;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HabitsWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = HabitsWidget;
+				INFOPLIST_KEY_CFBundleDisplayName = Cadence;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -637,7 +639,7 @@
 				DEVELOPMENT_TEAM = Z2K6ZECPMC;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HabitsWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = HabitsWidget;
+				INFOPLIST_KEY_CFBundleDisplayName = Cadence;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

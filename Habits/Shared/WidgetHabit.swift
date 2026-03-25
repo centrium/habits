@@ -14,6 +14,17 @@ enum WidgetGoalType: String, Codable {
     case openEnded
 }
 
+enum WidgetHeatmapAggregationKind: String, Codable {
+    case completion
+    case count
+    case value
+}
+
+struct WidgetActivitySample: Codable, Equatable {
+    let date: Date
+    let value: Double
+}
+
 struct WidgetHabit: Codable, Identifiable {
     let id: UUID
     let name: String
@@ -24,6 +35,9 @@ struct WidgetHabit: Codable, Identifiable {
     let hasActivityToday: Bool
     let iconName: String?
     let colorHex: String?
+    let momentumScore: Int
+    let heatmapAggregationKind: WidgetHeatmapAggregationKind
+    let recentActivity: [WidgetActivitySample]
 
     var goalProgress: Double {
         guard goalType == .goal else { return 0 }
@@ -40,6 +54,9 @@ struct WidgetHabit: Codable, Identifiable {
         case hasActivityToday
         case iconName
         case colorHex
+        case momentumScore
+        case heatmapAggregationKind
+        case recentActivity
 
         // Legacy payload support
         case progressFraction
@@ -55,7 +72,10 @@ struct WidgetHabit: Codable, Identifiable {
         progress: Double?,
         hasActivityToday: Bool,
         iconName: String?,
-        colorHex: String?
+        colorHex: String?,
+        momentumScore: Int = 0,
+        heatmapAggregationKind: WidgetHeatmapAggregationKind = .completion,
+        recentActivity: [WidgetActivitySample] = []
     ) {
         self.id = id
         self.name = name
@@ -66,6 +86,9 @@ struct WidgetHabit: Codable, Identifiable {
         self.hasActivityToday = hasActivityToday
         self.iconName = iconName
         self.colorHex = colorHex
+        self.momentumScore = max(momentumScore, 0)
+        self.heatmapAggregationKind = heatmapAggregationKind
+        self.recentActivity = recentActivity
 
         WidgetHabitLogger.log(
             context: "initialized",
@@ -95,6 +118,15 @@ struct WidgetHabit: Codable, Identifiable {
                 progress: progress,
                 isCompleteToday: isCompleteToday
             )
+            momentumScore = try container.decodeIfPresent(Int.self, forKey: .momentumScore) ?? 0
+            heatmapAggregationKind = try container.decodeIfPresent(
+                WidgetHeatmapAggregationKind.self,
+                forKey: .heatmapAggregationKind
+            ) ?? .completion
+            recentActivity = try container.decodeIfPresent(
+                [WidgetActivitySample].self,
+                forKey: .recentActivity
+            ) ?? []
             WidgetHabitLogger.log(
                 context: "decoded",
                 habitName: name,
@@ -120,6 +152,9 @@ struct WidgetHabit: Codable, Identifiable {
             progress = nil
             hasActivityToday = isCompleteToday
         }
+        momentumScore = 0
+        heatmapAggregationKind = .completion
+        recentActivity = []
 
         WidgetHabitLogger.log(
             context: "decoded-legacy",
@@ -145,6 +180,9 @@ struct WidgetHabit: Codable, Identifiable {
         try container.encode(hasActivityToday, forKey: .hasActivityToday)
         try container.encodeIfPresent(iconName, forKey: .iconName)
         try container.encodeIfPresent(colorHex, forKey: .colorHex)
+        try container.encode(momentumScore, forKey: .momentumScore)
+        try container.encode(heatmapAggregationKind, forKey: .heatmapAggregationKind)
+        try container.encode(recentActivity, forKey: .recentActivity)
     }
 
     private static func normalizedProgress(for goalType: WidgetGoalType, progress: Double?) -> Double? {
@@ -179,6 +217,43 @@ struct WidgetHabit: Codable, Identifiable {
         case .openEnded:
             return false
         }
+    }
+}
+
+enum WidgetMomentumState: String {
+    case startBuilding = "Start building"
+    case building = "Building"
+    case strong = "Strong"
+    case slipping = "Slipping"
+}
+
+struct WidgetMomentumSummary {
+    let score: Int
+    let state: WidgetMomentumState
+}
+
+struct WidgetHeatmapDay: Equatable {
+    let date: Date
+    let intensity: Int
+}
+
+enum WidgetFocusState {
+    case noHabits
+    case allComplete(primaryHabit: WidgetHabit, completedCount: Int)
+    case needsAttention(WidgetHabit)
+}
+
+struct WidgetConsistencySnapshot: Equatable {
+    let days: [WidgetHeatmapDay]
+    let activeDayCount: Int
+    let lastActiveDayIndex: Int?
+
+    var summaryText: String {
+        "\(activeDayCount)/\(days.count) days"
+    }
+
+    var hasActivity: Bool {
+        activeDayCount > 0
     }
 }
 
@@ -241,6 +316,81 @@ func selectTopWidgetHabits(
     )
 }
 
+func selectFocusWidgetHabit(_ habits: [WidgetHabit]) -> WidgetHabit? {
+    guard !habits.isEmpty else { return nil }
+
+    let incompleteHabits = habits.filter { !$0.hasActivityToday }
+    guard !incompleteHabits.isEmpty else { return nil }
+
+    let streakProtectionHabits = incompleteHabits
+        .filter { $0.streak > 0 }
+        .sorted { lhs, rhs in
+            if lhs.streak != rhs.streak {
+                return lhs.streak > rhs.streak
+            }
+
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+
+    if let focusHabit = streakProtectionHabits.first {
+        return focusHabit
+    }
+
+    return incompleteHabits.first
+}
+
+func resolveFocusWidgetState(_ habits: [WidgetHabit]) -> WidgetFocusState {
+    guard !habits.isEmpty else { return .noHabits }
+
+    if habits.allSatisfy(\.hasActivityToday), let primaryHabit = habits.first {
+        return .allComplete(primaryHabit: primaryHabit, completedCount: habits.count)
+    }
+
+    if let focusHabit = selectFocusWidgetHabit(habits) {
+        return .needsAttention(focusHabit)
+    }
+
+    if let primaryHabit = habits.first {
+        return .allComplete(primaryHabit: primaryHabit, completedCount: habits.count)
+    }
+
+    return .noHabits
+}
+
+func makeWidgetConsistencySnapshot(
+    from habits: [WidgetHabit],
+    referenceDate: Date,
+    calendar: Calendar = .current
+) -> WidgetConsistencySnapshot {
+    let today = calendar.startOfDay(for: referenceDate)
+    let sourceDays = (0..<7).compactMap { offset -> (date: Date, total: Double)? in
+        guard let date = calendar.date(byAdding: .day, value: -6 + offset, to: today) else {
+            return nil
+        }
+
+        let total = habits.reduce(0.0) { partialResult, habit in
+            partialResult + habit.widgetActivityValue(on: date, calendar: calendar)
+        }
+
+        return (date: date, total: max(total, 0))
+    }
+
+    let maximum = sourceDays.map(\.total).max() ?? 0
+    let normalizedDays = sourceDays.map { day in
+        WidgetHeatmapDay(
+            date: day.date,
+            intensity: normalizedConsistencyIntensity(for: day.total, maximum: maximum)
+        )
+    }
+    let activeDayCount = normalizedDays.filter { $0.intensity > 0 }.count
+
+    return WidgetConsistencySnapshot(
+        days: normalizedDays,
+        activeDayCount: activeDayCount,
+        lastActiveDayIndex: normalizedDays.lastIndex(where: { $0.intensity > 0 })
+    )
+}
+
 private extension WidgetHabit {
     var isPartiallyCompleteGoalHabit: Bool {
         goalType == .goal && goalProgress > 0 && goalProgress < 1
@@ -271,6 +421,64 @@ private extension WidgetHabit {
             return hasActivityToday
         }
     }
+
+    func widgetActivityValue(
+        on date: Date,
+        calendar: Calendar
+    ) -> Double {
+        let day = calendar.startOfDay(for: date)
+        return recentActivity.first(where: {
+            calendar.isDate($0.date, inSameDayAs: day)
+        })?.value ?? 0
+    }
+
+}
+
+extension WidgetHabit {
+    var momentumSummary: WidgetMomentumSummary {
+        let score = max(momentumScore, 0)
+        let state: WidgetMomentumState
+        if score == 0 {
+            state = .startBuilding
+        } else if score >= 80 {
+            state = .strong
+        } else if score >= 50 {
+            state = .building
+        } else {
+            state = .slipping
+        }
+
+        return WidgetMomentumSummary(score: score, state: state)
+    }
+}
+
+extension WidgetFocusState {
+    var titleText: String {
+        switch self {
+        case .noHabits:
+            return "No habits yet"
+        case .allComplete:
+            return "All done"
+        case .needsAttention(let habit):
+            return habit.name
+        }
+    }
+
+    var subtitleText: String {
+        switch self {
+        case .noHabits:
+            return "Start building your cadence"
+        case .allComplete(_, let completedCount):
+            return "\(completedCount)/\(completedCount) completed"
+        case .needsAttention(let habit):
+            return habit.streak == 0 ? "Start your streak" : "Don't break streak (\(habit.streak))"
+        }
+    }
+}
+
+private func normalizedConsistencyIntensity(for total: Double, maximum: Double) -> Int {
+    guard total > 0, maximum > 0 else { return 0 }
+    return max(1, min(4, Int(ceil((total / maximum) * 4))))
 }
 
 enum WidgetHabitLogger {

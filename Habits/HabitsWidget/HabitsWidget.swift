@@ -15,52 +15,22 @@ func selectTopHabits(_ habits: [WidgetHabit]) -> [WidgetHabit] {
 
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> HabitsEntry {
-        let habits = loadHabits()
+        let habits = WidgetDataStore.shared.load()
         let selected = selectTopHabits(habits)
         return HabitsEntry(date: Date(), habits: selected)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (HabitsEntry) -> Void) {
-        let habits = loadHabits()
+        let habits = WidgetDataStore.shared.load()
         let selected = selectTopHabits(habits)
         completion(HabitsEntry(date: Date(), habits: selected))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<HabitsEntry>) -> Void) {
-        let habits = loadHabits()
+        let habits = WidgetDataStore.shared.load()
         let selected = selectTopHabits(habits)
         let entry = HabitsEntry(date: Date(), habits: selected)
         completion(Timeline(entries: [entry], policy: .atEnd))
-    }
-
-    private func loadHabits() -> [WidgetHabit] {
-        guard let defaults = UserDefaults(suiteName: WidgetDataStore.suiteName) else {
-            assertionFailure("Shared UserDefaults suite unavailable: \(WidgetDataStore.suiteName)")
-            WidgetHabitLogger.logStorageFailure(
-                context: "load",
-                reason: "Failed to resolve shared UserDefaults suite"
-            )
-            return []
-        }
-
-        guard
-            let data = defaults.data(forKey: WidgetDataStore.key)
-        else {
-            WidgetHabitLogger.logWidgetRead(count: 0)
-            return []
-        }
-
-        do {
-            let decoded = try JSONDecoder().decode([WidgetHabit].self, from: data)
-            WidgetHabitLogger.logWidgetRead(count: decoded.count)
-            return decoded
-        } catch {
-            WidgetHabitLogger.logStorageFailure(
-                context: "load",
-                reason: "Failed to decode widget habits. Raw data size: \(data.count) bytes. Error: \(error.localizedDescription)"
-            )
-            return  []
-        }
     }
 }
 
@@ -72,7 +42,6 @@ struct HabitsEntry: TimelineEntry {
 struct HabitsWidgetEntryView: View {
     var entry: HabitsEntry
     private let displayedHabitsCount = 3
-    private let rowSpacing: CGFloat = 8
     private var displayedHabits: [WidgetHabit] {
         Array(entry.habits.prefix(displayedHabitsCount))
     }
@@ -80,19 +49,19 @@ struct HabitsWidgetEntryView: View {
     var body: some View {
         Group {
             if displayedHabits.isEmpty {
-                VStack(spacing: 4) {
+                VStack(spacing: WidgetSpacing.verticalStack) {
                     Text("No habits yet")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .font(WidgetTypography.mediumEmptyTitle)
+                        .foregroundStyle(WidgetColors.emptyPrimary)
                     Text("Add your first habit")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(WidgetTypography.mediumEmptySubtitle)
+                        .foregroundStyle(WidgetColors.secondaryText)
                         .lineLimit(2)
                 }
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
-                VStack(alignment: .leading, spacing: rowSpacing) {
+                VStack(alignment: .leading, spacing: WidgetSpacing.mediumListSpacing) {
                     ForEach(Array(displayedHabits.enumerated()), id: \.element.id) { index, habit in
                         Link(destination: habit.deepLinkURL) {
                             HabitWidgetRow(
@@ -107,9 +76,9 @@ struct HabitsWidgetEntryView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.horizontal, WidgetSpacing.mediumHorizontalPadding)
+        .padding(.top, WidgetSpacing.mediumTopPadding)
+        .padding(.bottom, WidgetSpacing.mediumBottomPadding)
     }
 }
 
@@ -117,22 +86,17 @@ private struct HabitWidgetRow: View {
     let habit: WidgetHabit
     let isPrimaryRow: Bool
     let showsDivider: Bool
-    private let iconContainerWidth: CGFloat = 24
-    private let indicatorSize: CGFloat = 18
-    private let indicatorColumnWidth: CGFloat = 24
-    private let contentSpacing: CGFloat = 10
-    private let rowHeight: CGFloat = 46
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: contentSpacing) {
+            HStack(alignment: .center, spacing: WidgetSpacing.mediumRowContentSpacing) {
                 Image(systemName: habit.widgetSymbolName)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(WidgetTypography.mediumRowSymbol)
                     .foregroundStyle(iconColor)
-                    .frame(width: iconContainerWidth, height: iconContainerWidth)
+                    .frame(width: WidgetSpacing.mediumIconWidth, height: WidgetSpacing.mediumIconWidth)
 
                 Text(habit.name)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(WidgetTypography.mediumRowName)
                     .foregroundStyle(nameColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -141,25 +105,24 @@ private struct HabitWidgetRow: View {
 
                 if habit.streak > 0 {
                     Text(streakText)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(WidgetTypography.mediumRowStreak)
+                        .foregroundStyle(WidgetColors.secondaryText)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .accessibilityLabel("Streak \(habit.streak)")
                 }
 
-                HabitIndicator(habit: habit, accentColor: accentColor)
-                    .frame(width: indicatorSize, height: indicatorSize)
-                    .frame(width: indicatorColumnWidth, alignment: .trailing)
+                WidgetHabitIndicator(habit: habit, accent: accentColor, style: .medium)
+                    .frame(width: WidgetSpacing.mediumIndicatorColumnWidth, alignment: .trailing)
             }
-            .frame(maxWidth: .infinity, minHeight: rowHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: WidgetSpacing.mediumRowHeight, alignment: .leading)
             .opacity(rowOpacity)
 
             if showsDivider {
                 Rectangle()
-                    .fill(.secondary.opacity(0.16))
-                    .frame(height: 0.5)
-                    .padding(.leading, iconContainerWidth + contentSpacing)
+                    .fill(WidgetColors.mediumDivider)
+                    .frame(height: WidgetSpacing.mediumDividerHeight)
+                    .padding(.leading, WidgetSpacing.mediumIconWidth + WidgetSpacing.mediumRowContentSpacing)
             }
         }
     }
@@ -173,132 +136,22 @@ private struct HabitWidgetRow: View {
     }
 
     private var nameColor: Color {
-        habit.isCompleteToday ? .primary.opacity(0.92) : .primary
+        WidgetColors.mediumRowName(isCompleteToday: habit.isCompleteToday)
     }
 
     private var iconColor: Color {
-        habit.isCompleteToday ? accentColor.opacity(0.78) : accentColor
+        WidgetColors.mediumIcon(accent: accentColor, isCompleteToday: habit.isCompleteToday)
     }
 
     private var rowOpacity: Double {
-        isPrimaryRow ? 1.0 : 0.93
-    }
-}
-
-private struct HabitIndicator: View {
-    let habit: WidgetHabit
-    let accentColor: Color
-    private let indicatorSize: CGFloat = 18
-
-    var body: some View {
-        Group {
-            if !habit.hasActivityToday {
-                DottedIndicator()
-            } else {
-                switch habit.goalType {
-                case .goal:
-                    if habit.goalProgress < 1 {
-                        ProgressRing(progress: habit.goalProgress, accentColor: accentColor)
-                    } else {
-                        CompletionDot(accentColor: accentColor)
-                    }
-                case .binary, .openEnded:
-                    CompletionDot(accentColor: accentColor)
-                }
-            }
-        }
-        .frame(width: indicatorSize, height: indicatorSize)
-    }
-}
-
-private struct CompletionDot: View {
-    let accentColor: Color
-
-    var body: some View {
-        Circle()
-            .fill(accentColor)
-            .shadow(color: accentColor.opacity(0.22), radius: 2, x: 0, y: 0)
-            .overlay {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.92))
-            }
-            .frame(width: 18, height: 18)
-    }
-}
-
-private struct ProgressRing: View {
-    let progress: Double
-    let accentColor: Color
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(.secondary.opacity(0.22), lineWidth: 1.8)
-
-            Circle()
-                .trim(from: 0, to: clampedProgress)
-                .stroke(
-                    accentColor,
-                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-        }
-        .frame(width: 18, height: 18)
-    }
-
-    private var clampedProgress: Double {
-        min(max(progress, 0), 1)
-    }
-}
-
-private struct DottedIndicator: View {
-    var body: some View {
-        Circle()
-            .stroke(
-                .secondary.opacity(0.38),
-                style: StrokeStyle(lineWidth: 1.8, lineCap: .round, dash: [1.2, 2.2])
-            )
-            .padding(1.6)
-            .frame(width: 18, height: 18)
+        isPrimaryRow ? WidgetMetrics.mediumPrimaryRowOpacity : WidgetMetrics.mediumSecondaryRowOpacity
     }
 }
 
 private extension WidgetHabit {
-    var deepLinkURL: URL {
-        URL(string: "habits://habit/\(id.uuidString)")!
-    }
-
     var widgetSymbolName: String {
         let trimmed = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "circle.grid.2x2.fill" : trimmed
-    }
-
-    var widgetAccentColor: Color {
-        guard
-            let colorHex,
-            let color = Color(widgetHex: colorHex)
-        else {
-            return .secondary
-        }
-        return color
-    }
-}
-
-private extension Color {
-    init?(widgetHex: String) {
-        var cleaned = widgetHex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.hasPrefix("#") {
-            cleaned.removeFirst()
-        }
-        guard cleaned.count == 6, let value = UInt64(cleaned, radix: 16) else {
-            return nil
-        }
-
-        let red = Double((value >> 16) & 0xFF) / 255.0
-        let green = Double((value >> 8) & 0xFF) / 255.0
-        let blue = Double(value & 0xFF) / 255.0
-        self = Color(red: red, green: green, blue: blue)
     }
 }
 
@@ -312,11 +165,10 @@ struct HabitsWidget: Widget {
                     .containerBackground(.fill.tertiary, for: .widget)
             } else {
                 HabitsWidgetEntryView(entry: entry)
-                    .background()
             }
         }
-        .configurationDisplayName("Today")
-        .description("See your most important habits for today.")
+        .configurationDisplayName("Cadence: Today")
+        .description("Your key habits at a glance.")
         .supportedFamilies([.systemMedium])
     }
 }

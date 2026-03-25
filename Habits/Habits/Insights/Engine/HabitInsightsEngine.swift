@@ -58,7 +58,7 @@ struct HabitInsightsEngine {
             weekStartPreference: weekStartPreference,
             now: now
         ).streak
-        let momentumBreakdown = MomentumService(
+        let momentumBreakdown = MomentumScoreService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
         ).breakdown(

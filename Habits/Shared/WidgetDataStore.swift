@@ -13,6 +13,37 @@ final class WidgetDataStore {
     static let suiteName = "group.ma.cadence.shared"
     static let key = "widget_habits"
     static let widgetKind = "HabitsWidget"
+    static let momentumWidgetKind = "HabitMomentumWidget"
+    static let focusWidgetKind = "HabitFocusWidget"
+    static let consistencyWidgetKind = "HabitConsistencyWidget"
+
+    func load() -> [WidgetHabit] {
+        guard let defaults = UserDefaults(suiteName: Self.suiteName) else {
+            assertionFailure("Shared UserDefaults suite unavailable: \(Self.suiteName)")
+            WidgetHabitLogger.logStorageFailure(
+                context: "load",
+                reason: "Failed to resolve shared UserDefaults suite"
+            )
+            return []
+        }
+
+        guard let data = defaults.data(forKey: Self.key) else {
+            WidgetHabitLogger.logWidgetRead(count: 0)
+            return []
+        }
+
+        do {
+            let decoded = try JSONDecoder().decode([WidgetHabit].self, from: data)
+            WidgetHabitLogger.logWidgetRead(count: decoded.count)
+            return decoded
+        } catch {
+            WidgetHabitLogger.logStorageFailure(
+                context: "load",
+                reason: "Failed to decode widget habits. Raw data size: \(data.count) bytes. Error: \(error.localizedDescription)"
+            )
+            return []
+        }
+    }
 
     @discardableResult
     func save(_ habits: [WidgetHabit]) -> Bool {
@@ -42,7 +73,10 @@ final class WidgetDataStore {
                 progress: 0,
                 hasActivityToday: habit.hasActivityToday,
                 iconName: habit.iconName,
-                colorHex: habit.colorHex
+                colorHex: habit.colorHex,
+                momentumScore: habit.momentumScore,
+                heatmapAggregationKind: habit.heatmapAggregationKind,
+                recentActivity: habit.recentActivity
             )
         }
 
