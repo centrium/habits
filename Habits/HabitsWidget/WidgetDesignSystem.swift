@@ -10,35 +10,38 @@ import WidgetKit
 
 struct WidgetTypography {
     static let primary = Font.system(size: 24, weight: .semibold, design: .rounded)
-    static let secondary = Font.system(size: 12, weight: .semibold)
-    static let tertiary = Font.system(size: 11, weight: .medium)
-    static let habitName = Font.system(size: 12, weight: .medium)
-    static let score = Font.system(size: 56, weight: .bold, design: .rounded)
+    static let secondary = Font.system(size: 12, weight: .regular)
+    static let tertiary = Font.system(size: 11, weight: .regular)
+    static let habitName = Font.system(size: 12, weight: .regular)
+    static let score = Font.system(size: 56, weight: .semibold, design: .rounded)
     static let status = Font.system(size: 12, weight: .semibold)
 
     static let mediumEmptyTitle = Font.system(size: 15, weight: .semibold)
-    static let mediumEmptySubtitle = Font.system(size: 12)
+    static let mediumEmptySubtitle = Font.system(size: 12, weight: .regular)
     static let mediumRowSymbol = Font.system(size: 13, weight: .medium)
     static let mediumRowPrimaryName = Font.system(size: 17, weight: .semibold)
-    static let mediumRowSecondaryName = Font.system(size: 15, weight: .medium)
-    static let mediumRowStreak = Font.system(size: 12, weight: .medium)
+    static let mediumRowSecondaryName = Font.system(size: 15, weight: .regular)
+    static let mediumRowStreak = Font.system(size: 12, weight: .regular)
     static let mediumCompletionCheck = Font.system(size: 8, weight: .bold)
     static let focusHeroCheck = Font.system(size: 12, weight: .bold)
     static let focusTitle = Font.system(size: 16, weight: .semibold)
-    static let consistencyLabel = Font.system(size: 11, weight: .semibold)
+    static let consistencyLabel = Font.system(size: 11, weight: .regular)
     static let consistencySummary = Font.system(size: 13, weight: .semibold)
     static let momentumState = Font.system(size: 15, weight: .semibold)
-    static let momentumTrend = Font.system(size: 11, weight: .medium)
+    static let momentumTrend = Font.system(size: 11, weight: .regular)
 
     static let momentumEmptyTitle = Font.system(size: 16, weight: .semibold, design: .rounded)
-    static let momentumEmptySubtitle = Font.system(size: 12, weight: .medium)
+    static let momentumEmptySubtitle = Font.system(size: 12, weight: .regular)
 }
 
 struct WidgetSpacing {
-    static let verticalStack: CGFloat = 6
-    static let containerPadding: CGFloat = 14
+    static let verticalStack: CGFloat = 8
+    static let containerPadding: CGFloat = 16
     static let pillHorizontal: CGFloat = 10
     static let pillVertical: CGFloat = 4
+    static let momentumClusterSpacing: CGFloat = 4
+    static let momentumTextSpacing: CGFloat = 2
+    static let opticalIconLift: CGFloat = -1
 
     static let mediumListSpacing: CGFloat = 11
     static let mediumHorizontalPadding: CGFloat = 16
@@ -53,17 +56,9 @@ struct WidgetSpacing {
 }
 
 struct WidgetMetrics {
-    static let mediumPrimaryRowOpacity: Double = 1.0
-    static let mediumSecondaryRowOpacity: Double = 0.7
     static let momentumAnimationDuration = 0.2
     static let consistencyStripHeight: CGFloat = 28
     static let widgetCornerRadius: CGFloat = 24
-    static let lightSurfaceShadowRadius: CGFloat = 6
-    static let lightSurfaceShadowYOffset: CGFloat = 2
-    static let lightSurfaceShadowOpacity: Double = 0.1
-    static let darkSurfaceShadowRadius: CGFloat = 4
-    static let darkSurfaceShadowYOffset: CGFloat = 1
-    static let darkSurfaceShadowOpacity: Double = 0.06
 }
 
 struct WidgetIndicatorStyle {
@@ -71,194 +66,233 @@ struct WidgetIndicatorStyle {
     let lineWidth: CGFloat
     let placeholderInset: CGFloat
     let placeholderCoreScale: CGFloat
-    let completionShadowRadius: CGFloat
     let completionCheckFont: Font
 
     static let medium = WidgetIndicatorStyle(
         size: WidgetSpacing.mediumIndicatorSize,
-        lineWidth: 1.8,
+        lineWidth: 2.0,
         placeholderInset: WidgetSpacing.mediumPlaceholderInset,
         placeholderCoreScale: 0.36,
-        completionShadowRadius: 2,
         completionCheckFont: WidgetTypography.mediumCompletionCheck
     )
 
     static let focusHero = WidgetIndicatorStyle(
         size: 30,
-        lineWidth: 2.2,
+        lineWidth: 2.4,
         placeholderInset: 2.8,
         placeholderCoreScale: 0.34,
-        completionShadowRadius: 0,
         completionCheckFont: WidgetTypography.focusHeroCheck
     )
 
     static let focusCelebration = WidgetIndicatorStyle(
         size: 24,
-        lineWidth: 2.0,
+        lineWidth: 2.2,
         placeholderInset: 2.2,
         placeholderCoreScale: 0.34,
-        completionShadowRadius: 0,
         completionCheckFont: WidgetTypography.mediumCompletionCheck
     )
 }
 
 struct WidgetColors {
-    private static let systemAccentLight = UIColor(
-        red: 58 / 255,
-        green: 243 / 255,
-        blue: 247 / 255,
-        alpha: 1
-    )
-    private static let systemAccentDark = UIColor(
-        red: 51 / 255,
-        green: 214 / 255,
-        blue: 217 / 255,
-        alpha: 1
-    )
-    private static let momentumSlippingLight = UIColor(
-        red: 146 / 255,
-        green: 120 / 255,
-        blue: 112 / 255,
-        alpha: 1
-    )
-    private static let momentumSlippingDark = UIColor(
-        red: 182 / 255,
-        green: 156 / 255,
-        blue: 148 / 255,
-        alpha: 1
-    )
-    private static let momentumSteadyLight = UIColor(
-        red: 110 / 255,
-        green: 122 / 255,
-        blue: 138 / 255,
-        alpha: 1
-    )
-    private static let momentumSteadyDark = UIColor(
-        red: 148 / 255,
-        green: 159 / 255,
-        blue: 174 / 255,
-        alpha: 1
-    )
-    private static let momentumBuildingLight = UIColor(
-        red: 86 / 255,
-        green: 129 / 255,
-        blue: 136 / 255,
-        alpha: 1
-    )
-    private static let momentumBuildingDark = UIColor(
-        red: 118 / 255,
-        green: 156 / 255,
-        blue: 162 / 255,
-        alpha: 1
-    )
+    private static let textPrimaryLight = UIColor(red: 28 / 255, green: 29 / 255, blue: 31 / 255, alpha: 1)
+    private static let textPrimaryDark = UIColor(red: 247 / 255, green: 247 / 255, blue: 250 / 255, alpha: 1)
+    private static let textSecondaryLight = UIColor(red: 94 / 255, green: 99 / 255, blue: 108 / 255, alpha: 1)
+    private static let textSecondaryDark = UIColor(red: 199 / 255, green: 201 / 255, blue: 207 / 255, alpha: 1)
+    private static let textTertiaryLight = UIColor(red: 123 / 255, green: 128 / 255, blue: 138 / 255, alpha: 1)
+    private static let textTertiaryDark = UIColor(red: 158 / 255, green: 161 / 255, blue: 169 / 255, alpha: 1)
 
-    static let surfaceBackground = Color(
-        uiColor: UIColor { traitCollection in
-            switch traitCollection.userInterfaceStyle {
-            case .dark:
-                return UIColor(red: 32 / 255, green: 32 / 255, blue: 34 / 255, alpha: 1)
-            default:
-                return .secondarySystemBackground
-            }
-        }
-    )
-    static let primaryText = Color(uiColor: .label).opacity(0.96)
-    static let secondaryText = Color(uiColor: .label).opacity(0.68)
-    static let tertiaryText = Color(uiColor: .label).opacity(0.46)
-    static let systemAccent = Color(
-        uiColor: UIColor { traitCollection in
-            switch traitCollection.userInterfaceStyle {
-            case .dark:
-                return systemAccentDark
-            default:
-                return systemAccentLight
-            }
-        }
-    )
-    static let systemAccentMuted = systemAccent.opacity(0.24)
-    static let systemAccentSuccessBackground = systemAccent.opacity(0.07)
+    private static let surfacePrimaryLight = UIColor(red: 243 / 255, green: 244 / 255, blue: 247 / 255, alpha: 1)
+    private static let surfacePrimaryDark = UIColor(red: 28 / 255, green: 29 / 255, blue: 31 / 255, alpha: 1)
+    private static let surfaceElevatedLight = UIColor(red: 229 / 255, green: 232 / 255, blue: 237 / 255, alpha: 1)
+    private static let surfaceElevatedDark = UIColor(red: 52 / 255, green: 54 / 255, blue: 58 / 255, alpha: 1)
+
+    private static let accentPrimaryLight = UIColor(red: 22 / 255, green: 128 / 255, blue: 136 / 255, alpha: 1)
+    private static let accentPrimaryDark = UIColor(red: 116 / 255, green: 214 / 255, blue: 218 / 255, alpha: 1)
+    private static let statePositiveLight = UIColor(red: 62 / 255, green: 120 / 255, blue: 114 / 255, alpha: 1)
+    private static let statePositiveDark = UIColor(red: 154 / 255, green: 211 / 255, blue: 201 / 255, alpha: 1)
+    private static let stateNeutralLight = UIColor(red: 102 / 255, green: 110 / 255, blue: 123 / 255, alpha: 1)
+    private static let stateNeutralDark = UIColor(red: 177 / 255, green: 184 / 255, blue: 196 / 255, alpha: 1)
+    private static let stateNegativeLight = UIColor(red: 158 / 255, green: 96 / 255, blue: 84 / 255, alpha: 1)
+    private static let stateNegativeDark = UIColor(red: 223 / 255, green: 162 / 255, blue: 149 / 255, alpha: 1)
+
+    static let textPrimary = dynamicColor(light: textPrimaryLight, dark: textPrimaryDark)
+    static let textSecondary = dynamicColor(light: textSecondaryLight, dark: textSecondaryDark)
+    static let textTertiary = dynamicColor(light: textTertiaryLight, dark: textTertiaryDark)
+    static let surfacePrimary = dynamicColor(light: surfacePrimaryLight, dark: surfacePrimaryDark)
+    static let surfaceElevated = dynamicColor(light: surfaceElevatedLight, dark: surfaceElevatedDark)
+    static let accentPrimary = dynamicColor(light: accentPrimaryLight, dark: accentPrimaryDark)
+    static let statePositive = dynamicColor(light: statePositiveLight, dark: statePositiveDark)
+    static let stateNeutral = dynamicColor(light: stateNeutralLight, dark: stateNeutralDark)
+    static let stateNegative = dynamicColor(light: stateNegativeLight, dark: stateNegativeDark)
+
+    static let surfaceBackground = surfacePrimary
+    static let primaryText = textPrimary
+    static let secondaryText = textSecondary
+    static let tertiaryText = textTertiary
+    static let systemAccent = accentPrimary
+    static let systemAccentMuted = tintedSurface(using: accentPrimary, lightAmount: 0.18, darkAmount: 0.24)
+    static let systemAccentSuccessBackground = tintedSurface(using: statePositive, lightAmount: 0.16, darkAmount: 0.22)
 
     static func widgetAccentSoft(accent: Color) -> Color {
-        accent.opacity(0.12)
+        tintedSurface(using: accent, lightAmount: 0.14, darkAmount: 0.22)
     }
 
     static func widgetAccentStrong(accent: Color) -> Color {
-        accent.opacity(0.88)
+        emphasizedAccent(accent, lightAmount: 0.18, darkAmount: 0.1)
     }
 
     static func statusBackground(accent: Color) -> Color {
-        accent.opacity(0.12)
+        tintedSurface(using: accent, lightAmount: 0.18, darkAmount: 0.24)
     }
 
     static func statusText(accent: Color) -> Color {
-        accent.opacity(0.92)
+        emphasizedAccent(accent, lightAmount: 0.28, darkAmount: 0.14)
     }
 
-    static let habitName = tertiaryText
-    static let score = primaryText
-    static let emptyPrimary = primaryText
-    static let mediumRowName = primaryText
-    static let mediumCompletedRowName = primaryText.opacity(0.92)
-    static let mediumProgressTrack = primaryText.opacity(0.18)
-    static let completionGlyph = Color.white.opacity(0.92)
-    static let fallbackAccent = Color.secondary
-    static let placeholderFill = primaryText.opacity(0.08)
-    static let placeholderCore = primaryText.opacity(0.18)
+    static let habitName = textSecondary
+    static let score = textPrimary
+    static let emptyPrimary = textPrimary
+    static let mediumProgressTrack = tintedSurface(using: textSecondary, lightAmount: 0.18, darkAmount: 0.24)
+    static let fallbackAccent = accentPrimary
+    static let placeholderFill = tintedSurface(using: textSecondary, lightAmount: 0.14, darkAmount: 0.2)
+    static let placeholderCore = tintedSurface(using: textSecondary, lightAmount: 0.54, darkAmount: 0.6)
+    static let systemConsistencyTrack = surfaceElevated
 
-    static func mediumRowName(isCompleteToday: Bool) -> Color {
-        isCompleteToday ? mediumCompletedRowName : mediumRowName
+    static func mediumRowName(isPrimaryRow: Bool) -> Color {
+        isPrimaryRow ? textPrimary : textSecondary
     }
 
     static func mediumIcon(accent: Color, isPrimaryRow: Bool, isCompleteToday: Bool) -> Color {
         if isCompleteToday {
-            return accent.opacity(isPrimaryRow ? 0.7 : 0.56)
+            return isPrimaryRow
+                ? emphasizedAccent(accent, lightAmount: 0.22, darkAmount: 0.12)
+                : emphasizedAccent(accent, lightAmount: 0.34, darkAmount: 0.2)
         }
 
-        return accent.opacity(isPrimaryRow ? 0.56 : 0.4)
+        return isPrimaryRow
+            ? emphasizedAccent(accent, lightAmount: 0.14, darkAmount: 0.08)
+            : tintedAccent(accent, lightAmount: 0.34, darkAmount: 0.2)
     }
 
-    static func mediumCompletionShadow(accent: Color) -> Color {
-        accent.opacity(0.16)
+    static func completionGlyph(accent: Color) -> Color {
+        accessibleForeground(for: widgetAccentStrong(accent: accent))
     }
-
-    static let systemConsistencyTrack = systemAccentMuted
 
     static func systemConsistencyFill(intensity: Int) -> Color {
-        intensity > 0 ? systemAccent : .clear
+        switch intensity {
+        case 1:
+            return tintedSurface(using: accentPrimary, lightAmount: 0.26, darkAmount: 0.32)
+        case 2:
+            return tintedSurface(using: accentPrimary, lightAmount: 0.42, darkAmount: 0.48)
+        case 3:
+            return tintedSurface(using: accentPrimary, lightAmount: 0.62, darkAmount: 0.68)
+        case 4...:
+            return accentPrimary
+        default:
+            return .clear
+        }
     }
 
     static func momentumStateText(_ state: WidgetMomentumState) -> Color {
-        Color(
-            uiColor: UIColor { traitCollection in
-                switch state {
-                case .slipping:
-                    return traitCollection.userInterfaceStyle == .dark
-                        ? momentumSlippingDark
-                        : momentumSlippingLight
-                case .steady:
-                    return traitCollection.userInterfaceStyle == .dark
-                        ? momentumSteadyDark
-                        : momentumSteadyLight
-                case .building:
-                    return traitCollection.userInterfaceStyle == .dark
-                        ? momentumBuildingDark
-                        : momentumBuildingLight
-                }
-            }
-        )
+        switch state {
+        case .slipping:
+            return stateNegative
+        case .steady:
+            return stateNeutral
+        case .building:
+            return statePositive
+        }
     }
 
     static func momentumDirectionText(_ direction: WidgetMomentumDirection) -> Color {
         switch direction {
         case .improving:
-            return momentumStateText(.building).opacity(0.82)
+            return lightlyTintedText(using: statePositive)
         case .stable:
-            return secondaryText
+            return textSecondary
         case .declining:
-            return momentumStateText(.slipping).opacity(0.82)
+            return lightlyTintedText(using: stateNegative)
         case .unavailable:
-            return tertiaryText
+            return textTertiary
         }
+    }
+
+    private static func dynamicColor(light: UIColor, dark: UIColor) -> Color {
+        Color(
+            uiColor: UIColor { traitCollection in
+                switch traitCollection.userInterfaceStyle {
+                case .dark:
+                    return dark
+                default:
+                    return light
+                }
+            }
+        )
+    }
+
+    private static func emphasizedAccent(_ accent: Color, lightAmount: CGFloat, darkAmount: CGFloat) -> Color {
+        Color(
+            uiColor: UIColor { traitCollection in
+                let accentColor = UIColor(accent).resolvedColor(with: traitCollection)
+                switch traitCollection.userInterfaceStyle {
+                case .dark:
+                    return accentColor.mixed(with: textPrimaryDark, amount: darkAmount)
+                default:
+                    return accentColor.mixed(with: textPrimaryLight, amount: lightAmount)
+                }
+            }
+        )
+    }
+
+    private static func tintedAccent(_ accent: Color, lightAmount: CGFloat, darkAmount: CGFloat) -> Color {
+        Color(
+            uiColor: UIColor { traitCollection in
+                let accentColor = UIColor(accent).resolvedColor(with: traitCollection)
+                switch traitCollection.userInterfaceStyle {
+                case .dark:
+                    return accentColor.mixed(with: textSecondaryDark, amount: darkAmount)
+                default:
+                    return accentColor.mixed(with: textSecondaryLight, amount: lightAmount)
+                }
+            }
+        )
+    }
+
+    private static func tintedSurface(using tint: Color, lightAmount: CGFloat, darkAmount: CGFloat) -> Color {
+        Color(
+            uiColor: UIColor { traitCollection in
+                let tintColor = UIColor(tint).resolvedColor(with: traitCollection)
+                switch traitCollection.userInterfaceStyle {
+                case .dark:
+                    return surfaceElevatedDark.mixed(with: tintColor, amount: darkAmount)
+                default:
+                    return surfaceElevatedLight.mixed(with: tintColor, amount: lightAmount)
+                }
+            }
+        )
+    }
+
+    private static func lightlyTintedText(using tint: Color) -> Color {
+        Color(
+            uiColor: UIColor { traitCollection in
+                let tintColor = UIColor(tint).resolvedColor(with: traitCollection)
+                switch traitCollection.userInterfaceStyle {
+                case .dark:
+                    return textSecondaryDark.mixed(with: tintColor, amount: 0.28)
+                default:
+                    return textSecondaryLight.mixed(with: tintColor, amount: 0.22)
+                }
+            }
+        )
+    }
+
+    private static func accessibleForeground(for fill: Color) -> Color {
+        Color(
+            uiColor: UIColor { traitCollection in
+                let resolvedFill = UIColor(fill).resolvedColor(with: traitCollection)
+                return resolvedFill.relativeLuminance > 0.5 ? textPrimaryLight : textPrimaryDark
+            }
+        )
     }
 }
 
@@ -269,6 +303,7 @@ struct WidgetScoreText: View {
         Text("\(score)%")
             .font(WidgetTypography.score)
             .monospacedDigit()
+            .tracking(-1.2)
             .minimumScaleFactor(0.7)
             .lineLimit(1)
             .allowsTightening(true)
@@ -304,8 +339,8 @@ struct WidgetStatusPillStyle {
 
     static func momentumZero(accent: Color) -> WidgetStatusPillStyle {
         WidgetStatusPillStyle(
-            foregroundColor: accent.opacity(0.8),
-            backgroundColor: accent.opacity(0.08)
+            foregroundColor: WidgetColors.statusText(accent: accent),
+            backgroundColor: WidgetColors.statusBackground(accent: accent)
         )
     }
 }
@@ -385,17 +420,11 @@ struct WidgetCompletionDot: View {
 
     var body: some View {
         Circle()
-            .fill(accent)
-            .shadow(
-                color: WidgetColors.mediumCompletionShadow(accent: accent),
-                radius: style.completionShadowRadius,
-                x: 0,
-                y: 0
-            )
+            .fill(WidgetColors.widgetAccentStrong(accent: accent))
             .overlay {
                 Image(systemName: "checkmark")
                     .font(style.completionCheckFont)
-                    .foregroundStyle(WidgetColors.completionGlyph)
+                    .foregroundStyle(WidgetColors.completionGlyph(accent: accent))
             }
             .frame(width: style.size, height: style.size)
     }
@@ -410,7 +439,7 @@ struct WidgetSystemCompletionBadge: View {
             .overlay {
                 Image(systemName: "checkmark")
                     .font(style.completionCheckFont)
-                    .foregroundStyle(WidgetColors.systemAccent)
+                    .foregroundStyle(WidgetColors.statePositive)
             }
             .frame(width: style.size, height: style.size)
     }
@@ -429,7 +458,7 @@ struct WidgetProgressRing: View {
             Circle()
                 .trim(from: 0, to: min(max(progress, 0), 1))
                 .stroke(
-                    accent,
+                    WidgetColors.widgetAccentStrong(accent: accent),
                     style: StrokeStyle(lineWidth: style.lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -455,35 +484,9 @@ struct WidgetPlaceholderIndicator: View {
 }
 
 struct WidgetSurfaceBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         RoundedRectangle(cornerRadius: WidgetMetrics.widgetCornerRadius, style: .continuous)
             .fill(WidgetColors.surfaceBackground)
-            .shadow(
-                color: Color.black.opacity(surfaceShadowOpacity),
-                radius: surfaceShadowRadius,
-                x: 0,
-                y: surfaceShadowYOffset
-            )
-    }
-
-    private var surfaceShadowOpacity: Double {
-        colorScheme == .dark
-            ? WidgetMetrics.darkSurfaceShadowOpacity
-            : WidgetMetrics.lightSurfaceShadowOpacity
-    }
-
-    private var surfaceShadowRadius: CGFloat {
-        colorScheme == .dark
-            ? WidgetMetrics.darkSurfaceShadowRadius
-            : WidgetMetrics.lightSurfaceShadowRadius
-    }
-
-    private var surfaceShadowYOffset: CGFloat {
-        colorScheme == .dark
-            ? WidgetMetrics.darkSurfaceShadowYOffset
-            : WidgetMetrics.lightSurfaceShadowYOffset
     }
 }
 
@@ -538,5 +541,51 @@ private extension Color {
         let green = Double((value >> 8) & 0xFF) / 255.0
         let blue = Double(value & 0xFF) / 255.0
         self = Color(red: red, green: green, blue: blue)
+    }
+}
+
+private extension UIColor {
+    func mixed(with color: UIColor, amount: CGFloat) -> UIColor {
+        let clampedAmount = min(max(amount, 0), 1)
+        let source = resolvedSRGBComponents
+        let target = color.resolvedSRGBComponents
+
+        return UIColor(
+            red: source.red + (target.red - source.red) * clampedAmount,
+            green: source.green + (target.green - source.green) * clampedAmount,
+            blue: source.blue + (target.blue - source.blue) * clampedAmount,
+            alpha: source.alpha + (target.alpha - source.alpha) * clampedAmount
+        )
+    }
+
+    var relativeLuminance: CGFloat {
+        let components = resolvedSRGBComponents
+
+        func convert(_ component: CGFloat) -> CGFloat {
+            if component <= 0.03928 {
+                return component / 12.92
+            }
+
+            return pow((component + 0.055) / 1.055, 2.4)
+        }
+
+        let red = convert(components.red)
+        let green = convert(components.green)
+        let blue = convert(components.blue)
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    private var resolvedSRGBComponents: (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        if getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return (red, green, blue, alpha)
+        }
+
+        let converted = CIColor(color: self)
+        return (converted.red, converted.green, converted.blue, converted.alpha)
     }
 }

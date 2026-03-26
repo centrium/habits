@@ -80,28 +80,30 @@ private struct HabitMomentumCard: View {
     }
 
     var body: some View {
-        VStack(spacing: WidgetSpacing.verticalStack) {
+        VStack(spacing: WidgetSpacing.momentumClusterSpacing) {
             Text(habit.name)
                 .font(WidgetTypography.tertiary)
                 .foregroundStyle(WidgetColors.habitName)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
 
-            WidgetScoreText(score: momentum.score)
+            VStack(spacing: WidgetSpacing.momentumTextSpacing) {
+                WidgetScoreText(score: momentum.score)
 
-            VStack(spacing: 3) {
-                Text(momentum.state.rawValue)
-                    .font(WidgetTypography.momentumState)
-                    .foregroundStyle(WidgetColors.momentumStateText(momentum.state))
-                    .lineLimit(1)
+                VStack(spacing: WidgetSpacing.momentumTextSpacing) {
+                    Text(momentum.state.rawValue)
+                        .font(WidgetTypography.momentumState)
+                        .foregroundStyle(WidgetColors.momentumStateText(momentum.state))
+                        .lineLimit(1)
 
-                Text(momentum.direction.summaryText)
-                    .font(WidgetTypography.momentumTrend)
-                    .foregroundStyle(WidgetColors.momentumDirectionText(momentum.direction))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    Text(momentum.direction.summaryText)
+                        .font(WidgetTypography.momentumTrend)
+                        .foregroundStyle(WidgetColors.momentumDirectionText(momentum.direction))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .contentTransition(.opacity)
             }
-            .contentTransition(.opacity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(WidgetSpacing.containerPadding)

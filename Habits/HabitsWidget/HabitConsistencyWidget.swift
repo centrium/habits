@@ -73,7 +73,7 @@ struct HabitConsistencyWidgetEntryView: View {
                 VStack(alignment: .leading, spacing: WidgetSpacing.verticalStack) {
                     Text("Consistency")
                         .font(WidgetTypography.consistencyLabel)
-                        .foregroundStyle(WidgetColors.tertiaryText)
+                        .foregroundStyle(WidgetColors.secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .allowsTightening(true)
@@ -83,7 +83,7 @@ struct HabitConsistencyWidgetEntryView: View {
 
                     Text(entry.snapshot.summaryText)
                         .font(WidgetTypography.consistencySummary)
-                        .foregroundStyle(WidgetColors.secondaryText)
+                        .foregroundStyle(WidgetColors.primaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)

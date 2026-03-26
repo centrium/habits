@@ -91,6 +91,7 @@ private struct HabitWidgetRow: View {
                 .font(WidgetTypography.mediumRowSymbol)
                 .foregroundStyle(iconColor)
                 .frame(width: WidgetSpacing.mediumIconWidth, height: WidgetSpacing.mediumIconWidth)
+                .offset(y: WidgetSpacing.opticalIconLift)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(habit.name)
@@ -112,9 +113,9 @@ private struct HabitWidgetRow: View {
 
             WidgetHabitIndicator(habit: habit, accent: accentColor, style: .medium)
                 .frame(width: WidgetSpacing.mediumIndicatorColumnWidth, alignment: .trailing)
+                .offset(y: WidgetSpacing.opticalIconLift)
         }
         .frame(maxWidth: .infinity, minHeight: WidgetSpacing.mediumRowHeight, alignment: .leading)
-        .opacity(rowOpacity)
     }
 
     private var accentColor: Color {
@@ -126,7 +127,7 @@ private struct HabitWidgetRow: View {
     }
 
     private var nameColor: Color {
-        WidgetColors.mediumRowName(isCompleteToday: habit.isCompleteToday)
+        WidgetColors.mediumRowName(isPrimaryRow: isPrimaryRow)
     }
 
     private var nameFont: Font {
@@ -139,10 +140,6 @@ private struct HabitWidgetRow: View {
             isPrimaryRow: isPrimaryRow,
             isCompleteToday: habit.isCompleteToday
         )
-    }
-
-    private var rowOpacity: Double {
-        isPrimaryRow ? WidgetMetrics.mediumPrimaryRowOpacity : WidgetMetrics.mediumSecondaryRowOpacity
     }
 }
 

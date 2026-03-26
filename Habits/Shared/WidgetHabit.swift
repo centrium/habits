@@ -235,11 +235,11 @@ enum WidgetMomentumDirection: Equatable {
     var summaryText: String {
         switch self {
         case .improving(let deltaPercent):
-            return "Up \(deltaPercent)% vs prior 7d"
+            return "↑ \(deltaPercent)% vs last 7 days"
         case .stable:
-            return "Flat vs prior 7d"
+            return "No change vs last 7 days"
         case .declining(let deltaPercent):
-            return "Down \(deltaPercent)% vs prior 7d"
+            return "↓ \(deltaPercent)% vs last 7 days"
         case .unavailable:
             return "Need 14 days"
         }
@@ -457,23 +457,33 @@ private extension WidgetHabit {
 extension WidgetHabit {
     var momentumSummary: WidgetMomentumSummary {
         let score = max(momentumScore, 0)
+        let direction = momentumDirection
         return WidgetMomentumSummary(
             score: score,
-            state: momentumState(for: score),
-            direction: momentumDirection
+            state: momentumState(for: score, direction: direction),
+            direction: direction
         )
     }
 }
 
 private extension WidgetHabit {
-    func momentumState(for score: Int) -> WidgetMomentumState {
-        switch score {
-        case 75...:
+    func momentumState(for score: Int, direction: WidgetMomentumDirection) -> WidgetMomentumState {
+        switch direction {
+        case .improving:
             return .building
-        case 40...:
+        case .stable:
             return .steady
-        default:
+        case .declining:
             return .slipping
+        case .unavailable:
+            switch score {
+            case 75...:
+                return .building
+            case 40...:
+                return .steady
+            default:
+                return .slipping
+            }
         }
     }
 
