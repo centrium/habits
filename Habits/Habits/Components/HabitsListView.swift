@@ -42,12 +42,22 @@ struct HabitsListView: View {
     init() {}
 
     var body: some View {
-        Button("Toggle Premium (Debug)") {
-            purchaseService.premiumStatus =
-                purchaseService.premiumStatus == .premium ? .free : .premium
-        }
         NavigationStack {
             List {
+                if let premiumInsightsSummary {
+                    PremiumInsightsStripView(summary: premiumInsightsSummary)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 4,
+                                leading: 16,
+                                bottom: 6,
+                                trailing: 16
+                            )
+                        )
+                }
+
                 ForEach(habits) { habit in
                     HabitCard(habit: habit)
                         .listRowSeparator(.hidden)
@@ -97,7 +107,9 @@ struct HabitsListView: View {
                 Text(HabitDeletionConfirmationState.message(for: habit))
             }
             .listStyle(.plain)
-            .navigationTitle("Habits")
+            .contentMargins(.top, 12, for: .scrollContent)
+            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle(HabitsListTitleCopy.baseTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     EditButton()
@@ -116,7 +128,7 @@ struct HabitsListView: View {
                     Button {
                         addHabit()
                     } label: {
-                        Label("Add Habit", systemImage: "plus")
+                        Label("Add", systemImage: "plus")
                     }
 
                     Spacer()
@@ -143,6 +155,11 @@ struct HabitsListView: View {
                     .presentationDragIndicator(.visible)
                     .presentationCornerRadius(24)
                 }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if purchaseService.isPremiumUnlocked {
+                PremiumTitleUnderline()
             }
         }
         .environmentObject(userSettings)
@@ -175,6 +192,55 @@ struct HabitsListView: View {
         HabitLimitPolicy(
             habitCount: habits.count,
             hasUnlimitedHabitsAccess: purchaseService.hasAccess(to: .unlimitedHabits)
+        )
+    }
+
+    private var premiumInsightsSummary: PremiumInsightsStripSummary? {
+        guard purchaseService.isPremiumUnlocked, !habits.isEmpty else {
+            return nil
+        }
+
+        let now = Date()
+        let momentumService = MomentumScoreService(
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
+        let insightsService = HabitInsightsService(calendar: calculationCalendar)
+
+        let momentumScores = habits.map { habit in
+            momentumService.score(for: habit, now: now)
+        }
+        let consistencyScores = habits.map { habit in
+            insightsService.snapshot(for: habit, now: now).consistency
+        }
+        let atRiskCount = habits.reduce(into: 0) { count, habit in
+            let riskScore = PerformanceSignalsCalculator.habitRiskScore(
+                for: habit,
+                calendar: calculationCalendar,
+                now: now
+            )
+            if riskScore >= 0.5 {
+                count += 1
+            }
+        }
+
+        let averageMomentum = Int(
+            (
+                Double(momentumScores.reduce(0, +)) /
+                Double(max(momentumScores.count, 1))
+            ).rounded()
+        )
+        let averageConsistency = Int(
+            (
+                Double(consistencyScores.reduce(0, +)) /
+                Double(max(consistencyScores.count, 1))
+            ).rounded()
+        )
+
+        return PremiumInsightsStripCopy.summary(
+            momentum: averageMomentum,
+            consistency: averageConsistency,
+            atRiskCount: atRiskCount
         )
     }
 
@@ -254,6 +320,10 @@ struct HabitsListView: View {
     }
 }
 
+enum HabitsListTitleCopy {
+    static let baseTitle = "Cadence"
+}
+
 enum HabitDeletionConfirmationState {
     static func isPresentedBinding(for pendingHabit: Binding<Habit?>) -> Binding<Bool> {
         Binding(
@@ -282,6 +352,136 @@ private struct UpgradeHintRow: View {
         }
         .foregroundStyle(.secondary)
         .padding(.vertical, 4)
+    }
+}
+
+private struct PremiumInsightsStripSummary {
+    let primaryLabel: String
+    let primaryValue: String
+    let secondaryLabel: String
+    let secondaryValue: String
+    let secondarySuffix: String?
+}
+
+private enum PremiumInsightsStripCopy {
+    static func summary(momentum: Int, consistency: Int, atRiskCount: Int) -> PremiumInsightsStripSummary {
+        PremiumInsightsStripSummary(
+            primaryLabel: "Momentum ",
+            primaryValue: "\(momentum)%",
+            secondaryLabel: "Consistency ",
+            secondaryValue: "\(consistency)%",
+            secondarySuffix: secondarySuffix(for: atRiskCount)
+        )
+    }
+
+    private static func secondarySuffix(for atRiskCount: Int) -> String? {
+        switch atRiskCount {
+        case 0:
+            return "Steady today"
+        case 1:
+            return "1 needs attention"
+        default:
+            return "\(atRiskCount) need attention"
+        }
+    }
+}
+
+private struct PremiumInsightsStripView: View {
+    let summary: PremiumInsightsStripSummary
+    private let accentColor = Color.systemAccent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            LinearGradient(
+                colors: [
+                    accentColor.opacity(0.28),
+                    accentColor.opacity(0.12),
+                    .clear
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 5)
+            .clipShape(Capsule())
+
+            VStack(alignment: .leading, spacing: 5) {
+                (
+                    Text(summary.primaryLabel)
+                        .foregroundStyle(.primary) +
+                    Text(summary.primaryValue)
+                        .foregroundStyle(accentColor)
+                )
+                    .font(.headline)
+                    .lineLimit(1)
+
+                secondaryLine
+                    .font(.caption)
+                    .lineSpacing(1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(accentColor.opacity(0.04))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    accentColor.opacity(0.22),
+                                    accentColor.opacity(0.08),
+                                    .clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+        )
+        .shadow(color: accentColor.opacity(0.12), radius: 8, y: 2)
+    }
+
+    private var secondaryLine: Text {
+        var line =
+            Text(summary.secondaryLabel)
+            .foregroundStyle(.secondary) +
+            Text(summary.secondaryValue)
+            .foregroundStyle(accentColor)
+
+        if let secondarySuffix = summary.secondarySuffix {
+            line = line +
+                Text(" · ")
+                .foregroundStyle(.secondary) +
+                Text(secondarySuffix)
+                .foregroundStyle(.secondary)
+        }
+
+        return line
+    }
+}
+
+private struct PremiumTitleUnderline: View {
+    private let underlineWidth: CGFloat = 60
+    private let underlineHeight: CGFloat = 2.5
+
+    var body: some View {
+        GeometryReader { geometry in
+            Rectangle()
+                .fill(Color.systemAccent.opacity(0.6))
+                .frame(width: underlineWidth, height: underlineHeight)
+                .offset(x: 20, y: geometry.safeAreaInsets.top + 46)
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -315,7 +515,7 @@ private struct LockedHabitSlotCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Unlimited habits with Premium")
+                Text("Unlock unlimited habits")
                     .font(.headline)
                     .foregroundStyle(.primary)
 

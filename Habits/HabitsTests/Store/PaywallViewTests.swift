@@ -15,9 +15,9 @@ final class PaywallViewTests: XCTestCase {
         }
 
         XCTAssertEqual(titles[0], "Unlock Advanced Insights")
-        XCTAssertEqual(titles[1], "Track Unlimited Habits")
-        XCTAssertEqual(titles[2], "Unlock Your Full Habit History")
-        XCTAssertEqual(titles[3], "Export Your Habit Data")
+        XCTAssertEqual(titles[1], "Track Unlimited Cadences")
+        XCTAssertEqual(titles[2], "Unlock Your Full Cadence History")
+        XCTAssertEqual(titles[3], "Export Your Cadence Data")
         XCTAssertEqual(titles[4], "Stay consistent throughout the day")
         XCTAssertEqual(titles[5], "Upgrade to Premium")
     }
@@ -74,7 +74,7 @@ final class PaywallViewTests: XCTestCase {
         XCTAssertEqual(previewDetails[0].0, .advancedInsights)
         XCTAssertEqual(previewDetails[0].1, ["Momentum Score", "Habit Strength", "Risk Indicator"])
         XCTAssertEqual(previewDetails[1].0, .unlimitedHabits)
-        XCTAssertEqual(previewDetails[1].1, ["Habit 4", "Habit 5", "Habit 6"])
+        XCTAssertEqual(previewDetails[1].1, ["Cadence 4", "Cadence 5", "Cadence 6"])
         XCTAssertEqual(previewDetails[2].0, .fullHeatmapHistory)
         XCTAssertEqual(previewDetails[3].0, .dataExport)
         XCTAssertEqual(previewDetails[3].1, ["CSV Export", "Last Export: -"])

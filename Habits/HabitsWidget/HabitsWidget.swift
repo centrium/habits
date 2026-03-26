@@ -159,7 +159,7 @@ struct HabitsWidget: Widget {
                 .widgetSurface()
         }
         .configurationDisplayName("Cadence: Today")
-        .description("Your key habits at a glance.")
+        .description("Your key cadences at a glance.")
         .supportedFamilies([.systemMedium])
     }
 }

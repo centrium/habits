@@ -52,7 +52,7 @@ struct AddHabitSheet: View {
                 reminders: $reminders,
                 palette: palette,
             )
-            .navigationTitle("New Habit")
+            .navigationTitle("New")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     DismissButton()

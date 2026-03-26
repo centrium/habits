@@ -72,7 +72,7 @@ struct EditHabitSheet: View {
                     showDeleteConfirmation = true
                 }
             )
-            .navigationTitle("Edit Habit")
+            .navigationTitle("Edit")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     DismissButton()

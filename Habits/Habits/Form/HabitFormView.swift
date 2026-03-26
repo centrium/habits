@@ -197,7 +197,7 @@ struct HabitFormView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    Picker("Cadence", selection: $goalPeriod) {
+                    Picker("Repeat", selection: $goalPeriod) {
                         ForEach(GoalPeriod.allCases) { type in
                             Text(type.label).tag(type)
                         }

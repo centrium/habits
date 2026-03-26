@@ -66,6 +66,20 @@ struct SettingsView: View {
                 }
             }
 
+            if purchaseService.isPremiumUnlocked {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Premium Unlocked")
+                            .font(.headline)
+
+                        Text("Thank you for supporting Cadence.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
             Section("Insights") {
                 Toggle(isOn: $userSettings.greigModeEnabled) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -165,14 +179,18 @@ struct SettingsView: View {
                     HStack {
                         Label("Export Data", systemImage: "square.and.arrow.up")
                         Spacer()
-                        if !purchaseService.hasAccess(to: .dataExport) {
-                            Text("Premium")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 }
             }
+
+            #if DEBUG
+            Section("Debug") {
+                Button("Toggle Premium (Debug)") {
+                    purchaseService.premiumStatus =
+                        purchaseService.premiumStatus == .premium ? .free : .premium
+                }
+            }
+            #endif
         }
         .navigationTitle("Settings")
         .sheet(item: $sharePayload) { payload in

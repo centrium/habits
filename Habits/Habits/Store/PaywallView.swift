@@ -80,7 +80,7 @@ struct PaywallView: View {
         case .advancedInsights:
             title = "Unlock Advanced Insights"
         case .unlimitedHabits:
-            title = "Unlock Unlimited Habits"
+            title = "Unlock Unlimited Cadences"
         case .fullHeatmapHistory:
             title = "Unlock Full History"
         case .dataExport:
@@ -107,11 +107,11 @@ struct PaywallView: View {
         case .advancedInsights:
             return "Unlock Advanced Insights"
         case .unlimitedHabits:
-            return "Track Unlimited Habits"
+            return "Track Unlimited Cadences"
         case .fullHeatmapHistory:
-            return "Unlock Your Full Habit History"
+            return "Unlock Your Full Cadence History"
         case .dataExport:
-            return "Export Your Habit Data"
+            return "Export Your Cadence Data"
         case .multipleReminders:
             return title(for: PaywallContext.multipleReminders)
         case nil:
@@ -135,14 +135,14 @@ struct PaywallView: View {
             BenefitContent(
                 feature: .unlimitedHabits,
                 icon: "infinity",
-                title: "Unlimited Habits",
-                description: "Track as many habits as you like."
+                title: "Unlimited Cadences",
+                description: "Track as many cadences as you like."
             ),
             BenefitContent(
                 feature: .advancedInsights,
                 icon: "sparkles",
                 title: "Advanced Insights",
-                description: "Understand momentum, risk, and habit strength."
+                description: "Understand momentum, risk, and pattern strength."
             ),
             BenefitContent(
                 feature: .fullHeatmapHistory,
@@ -154,13 +154,13 @@ struct PaywallView: View {
                 feature: .dataExport,
                 icon: "square.and.arrow.up",
                 title: "Data Export",
-                description: "Export your habit data whenever you need."
+                description: "Export your cadence data whenever you need."
             ),
             BenefitContent(
                 feature: .multipleReminders,
                 icon: "bell.badge",
                 title: "Multiple reminders to stay on track throughout the day",
-                description: "Add more than one reminder to reinforce a habit when it matters."
+                description: "Add more than one reminder to reinforce a cadence when it matters."
             )
         ]
 
@@ -201,8 +201,8 @@ struct PaywallView: View {
         case .unlimitedHabits:
             return PreviewContent(
                 kind: .unlimitedHabits,
-                title: "More Habits",
-                rows: ["Habit 4", "Habit 5", "Habit 6"]
+                title: "More Cadences",
+                rows: ["Cadence 4", "Cadence 5", "Cadence 6"]
             )
         case .fullHeatmapHistory:
             return PreviewContent(
@@ -505,7 +505,7 @@ private extension PaywallView {
 
     func previewListCard(rows: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("More Habits")
+            Text("More Cadences")
                 .font(.subheadline.weight(.semibold))
 
             ForEach(rows, id: \.self) { row in
@@ -629,9 +629,9 @@ private extension PaywallView {
     var description: String {
         switch context {
         case .multipleReminders:
-            return "Add multiple reminders to reinforce your habits without missing the moments that matter."
+            return "Add multiple reminders to reinforce your cadence without missing the moments that matter."
         case .dataExport:
-            return "Download your habit data anytime."
+            return "Download your cadence data anytime."
         case .general:
             break
         }
@@ -639,22 +639,22 @@ private extension PaywallView {
         switch feature {
 
         case .advancedInsights:
-            return "See deeper behavioural analytics about your habits."
+            return "See deeper behavioural analytics about your cadence."
 
         case .unlimitedHabits:
-            return "Remove the 3-habit limit and track as many habits as you want."
+            return "Remove the 3-cadence limit and track as many cadences as you want."
 
         case .fullHeatmapHistory:
             return "View your complete 365-day heatmap history."
 
         case .dataExport:
-            return "Export your habit data for backup or analysis."
+            return "Export your cadence data for backup or analysis."
 
         case .multipleReminders:
-            return "Add multiple reminders to reinforce your habits without missing the moments that matter."
+            return "Add multiple reminders to reinforce your cadence without missing the moments that matter."
 
         case nil:
-            return "Get more out of your habits with premium features."
+            return "Get more out of your cadence with premium features."
         }
     }
 }
