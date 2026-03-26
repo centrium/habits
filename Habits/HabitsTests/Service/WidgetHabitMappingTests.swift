@@ -204,7 +204,7 @@ final class WidgetHabitMappingTests: XCTestCase {
         )
 
         XCTAssertEqual(widgetHabit.heatmapAggregationKind, .count)
-        XCTAssertEqual(widgetHabit.recentActivity.count, 7)
+        XCTAssertEqual(widgetHabit.recentActivity.count, 14)
         XCTAssertEqual(activityValue(on: date, in: widgetHabit, calendar: calendar), 2)
         XCTAssertEqual(activityValue(on: previousDay, in: widgetHabit, calendar: calendar), 1)
     }
@@ -223,7 +223,7 @@ final class WidgetHabitMappingTests: XCTestCase {
         )
 
         XCTAssertEqual(widgetHabit.heatmapAggregationKind, .completion)
-        XCTAssertEqual(widgetHabit.recentActivity.count, 7)
+        XCTAssertEqual(widgetHabit.recentActivity.count, 14)
         XCTAssertEqual(activityValue(on: previousDay, in: widgetHabit, calendar: calendar), 1)
         XCTAssertEqual(activityValue(on: date, in: widgetHabit, calendar: calendar), 0)
     }

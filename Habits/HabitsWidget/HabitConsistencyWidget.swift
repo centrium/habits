@@ -18,7 +18,6 @@ struct HabitConsistencyProvider: TimelineProvider {
                 activeDayCount: previewDays.filter { $0.intensity > 0 }.count,
                 lastActiveDayIndex: previewDays.lastIndex(where: { $0.intensity > 0 })
             ),
-            accent: WidgetColors.fallbackAccent,
             hasHabits: true
         )
     }
@@ -40,15 +39,8 @@ struct HabitConsistencyProvider: TimelineProvider {
         HabitConsistencyEntry(
             date: date,
             snapshot: makeWidgetConsistencySnapshot(from: habits, referenceDate: date),
-            accent: resolveAccent(from: habits),
             hasHabits: !habits.isEmpty
         )
-    }
-
-    private func resolveAccent(from habits: [WidgetHabit]) -> Color {
-        selectFocusWidgetHabit(habits)?.widgetAccentColor ??
-        habits.first?.widgetAccentColor ??
-        WidgetColors.fallbackAccent
     }
 
     private var previewDays: [WidgetHeatmapDay] {
@@ -69,7 +61,6 @@ struct HabitConsistencyProvider: TimelineProvider {
 struct HabitConsistencyEntry: TimelineEntry {
     let date: Date
     let snapshot: WidgetConsistencySnapshot
-    let accent: Color
     let hasHabits: Bool
 }
 
@@ -81,17 +72,17 @@ struct HabitConsistencyWidgetEntryView: View {
             if entry.hasHabits {
                 VStack(alignment: .leading, spacing: WidgetSpacing.verticalStack) {
                     Text("Consistency")
-                        .font(WidgetTypography.primary)
-                        .foregroundStyle(WidgetColors.score)
+                        .font(WidgetTypography.consistencyLabel)
+                        .foregroundStyle(WidgetColors.tertiaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.65)
+                        .minimumScaleFactor(0.8)
                         .allowsTightening(true)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    WidgetHeatmapStrip(days: entry.snapshot.days, accent: entry.accent)
+                    WidgetHeatmapStrip(days: entry.snapshot.days)
 
                     Text(entry.snapshot.summaryText)
-                        .font(WidgetTypography.secondary)
+                        .font(WidgetTypography.consistencySummary)
                         .foregroundStyle(WidgetColors.secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -108,13 +99,13 @@ struct HabitConsistencyWidgetEntryView: View {
 private struct HabitConsistencyEmptyState: View {
     var body: some View {
         VStack(spacing: WidgetSpacing.verticalStack) {
-            Text("No activity yet")
+            Text("No habits yet")
                 .font(WidgetTypography.primary)
                 .foregroundStyle(WidgetColors.emptyPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
-            Text("Start building consistency")
+            Text("Add a habit")
                 .font(WidgetTypography.secondary)
                 .foregroundStyle(WidgetColors.secondaryText)
                 .lineLimit(2)
@@ -130,12 +121,8 @@ struct HabitConsistencyWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: HabitConsistencyProvider()) { entry in
-            if #available(iOS 17.0, *) {
-                HabitConsistencyWidgetEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
-            } else {
-                HabitConsistencyWidgetEntryView(entry: entry)
-            }
+            HabitConsistencyWidgetEntryView(entry: entry)
+                .widgetSurface()
         }
         .configurationDisplayName("Cadence: Consistency")
         .description("Your recent activity.")

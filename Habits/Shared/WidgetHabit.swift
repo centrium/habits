@@ -220,16 +220,36 @@ struct WidgetHabit: Codable, Identifiable {
     }
 }
 
-enum WidgetMomentumState: String {
-    case startBuilding = "Start building"
-    case building = "Building"
-    case strong = "Strong"
+enum WidgetMomentumState: String, Equatable {
     case slipping = "Slipping"
+    case steady = "Steady"
+    case building = "Building"
 }
 
-struct WidgetMomentumSummary {
+enum WidgetMomentumDirection: Equatable {
+    case improving(deltaPercent: Int)
+    case stable
+    case declining(deltaPercent: Int)
+    case unavailable
+
+    var summaryText: String {
+        switch self {
+        case .improving(let deltaPercent):
+            return "Up \(deltaPercent)% vs prior 7d"
+        case .stable:
+            return "Flat vs prior 7d"
+        case .declining(let deltaPercent):
+            return "Down \(deltaPercent)% vs prior 7d"
+        case .unavailable:
+            return "Need 14 days"
+        }
+    }
+}
+
+struct WidgetMomentumSummary: Equatable {
     let score: Int
     let state: WidgetMomentumState
+    let direction: WidgetMomentumDirection
 }
 
 struct WidgetHeatmapDay: Equatable {
@@ -437,18 +457,62 @@ private extension WidgetHabit {
 extension WidgetHabit {
     var momentumSummary: WidgetMomentumSummary {
         let score = max(momentumScore, 0)
-        let state: WidgetMomentumState
-        if score == 0 {
-            state = .startBuilding
-        } else if score >= 80 {
-            state = .strong
-        } else if score >= 50 {
-            state = .building
-        } else {
-            state = .slipping
+        return WidgetMomentumSummary(
+            score: score,
+            state: momentumState(for: score),
+            direction: momentumDirection
+        )
+    }
+}
+
+private extension WidgetHabit {
+    func momentumState(for score: Int) -> WidgetMomentumState {
+        switch score {
+        case 75...:
+            return .building
+        case 40...:
+            return .steady
+        default:
+            return .slipping
+        }
+    }
+
+    var momentumDirection: WidgetMomentumDirection {
+        let comparisonSamples = Array(recentActivity.sorted { $0.date < $1.date }.suffix(14))
+        guard comparisonSamples.count >= 14 else { return .unavailable }
+
+        let previousWeek = Array(comparisonSamples.prefix(7))
+        let latestWeek = Array(comparisonSamples.suffix(7))
+
+        let peakActivity = comparisonSamples.map { max(0, $0.value) }.max() ?? 0
+        guard peakActivity > 0 else { return .stable }
+
+        let previousAverage = normalizedAverageActivity(for: previousWeek, peakActivity: peakActivity)
+        let latestAverage = normalizedAverageActivity(for: latestWeek, peakActivity: peakActivity)
+        let deltaPercent = Int(((latestAverage - previousAverage) * 100).rounded())
+
+        if deltaPercent >= 3 {
+            return .improving(deltaPercent: deltaPercent)
         }
 
-        return WidgetMomentumSummary(score: score, state: state)
+        if deltaPercent <= -3 {
+            return .declining(deltaPercent: abs(deltaPercent))
+        }
+
+        return .stable
+    }
+
+    func normalizedAverageActivity(
+        for samples: [WidgetActivitySample],
+        peakActivity: Double
+    ) -> Double {
+        guard !samples.isEmpty, peakActivity > 0 else { return 0 }
+
+        let total = samples.reduce(0.0) { partialResult, sample in
+            partialResult + min(max(sample.value, 0), peakActivity)
+        }
+
+        return total / (Double(samples.count) * peakActivity)
     }
 }
 
@@ -467,11 +531,11 @@ extension WidgetFocusState {
     var subtitleText: String {
         switch self {
         case .noHabits:
-            return "Start building your cadence"
+            return "Add a habit"
         case .allComplete(_, let completedCount):
-            return "\(completedCount)/\(completedCount) completed"
+            return "\(completedCount) completed today"
         case .needsAttention(let habit):
-            return habit.streak == 0 ? "Start your streak" : "Don't break streak (\(habit.streak))"
+            return habit.streak == 0 ? "Log today" : "Keep \(habit.streak)-day streak"
         }
     }
 }

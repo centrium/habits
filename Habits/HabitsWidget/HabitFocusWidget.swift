@@ -41,8 +41,8 @@ struct HabitFocusWidgetEntryView: View {
             case .needsAttention(let habit):
                 HabitFocusCard(habit: habit)
                     .widgetURL(habit.deepLinkURL)
-            case .allComplete(let primaryHabit, let completedCount):
-                HabitFocusAllDoneState(accent: primaryHabit.widgetAccentColor, completedCount: completedCount)
+            case .allComplete(_, let completedCount):
+                HabitFocusAllDoneState(completedCount: completedCount)
             case .noHabits:
                 HabitFocusEmptyState()
             }
@@ -61,8 +61,8 @@ private struct HabitFocusCard: View {
     var body: some View {
         VStack(spacing: WidgetSpacing.verticalStack) {
             Text(state.titleText)
-                .font(WidgetTypography.tertiary)
-                .foregroundStyle(WidgetColors.habitName)
+                .font(WidgetTypography.focusTitle)
+                .foregroundStyle(WidgetColors.primaryText)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
 
@@ -81,7 +81,6 @@ private struct HabitFocusCard: View {
 }
 
 private struct HabitFocusAllDoneState: View {
-    let accent: Color
     let completedCount: Int
 
     private var state: WidgetFocusState {
@@ -96,7 +95,7 @@ private struct HabitFocusAllDoneState: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
-            WidgetCompletionDot(accent: accent, style: .focusCelebration)
+            WidgetSystemCompletionBadge(style: .focusCelebration)
 
             Text(state.subtitleText)
                 .font(WidgetTypography.secondary)
@@ -136,12 +135,8 @@ struct HabitFocusWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: HabitFocusProvider()) { entry in
-            if #available(iOS 17.0, *) {
-                HabitFocusWidgetEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
-            } else {
-                HabitFocusWidgetEntryView(entry: entry)
-            }
+            HabitFocusWidgetEntryView(entry: entry)
+                .widgetSurface()
         }
         .configurationDisplayName("Cadence: Focus")
         .description("See what needs your attention today.")

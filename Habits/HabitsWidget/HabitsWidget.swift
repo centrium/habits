@@ -53,7 +53,7 @@ struct HabitsWidgetEntryView: View {
                     Text("No habits yet")
                         .font(WidgetTypography.mediumEmptyTitle)
                         .foregroundStyle(WidgetColors.emptyPrimary)
-                    Text("Add your first habit")
+                    Text("Add a habit")
                         .font(WidgetTypography.mediumEmptySubtitle)
                         .foregroundStyle(WidgetColors.secondaryText)
                         .lineLimit(2)
@@ -66,8 +66,7 @@ struct HabitsWidgetEntryView: View {
                         Link(destination: habit.deepLinkURL) {
                             HabitWidgetRow(
                                 habit: habit,
-                                isPrimaryRow: index == 0,
-                                showsDivider: index < displayedHabits.count - 1
+                                isPrimaryRow: index == 0
                             )
                         }
                         .buttonStyle(.plain)
@@ -85,46 +84,37 @@ struct HabitsWidgetEntryView: View {
 private struct HabitWidgetRow: View {
     let habit: WidgetHabit
     let isPrimaryRow: Bool
-    let showsDivider: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: WidgetSpacing.mediumRowContentSpacing) {
-                Image(systemName: habit.widgetSymbolName)
-                    .font(WidgetTypography.mediumRowSymbol)
-                    .foregroundStyle(iconColor)
-                    .frame(width: WidgetSpacing.mediumIconWidth, height: WidgetSpacing.mediumIconWidth)
+        HStack(alignment: .center, spacing: WidgetSpacing.mediumRowContentSpacing) {
+            Image(systemName: habit.widgetSymbolName)
+                .font(WidgetTypography.mediumRowSymbol)
+                .foregroundStyle(iconColor)
+                .frame(width: WidgetSpacing.mediumIconWidth, height: WidgetSpacing.mediumIconWidth)
 
+            VStack(alignment: .leading, spacing: 2) {
                 Text(habit.name)
-                    .font(WidgetTypography.mediumRowName)
+                    .font(nameFont)
                     .foregroundStyle(nameColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
 
-                if habit.streak > 0 {
+                if isPrimaryRow, habit.streak > 0 {
                     Text(streakText)
                         .font(WidgetTypography.mediumRowStreak)
                         .foregroundStyle(WidgetColors.secondaryText)
                         .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
                         .accessibilityLabel("Streak \(habit.streak)")
                 }
-
-                WidgetHabitIndicator(habit: habit, accent: accentColor, style: .medium)
-                    .frame(width: WidgetSpacing.mediumIndicatorColumnWidth, alignment: .trailing)
             }
-            .frame(maxWidth: .infinity, minHeight: WidgetSpacing.mediumRowHeight, alignment: .leading)
-            .opacity(rowOpacity)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            if showsDivider {
-                Rectangle()
-                    .fill(WidgetColors.mediumDivider)
-                    .frame(height: WidgetSpacing.mediumDividerHeight)
-                    .padding(.leading, WidgetSpacing.mediumIconWidth + WidgetSpacing.mediumRowContentSpacing)
-            }
+            WidgetHabitIndicator(habit: habit, accent: accentColor, style: .medium)
+                .frame(width: WidgetSpacing.mediumIndicatorColumnWidth, alignment: .trailing)
         }
+        .frame(maxWidth: .infinity, minHeight: WidgetSpacing.mediumRowHeight, alignment: .leading)
+        .opacity(rowOpacity)
     }
 
     private var accentColor: Color {
@@ -139,8 +129,16 @@ private struct HabitWidgetRow: View {
         WidgetColors.mediumRowName(isCompleteToday: habit.isCompleteToday)
     }
 
+    private var nameFont: Font {
+        isPrimaryRow ? WidgetTypography.mediumRowPrimaryName : WidgetTypography.mediumRowSecondaryName
+    }
+
     private var iconColor: Color {
-        WidgetColors.mediumIcon(accent: accentColor, isCompleteToday: habit.isCompleteToday)
+        WidgetColors.mediumIcon(
+            accent: accentColor,
+            isPrimaryRow: isPrimaryRow,
+            isCompleteToday: habit.isCompleteToday
+        )
     }
 
     private var rowOpacity: Double {
@@ -160,12 +158,8 @@ struct HabitsWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            if #available(iOS 17.0, *) {
-                HabitsWidgetEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
-            } else {
-                HabitsWidgetEntryView(entry: entry)
-            }
+            HabitsWidgetEntryView(entry: entry)
+                .widgetSurface()
         }
         .configurationDisplayName("Cadence: Today")
         .description("Your key habits at a glance.")

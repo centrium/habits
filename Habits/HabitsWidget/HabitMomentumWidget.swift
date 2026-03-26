@@ -79,14 +79,6 @@ private struct HabitMomentumCard: View {
         habit.momentumSummary
     }
 
-    private var statusStyle: WidgetStatusPillStyle {
-        if momentum.score == 0 {
-            return .momentumZero(accent: habit.widgetAccentColor)
-        }
-
-        return .standard(accent: habit.widgetAccentColor)
-    }
-
     var body: some View {
         VStack(spacing: WidgetSpacing.verticalStack) {
             Text(habit.name)
@@ -97,8 +89,19 @@ private struct HabitMomentumCard: View {
 
             WidgetScoreText(score: momentum.score)
 
-            WidgetStatusPill(text: momentum.state.rawValue, style: statusStyle)
-                .contentTransition(.opacity)
+            VStack(spacing: 3) {
+                Text(momentum.state.rawValue)
+                    .font(WidgetTypography.momentumState)
+                    .foregroundStyle(WidgetColors.momentumStateText(momentum.state))
+                    .lineLimit(1)
+
+                Text(momentum.direction.summaryText)
+                    .font(WidgetTypography.momentumTrend)
+                    .foregroundStyle(WidgetColors.momentumDirectionText(momentum.direction))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .contentTransition(.opacity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(WidgetSpacing.containerPadding)
@@ -110,12 +113,12 @@ private struct HabitMomentumCard: View {
 private struct EmptyHabitMomentumCard: View {
     var body: some View {
         VStack(spacing: WidgetSpacing.verticalStack) {
-            Text("Select a habit")
+            Text("Choose a habit")
                 .font(WidgetTypography.momentumEmptyTitle)
                 .foregroundStyle(WidgetColors.emptyPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            Text("Edit widget to choose")
+            Text("Pick one in Edit Widget")
                 .font(WidgetTypography.momentumEmptySubtitle)
                 .foregroundStyle(WidgetColors.secondaryText)
                 .lineLimit(2)
@@ -135,12 +138,8 @@ struct HabitMomentumWidget: Widget {
             intent: HabitSelectionIntent.self,
             provider: HabitMomentumProvider()
         ) { entry in
-            if #available(iOS 17.0, *) {
-                HabitMomentumWidgetEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
-            } else {
-                HabitMomentumWidgetEntryView(entry: entry)
-            }
+            HabitMomentumWidgetEntryView(entry: entry)
+                .widgetSurface()
         }
         .configurationDisplayName("Cadence: Momentum")
         .description("Track your current momentum.")
@@ -159,8 +158,23 @@ private extension WidgetHabit {
         hasActivityToday: true,
         iconName: "book.closed.fill",
         colorHex: "#1F7A8C",
-        momentumScore: 72
+        momentumScore: 72,
+        recentActivity: momentumPreviewActivity
     )
+
+    static var momentumPreviewActivity: [WidgetActivitySample] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let values = [0.2, 0.3, 0.2, 0.4, 0.3, 0.4, 0.3, 0.3, 0.4, 0.4, 0.5, 0.4, 0.4, 0.4]
+
+        return values.enumerated().compactMap { index, value in
+            guard let date = calendar.date(byAdding: .day, value: -13 + index, to: today) else {
+                return nil
+            }
+
+            return WidgetActivitySample(date: date, value: value)
+        }
+    }
 }
 
 private func momentumDeepLinkURL(for habit: WidgetHabit) -> URL {

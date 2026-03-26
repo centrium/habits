@@ -127,8 +127,8 @@ private extension Habit {
     ) -> [WidgetActivitySample] {
         let today = calendar.startOfDay(for: referenceDate)
 
-        return (0..<7).compactMap { offset in
-            guard let date = calendar.date(byAdding: .day, value: -6 + offset, to: today) else {
+        return (0..<14).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -13 + offset, to: today) else {
                 return nil
             }
 
