@@ -38,6 +38,7 @@ struct HabitsListView: View {
     @State private var activeSheet: ActiveSheet?
     @State private var habitPendingDeletion: Habit?
     @State private var detailPresentationDetent: PresentationDetent = .large
+    @State private var pendingReorderCommitTask: Task<Void, Never>?
 
     init() {}
 
@@ -197,6 +198,9 @@ struct HabitsListView: View {
             guard phase == .active else { return }
             presentHabitDetailForDeepLinkIfNeeded()
         }
+        .onDisappear {
+            flushPendingReorderPersistence()
+        }
         .task {
             if userSettings.eveningReflectionEnabled {
                 await NotificationService.shared.scheduleEveningReflection(
@@ -242,11 +246,17 @@ struct HabitsListView: View {
     }
 
     private func moveHabit(from source: IndexSet, to destination: Int) {
-        withAnimation(AppMotion.reorder) {
-            var reordered = habits
-            reordered.move(fromOffsets: source, toOffset: destination)
-            HabitListMutation.applyOrderIndexes(to: reordered, in: modelContext)
+        var reordered = habits
+        reordered.move(fromOffsets: source, toOffset: destination)
+
+        let didChange = reordered.enumerated().contains { index, habit in
+            habit.orderIndex != index
         }
+        guard didChange else { return }
+
+        _ = HabitListMutation.applyOrderIndexesInMemory(to: reordered)
+
+        scheduleReorderPersistence()
     }
 
     private func addHabit() {
@@ -292,6 +302,31 @@ struct HabitsListView: View {
 
     private var calculationCalendar: Calendar {
         weekLayoutStrategy.calendarForCalculations()
+    }
+
+    private func scheduleReorderPersistence() {
+        pendingReorderCommitTask?.cancel()
+        pendingReorderCommitTask = Task(priority: .utility) { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else { return }
+
+            guard modelContext.saveWithoutWidgetSync() else {
+                pendingReorderCommitTask = nil
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            _ = WidgetDataSync.sync(in: modelContext)
+            pendingReorderCommitTask = nil
+        }
+    }
+
+    private func flushPendingReorderPersistence() {
+        guard pendingReorderCommitTask != nil else { return }
+        pendingReorderCommitTask?.cancel()
+        pendingReorderCommitTask = nil
+        _ = HabitListMutation.persistOrderChanges(in: modelContext)
     }
 
     private func presentHabitDetailForDeepLinkIfNeeded() {

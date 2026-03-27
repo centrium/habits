@@ -192,14 +192,22 @@ enum WidgetDataSync {
 
 extension ModelContext {
     @discardableResult
-    func saveAndSyncWidgetData() -> Bool {
+    func saveWithoutWidgetSync() -> Bool {
         do {
             try save()
+            return true
         } catch {
             WidgetHabitLogger.logStorageFailure(
-                context: "saveAndSync",
+                context: "saveOnly",
                 reason: "ModelContext save failed: \(error.localizedDescription)"
             )
+            return false
+        }
+    }
+
+    @discardableResult
+    func saveAndSyncWidgetData() -> Bool {
+        guard saveWithoutWidgetSync() else {
             return false
         }
 
@@ -208,15 +216,29 @@ extension ModelContext {
 }
 
 enum HabitListMutation {
+    @discardableResult
+    static func applyOrderIndexesInMemory(to orderedHabits: [Habit]) -> Bool {
+        var didChange = false
+
+        for (index, habit) in orderedHabits.enumerated() where habit.orderIndex != index {
+            habit.orderIndex = index
+            didChange = true
+        }
+
+        return didChange
+    }
+
     static func applyOrderIndexes(
         to orderedHabits: [Habit],
         in modelContext: ModelContext
     ) {
-        for (index, habit) in orderedHabits.enumerated() where habit.orderIndex != index {
-            habit.orderIndex = index
-        }
-
+        _ = applyOrderIndexesInMemory(to: orderedHabits)
         _ = modelContext.saveAndSyncWidgetData()
+    }
+
+    @discardableResult
+    static func persistOrderChanges(in modelContext: ModelContext) -> Bool {
+        modelContext.saveAndSyncWidgetData()
     }
 
     static func normalizeOrderIndexes(in modelContext: ModelContext) {
