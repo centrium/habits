@@ -10,7 +10,6 @@ struct SettingsView: View {
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     
     @Environment(\.modelContext) private var modelContext
     @State private var sharePayload: SharePayload?
@@ -41,13 +40,6 @@ struct SettingsView: View {
         EveningReflection.timeRange(for: Date(), calendar: .current)
     }
 
-    private var appAppearanceBinding: Binding<AppAppearance> {
-        Binding(
-            get: { AppAppearance(rawValue: appAppearanceRawValue) ?? .system },
-            set: { appAppearanceRawValue = $0.rawValue }
-        )
-    }
-
     private var previewMessage: String {
         let messages = EveningReflection.previewMessages
         guard !messages.isEmpty else { return "" }
@@ -73,15 +65,6 @@ struct SettingsView: View {
                         Text(preference.title).tag(preference)
                     }
                 }
-            }
-
-            Section("Appearance") {
-                Picker("Appearance", selection: appAppearanceBinding) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(appearance.title).tag(appearance)
-                    }
-                }
-                .pickerStyle(.segmented)
             }
 
             Section("Evening Reflection") {

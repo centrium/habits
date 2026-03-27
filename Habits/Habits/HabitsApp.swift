@@ -53,9 +53,45 @@ struct RootView: View {
     }
 }
 
+private struct ThemedAppContainer: View {
+    let container: ModelContainer?
+    @Binding var isBootstrapVisible: Bool
+    let configureRuntimeServicesIfNeeded: (ModelContainer) -> Void
+    let prepareContainerIfNeeded: @MainActor () async -> Void
+
+    var body: some View {
+        ZStack {
+            if let container {
+                RootView()
+                    .modelContainer(container)
+                    .task {
+                        configureRuntimeServicesIfNeeded(container)
+                    }
+                    .onAppear {
+                        guard isBootstrapVisible else { return }
+
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 180_000_000)
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                isBootstrapVisible = false
+                            }
+                            KeyboardWarmup.warm()
+                        }
+                    }
+            }
+
+            if isBootstrapVisible {
+                AppBootstrapView()
+                    .task {
+                        await prepareContainerIfNeeded()
+                    }
+            }
+        }
+    }
+}
+
 @main
 struct HabitsApp: App {
-    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @StateObject var deepLinkManager = DeepLinkManager.shared
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
@@ -77,46 +113,19 @@ struct HabitsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                if let container {
-                    RootView()
-                        .modelContainer(container)
-                        .task {
-                            configureRuntimeServicesIfNeeded(using: container)
-                        }
-                        .onAppear {
-                            guard isBootstrapVisible else { return }
-
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 180_000_000)
-                                withAnimation(.easeOut(duration: 0.18)) {
-                                    isBootstrapVisible = false
-                                }
-                                KeyboardWarmup.warm()
-                            }
-                        }
-                }
-
-                if isBootstrapVisible {
-                    AppBootstrapView()
-                        .task {
-                            await prepareContainerIfNeeded()
-                        }
-                }
-            }
+            ThemedAppContainer(
+                container: container,
+                isBootstrapVisible: $isBootstrapVisible,
+                configureRuntimeServicesIfNeeded: configureRuntimeServicesIfNeeded(using:),
+                prepareContainerIfNeeded: prepareContainerIfNeeded
+            )
             .environmentObject(userSettings)
             .environmentObject(deepLinkManager)
             .environmentObject(purchaseService)
-            .preferredColorScheme(appAppearance.preferredColorScheme)
             .onOpenURL { url in
                 deepLinkManager.handle(url: url)
             }
         }
-    }
-
-    private var appAppearance: AppAppearance {
-        get { AppAppearance(rawValue: appAppearanceRawValue) ?? .system }
-        set { appAppearanceRawValue = newValue.rawValue }
     }
 
     @MainActor
