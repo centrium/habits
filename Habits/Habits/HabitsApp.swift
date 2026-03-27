@@ -59,60 +59,125 @@ struct HabitsApp: App {
     @StateObject var deepLinkManager = DeepLinkManager.shared
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
-    
-    let container: ModelContainer
+    @State private var container: ModelContainer?
+    @State private var isPreparingContainer = false
+    @State private var hasConfiguredRuntimeServices = false
 
     init() {
         self.init(container: nil)
-        KeyboardWarmup.warm()
     }
 
     init(container: ModelContainer?) {
-        
-        let isRunningTests =
-               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-
-        if let container {
-            self.container = container
-        } else if isRunningTests {
-                self.container = try! Persistence.makeInMemoryContainer()
-        } else if let appContainer = try? Persistence.makeAppContainer() {
-            self.container = appContainer
-        } else {
-            // Fall back to in-memory storage so test hosts do not crash during app bootstrap.
-            self.container = try! Persistence.makeInMemoryContainer()
-        }
-
         let center = UNUserNotificationCenter.current()
         center.delegate = NotificationActionHandler.shared
-
-        NotificationService.shared.configureModelContextProvider { [container = self.container] in
-            ModelContext(container)
-        }
-
-        NotificationService.shared.registerNotificationCategories()
-        NotificationActionHandler.shared.configureModelContextProvider { [container = self.container] in
-            ModelContext(container)
-        }
+        _container = State(initialValue: container)
     }
 
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(userSettings)
-                .environmentObject(deepLinkManager)
-                .environmentObject(purchaseService)
-                .preferredColorScheme(appAppearance.preferredColorScheme)
-                .onOpenURL { url in
-                    deepLinkManager.handle(url: url)
+            Group {
+                if let container {
+                    RootView()
+                        .modelContainer(container)
+                        .task {
+                            configureRuntimeServicesIfNeeded(using: container)
+                        }
+                } else {
+                    AppBootstrapView(isPremiumUnlocked: purchaseService.isPremiumUnlocked)
+                        .task {
+                            await prepareContainerIfNeeded()
+                        }
                 }
+            }
+            .environmentObject(userSettings)
+            .environmentObject(deepLinkManager)
+            .environmentObject(purchaseService)
+            .preferredColorScheme(appAppearance.preferredColorScheme)
+            .onOpenURL { url in
+                deepLinkManager.handle(url: url)
+            }
         }
-        .modelContainer(container)
     }
 
     private var appAppearance: AppAppearance {
         get { AppAppearance(rawValue: appAppearanceRawValue) ?? .system }
         set { appAppearanceRawValue = newValue.rawValue }
+    }
+
+    @MainActor
+    private func prepareContainerIfNeeded() async {
+        guard container == nil, !isPreparingContainer else { return }
+        isPreparingContainer = true
+
+        let loadedContainer = await Task.detached(priority: .userInitiated) {
+            Self.makeInitialContainer()
+        }.value
+
+        container = loadedContainer
+        isPreparingContainer = false
+    }
+
+    nonisolated private static func makeInitialContainer() -> ModelContainer {
+        let isRunningTests =
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+        if isRunningTests {
+            return try! Persistence.makeInMemoryContainer()
+        }
+
+        if let appContainer = try? Persistence.makeAppContainer() {
+            return appContainer
+        }
+
+        return try! Persistence.makeInMemoryContainer()
+    }
+
+    private func configureRuntimeServicesIfNeeded(using container: ModelContainer) {
+        guard !hasConfiguredRuntimeServices else { return }
+
+        NotificationService.shared.configureModelContextProvider { [container] in
+            ModelContext(container)
+        }
+        NotificationService.shared.registerNotificationCategories()
+        NotificationActionHandler.shared.configureModelContextProvider { [container] in
+            ModelContext(container)
+        }
+
+        hasConfiguredRuntimeServices = true
+    }
+}
+
+private struct AppBootstrapView: View {
+    let isPremiumUnlocked: Bool
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color.appBackground,
+                    Color.appBackground.opacity(0.96),
+                    Color.systemAccent.opacity(0.08)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                CadenceProWordmark(
+                    size: .large,
+                    animateSwoosh: isPremiumUnlocked,
+                    showsProLabel: isPremiumUnlocked
+                )
+
+                ProgressView()
+                    .tint(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, 24)
+        }
+        .task {
+            KeyboardWarmup.warm()
+        }
     }
 }

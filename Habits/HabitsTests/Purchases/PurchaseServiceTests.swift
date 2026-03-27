@@ -157,6 +157,33 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertEqual(premiumStatus, .premium)
     }
 
+    func testStartupEntitlementRefreshDoesNotWaitForProductLoad() async {
+        let service = await MainActor.run {
+            PurchaseService(
+                productLoader: { _ in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    return []
+                },
+                currentEntitlementsLoader: {
+                    [TestTransaction(productID: self.premiumProductID)]
+                },
+                shouldStartBackgroundTasks: true
+            )
+        }
+
+        try? await Task.sleep(nanoseconds: 80_000_000)
+
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
+        }
+        let hasLoadedProducts = await MainActor.run {
+            service.hasLoadedProducts
+        }
+
+        XCTAssertEqual(premiumStatus, .premium)
+        XCTAssertFalse(hasLoadedProducts)
+    }
+
     func testFreeUserCanOnlyAddOneReminder() {
         let canAddFirstReminder = ReminderEntitlementPolicy.canAddReminder(
             reminderCount: 0,

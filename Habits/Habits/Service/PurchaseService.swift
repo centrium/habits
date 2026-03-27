@@ -70,14 +70,12 @@ final class PurchaseService: ObservableObject {
         static let cachedPremiumUnlocked = "purchase.cachedPremiumUnlocked"
     }
 
-    private static var isRunningTests: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    }
-
     private let productLoader: ([String]) async throws -> [StoreCatalogProduct]
     private let currentEntitlementsLoader: () async -> [any PremiumEntitlementTransaction]
     private let premiumStatusStore: any SettingsKeyValueStore
     private var updatesTask: Task<Void, Never>?
+    private var productLoadTask: Task<Void, Never>?
+    private var entitlementRefreshTask: Task<Void, Never>?
 
     @Published var products: [StoreCatalogProduct] = []
     @Published var premiumStatus: PremiumStatus = .unknown {
@@ -123,7 +121,7 @@ final class PurchaseService: ObservableObject {
         self.premiumStatusStore = premiumStatusStore ?? UserDefaultsSettingsStore()
         self.premiumStatus = Self.bootstrapPremiumStatus(from: self.premiumStatusStore)
 
-        guard shouldStartBackgroundTasks, !Self.isRunningTests else {
+        guard shouldStartBackgroundTasks else {
             return
         }
 
@@ -131,14 +129,19 @@ final class PurchaseService: ObservableObject {
             await self.listenForTransactions()
         }
 
-        Task {
-            await self.loadProducts()
+        entitlementRefreshTask = Task(priority: .userInitiated) {
             await self.updateCurrentEntitlements()
+        }
+
+        productLoadTask = Task(priority: .utility) {
+            await self.loadProducts()
         }
     }
     
     deinit {
         updatesTask?.cancel()
+        productLoadTask?.cancel()
+        entitlementRefreshTask?.cancel()
     }
 
 }
@@ -305,14 +308,10 @@ extension PurchaseService {
 extension PurchaseService {
 
     func updateCurrentEntitlements() async {
-        print("Checking entitlements...")
         let entitlements = await currentEntitlementsLoader()
-
-        print("Entitlements count:", entitlements.count)
 
         var resolvedStatus: PremiumStatus = .free
         for transaction in entitlements {
-            print("Transaction:", transaction.productID)
             if transaction.productID == StoreProduct.premiumLifetime.id {
                 resolvedStatus = .premium
             }

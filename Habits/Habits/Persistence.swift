@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 enum Persistence {
-    static func makeAppContainer() throws -> ModelContainer {
+    nonisolated static func makeAppContainer() throws -> ModelContainer {
 
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             fatalError("Tests must not use the production container")
@@ -15,7 +15,7 @@ enum Persistence {
         )
     }
     
-    static func makeInMemoryContainer() throws -> ModelContainer {
+    nonisolated static func makeInMemoryContainer() throws -> ModelContainer {
         let config = ModelConfiguration(
             isStoredInMemoryOnly: true
         )
