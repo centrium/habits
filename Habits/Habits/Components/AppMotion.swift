@@ -71,6 +71,19 @@ private struct AppSurfaceModifier: ViewModifier {
                     shape.stroke(strokeColor, lineWidth: 1)
                 }
             }
+            .overlay {
+                if let topHighlight {
+                    LinearGradient(
+                        colors: [
+                            topHighlight,
+                            .clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                    .clipShape(shape)
+                }
+            }
             .shadow(
                 color: shadowColor,
                 radius: shadowRadius,
@@ -93,46 +106,59 @@ private struct AppSurfaceModifier: ViewModifier {
     private var strokeColor: Color? {
         switch level {
         case .standard:
-            return colorScheme == .light ? Color.primary.opacity(0.08) : Color.white.opacity(0.06)
+            return colorScheme == .light ? Color.primary.opacity(0.08) : Color.white.opacity(0.12)
         case .highlighted:
-            return (accent ?? Color.primary).opacity(0.15)
+            return colorScheme == .light
+                ? (accent ?? Color.primary).opacity(0.15)
+                : Color.white.opacity(0.14)
+        case .floating:
+            return nil
+        }
+    }
+
+    private var topHighlight: Color? {
+        guard colorScheme == .dark else { return nil }
+
+        switch level {
+        case .standard:
+            return Color.white.opacity(0.05)
+        case .highlighted:
+            return Color.white.opacity(0.06)
         case .floating:
             return nil
         }
     }
 
     private var shadowColor: Color {
-        guard colorScheme == .light else { return .clear }
-
         switch level {
         case .standard:
-            return Color.black.opacity(0.03)
+            return colorScheme == .light ? Color.black.opacity(0.03) : Color.black.opacity(0.24)
         case .highlighted:
-            return Color.black.opacity(0.045)
+            return colorScheme == .light ? Color.black.opacity(0.045) : Color.black.opacity(0.28)
         case .floating:
-            return Color.black.opacity(0.1)
+            return colorScheme == .light ? Color.black.opacity(0.1) : Color.black.opacity(0.32)
         }
     }
 
     private var shadowRadius: CGFloat {
         switch level {
         case .standard:
-            return colorScheme == .light ? 6 : 0
+            return colorScheme == .light ? 6 : 16
         case .highlighted:
-            return colorScheme == .light ? 8 : 0
+            return colorScheme == .light ? 8 : 18
         case .floating:
-            return colorScheme == .light ? 14 : 0
+            return colorScheme == .light ? 14 : 22
         }
     }
 
     private var shadowYOffset: CGFloat {
         switch level {
         case .standard:
-            return colorScheme == .light ? 2 : 0
+            return colorScheme == .light ? 2 : 8
         case .highlighted:
-            return colorScheme == .light ? 3 : 0
+            return colorScheme == .light ? 3 : 10
         case .floating:
-            return colorScheme == .light ? 6 : 0
+            return colorScheme == .light ? 6 : 12
         }
     }
 }
