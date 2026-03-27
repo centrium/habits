@@ -132,27 +132,36 @@ struct CadenceProWordmark: View {
 
     let size: Size
     let animateSwoosh: Bool
+    let showsProLabel: Bool
 
-    init(size: Size = .large, animateSwoosh: Bool = false) {
+    init(size: Size = .large, animateSwoosh: Bool = false, showsProLabel: Bool = true) {
         self.size = size
         self.animateSwoosh = animateSwoosh
+        self.showsProLabel = showsProLabel
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: size.spacing) {
             ProSwoosh(size: size.swooshSize, toAnimate: animateSwoosh)
 
-            (
-                Text("Cadence")
-                    .font(size.titleFont)
-                    .foregroundStyle(.primary) +
-                Text(" Pro")
-                    .font(size.proFont)
-                    .foregroundStyle(.secondary.opacity(0.7))
-                    .baselineOffset(size.proBaselineOffset)
-            )
+            wordmarkText
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Cadence Pro")
+        .accessibilityLabel(showsProLabel ? "Cadence Pro" : "Cadence")
+    }
+
+    private var wordmarkText: Text {
+        let title = Text("Cadence")
+            .font(size.titleFont)
+            .foregroundStyle(.primary)
+
+        guard showsProLabel else { return title }
+
+        let pro = Text(" Pro")
+            .font(size.proFont)
+            .foregroundStyle(.secondary.opacity(0.7))
+            .baselineOffset(size.proBaselineOffset)
+
+        return Text("\(title)\(pro)")
     }
 }

@@ -341,24 +341,17 @@ struct HabitsListView: View {
     }
 }
 
-enum HabitsListTitleCopy {
-    static let baseTitle = "Cadence"
-}
-
 private struct CustomHomeHeader: View {
     let showsPremiumAccent: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if showsPremiumAccent {
-                CadenceProWordmark(size: .large, animateSwoosh: true)
-                    .accessibilityAddTraits(.isHeader)
-            } else {
-                Text(HabitsListTitleCopy.baseTitle)
-                    .font(.system(size: 40, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .accessibilityAddTraits(.isHeader)
-            }
+            CadenceProWordmark(
+                size: .large,
+                animateSwoosh: showsPremiumAccent,
+                showsProLabel: showsPremiumAccent
+            )
+            .accessibilityAddTraits(.isHeader)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
