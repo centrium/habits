@@ -29,6 +29,7 @@ struct CalendarDayCell: View {
         static let dotSize: CGFloat = 3
         static let dotSpacing: CGFloat = 4
         static let indicatorPlateOpacity: Double = 0.24
+        static let indicatorPlateDarkStrokeOpacity: Double = 0.10
 
         static let selectedBackgroundOpacity: Double = 0.85
         static let outOfMonthBackgroundOpacity: Double = 0.05
@@ -225,6 +226,12 @@ struct CalendarDayCell: View {
                 .background(
                     Capsule()
                         .fill(Color.primary.opacity(Layout.indicatorPlateOpacity))
+                        .overlay {
+                            if colorScheme == .dark {
+                                Capsule()
+                                    .strokeBorder(Color.white.opacity(Layout.indicatorPlateDarkStrokeOpacity))
+                            }
+                        }
                 )
                 .padding(.bottom, Layout.indicatorBottomPadding)
         }
@@ -242,21 +249,47 @@ struct CalendarDayCell: View {
         } else if count <= 5 {
             HStack(spacing: Layout.dotSpacing) {
                 ForEach(0..<count, id: \.self) { _ in
-                    Circle()
-                        .fill(accent)
-                        .frame(width: Layout.dotSize, height: Layout.dotSize)
+                    indicatorDot
                 }
             }
         } else {
             HStack(spacing: Layout.dotSpacing) {
-                Circle()
-                    .fill(accent)
-                    .frame(width: Layout.dotSize, height: Layout.dotSize)
+                indicatorDot
 
                 Text("+\(count - 1)")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
             }
         }
+    }
+
+    private var indicatorDot: some View {
+        Circle()
+            .fill(dotFill)
+            .overlay {
+                if colorScheme == .dark {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(isSelected ? 0.32 : 0.22), lineWidth: 0.4)
+                }
+            }
+            .brightness(colorScheme == .dark && !isSelected ? 0.08 : 0)
+            .shadow(
+                color: colorScheme == .dark ? accent.opacity(isSelected ? 0.2 : 0.24) : .clear,
+                radius: colorScheme == .dark ? 1.6 : 0,
+                y: 0.4
+            )
+            .frame(width: Layout.dotSize, height: Layout.dotSize)
+    }
+
+    private var dotFill: some ShapeStyle {
+        if colorScheme == .dark {
+            if isSelected {
+                return AnyShapeStyle(Color.white.opacity(0.9))
+            }
+
+            return AnyShapeStyle(accent.opacity(0.96))
+        }
+
+        return AnyShapeStyle(accent)
     }
 }

@@ -82,6 +82,7 @@ private struct AppSurfaceModifier: ViewModifier {
                         endPoint: .center
                     )
                     .clipShape(shape)
+                    .allowsHitTesting(false)
                 }
             }
             .shadow(

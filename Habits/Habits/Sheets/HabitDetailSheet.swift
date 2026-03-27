@@ -22,6 +22,7 @@ private enum ActiveSheet: Identifiable {
 }
 
 struct HabitDetailSheet: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
@@ -155,6 +156,29 @@ struct HabitDetailSheet: View {
                     }
                     .padding(14)
                     .appSurface(level: .standard, cornerRadius: 16)
+                    .overlay {
+                        if colorScheme == .dark {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.06))
+                                .overlay {
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.05),
+                                            .clear
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .center
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                }
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .shadow(
+                        color: colorScheme == .dark ? Color.black.opacity(0.18) : .clear,
+                        radius: colorScheme == .dark ? 18 : 0,
+                        y: colorScheme == .dark ? 10 : 0
+                    )
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 
