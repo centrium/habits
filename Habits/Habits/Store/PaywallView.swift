@@ -86,9 +86,9 @@ struct PaywallView: View {
         case .dataExport:
             title = "Unlock Data Export"
         case .multipleReminders:
-            title = "Unlock Premium"
+            title = "Unlock with Pro"
         case nil:
-            title = "Unlock Premium"
+            title = "Unlock with Pro"
         }
 
         guard let price, !price.isEmpty else {
@@ -115,7 +115,7 @@ struct PaywallView: View {
         case .multipleReminders:
             return title(for: PaywallContext.multipleReminders)
         case nil:
-            return "Upgrade to Premium"
+            return "Upgrade to Pro"
         }
     }
 
@@ -126,7 +126,7 @@ struct PaywallView: View {
         case .dataExport:
             return "Export your progress"
         case .general:
-            return "Unlock Premium"
+            return "Unlock with Pro"
         }
     }
 
@@ -281,9 +281,8 @@ private extension PaywallView {
 
         VStack(spacing: 16) {
 
-            Image(systemName: "sparkles")
-                .font(.system(size: 44))
-                .foregroundStyle(Color(red: 0.82, green: 0.68, blue: 0.42))
+            CadenceProWordmark(size: .small)
+                .frame(maxWidth: .infinity)
 
             Text(title)
                 .font(.largeTitle.weight(.bold))
@@ -654,7 +653,7 @@ private extension PaywallView {
             return "Add multiple reminders to reinforce your cadence without missing the moments that matter."
 
         case nil:
-            return "Get more out of your cadence with premium features."
+            return "Get more out of your cadence with Pro features."
         }
     }
 }

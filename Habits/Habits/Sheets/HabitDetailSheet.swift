@@ -196,9 +196,17 @@ struct HabitDetailSheet: View {
                             showPaywall(feature: .advancedInsights)
                         }
                     } label: {
-                        Image(systemName: "sparkles")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.82, green: 0.68, blue: 0.42))
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.systemAccent)
+
+                            if !purchaseService.isPremiumUnlocked {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     .buttonStyle(TactileButtonStyle())
 

@@ -84,6 +84,7 @@ final class UserSettings: ObservableObject {
     private enum Keys {
         static let weekStart = "settings.weekStart"
         static let greigModeEnabled = "settings.greigModeEnabled"
+        static let showPremiumInsightsView = "settings.showPremiumInsightsView"
 
         static let eveningReflectionEnabled = "settings.eveningReflectionEnabled"
         static let eveningReflectionHour = "settings.eveningReflectionHour"
@@ -112,6 +113,12 @@ final class UserSettings: ObservableObject {
     @Published var greigModeEnabled: Bool {
         didSet {
             store.set(greigModeEnabled, forKey: Keys.greigModeEnabled)
+        }
+    }
+
+    @Published var showPremiumInsightsView: Bool {
+        didSet {
+            store.set(showPremiumInsightsView, forKey: Keys.showPremiumInsightsView)
         }
     }
 
@@ -159,6 +166,9 @@ final class UserSettings: ObservableObject {
         self.greigModeEnabled =
             store.bool(forKey: Keys.greigModeEnabled) ?? true
 
+        self.showPremiumInsightsView =
+            store.bool(forKey: Keys.showPremiumInsightsView) ?? true
+
         self.eveningReflectionEnabled =
             store.bool(forKey: Keys.eveningReflectionEnabled)
             ?? store.bool(forKey: LegacyKeys.dailyCheckInEnabled)
@@ -184,6 +194,7 @@ final class UserSettings: ObservableObject {
         store.set(eveningReflectionEnabled, forKey: Keys.eveningReflectionEnabled)
         store.set(eveningReflectionHour, forKey: Keys.eveningReflectionHour)
         store.set(eveningReflectionMinute, forKey: Keys.eveningReflectionMinute)
+        store.set(showPremiumInsightsView, forKey: Keys.showPremiumInsightsView)
     }
 
     // MARK: Calendar Helpers

@@ -66,34 +66,6 @@ struct SettingsView: View {
                 }
             }
 
-            if purchaseService.isPremiumUnlocked {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Premium Unlocked")
-                            .font(.headline)
-
-                        Text("Thank you for supporting Cadence.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-
-            Section("Insights") {
-                Toggle(isOn: $userSettings.greigModeEnabled) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Greig Mode")
-                            .font(.body)
-                        Text("Show potential insights based on your strongest performance.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .accessibilityLabel("Greig Mode")
-                .accessibilityHint("Show potential insights based on your strongest performance.")
-            }
-
             Section("Evening Reflection") {
                 Text(EveningReflection.description)
                     .font(.footnote)
@@ -168,21 +140,6 @@ struct SettingsView: View {
                 rescheduleReminder()
             }
             
-            Section("Data") {
-                Button {
-                    if purchaseService.hasAccess(to: .dataExport) {
-                        exportCSV()
-                    } else {
-                        activePaywall = .dataExport
-                    }
-                } label: {
-                    HStack {
-                        Label("Export Data", systemImage: "square.and.arrow.up")
-                        Spacer()
-                    }
-                }
-            }
-
             #if DEBUG
             Section("Debug") {
                 Button("Toggle Premium (Debug)") {
@@ -191,6 +148,25 @@ struct SettingsView: View {
                 }
             }
             #endif
+
+            Section {
+                ProSettingsCard(
+                    isUnlocked: purchaseService.isPremiumUnlocked,
+                    showProView: $userSettings.showPremiumInsightsView,
+                    greigModeEnabled: $userSettings.greigModeEnabled,
+                    unlockAction: { activePaywall = .advancedInsights }
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            }
+
+            Section("Data") {
+                ExportDataRow(
+                    isUnlocked: purchaseService.isPremiumUnlocked,
+                    action: handleExportDataTap
+                )
+            }
+
         }
         .navigationTitle("Settings")
         .sheet(item: $sharePayload) { payload in
@@ -211,6 +187,15 @@ struct SettingsView: View {
             print("Export failed:", error)
         }
     }
+
+    func handleExportDataTap() {
+        if purchaseService.hasAccess(to: .dataExport) {
+            exportCSV()
+        } else {
+            Haptics.impactLight()
+            activePaywall = .dataExport
+        }
+    }
     
     func rescheduleReminder() {
         Task {
@@ -223,5 +208,183 @@ struct SettingsView: View {
                 )
             }
         }
+    }
+}
+
+private struct ProSettingsCard: View {
+    let isUnlocked: Bool
+    @Binding var showProView: Bool
+    @Binding var greigModeEnabled: Bool
+    let unlockAction: () -> Void
+
+    private let accentColor = Color.systemAccent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if isUnlocked {
+                proSummaryContent
+
+                divider
+
+                settingsToggle(
+                    title: "Show Pro View",
+                    message: "Show the Pro insights card on your Cadence home screen.",
+                    isOn: $showProView
+                )
+
+                divider
+
+                settingsToggle(
+                    title: "Greig Mode",
+                    message: "Show potential insights based on your strongest performance.",
+                    isOn: $greigModeEnabled
+                )
+                .accessibilityLabel("Greig Mode")
+                .accessibilityHint("Show potential insights based on your strongest performance.")
+            } else {
+                lockedContent
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(accentColor.opacity(0.04))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    accentColor.opacity(0.22),
+                                    accentColor.opacity(0.08),
+                                    .clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+        )
+        .shadow(color: accentColor.opacity(0.12), radius: 8, y: 2)
+    }
+
+    private var divider: some View {
+        Divider()
+            .padding(.horizontal, 16)
+    }
+
+    private func settingsToggle(title: String, message: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.trailing, 12)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+    }
+
+    private var proSummaryContent: some View {
+        HStack(alignment: .top, spacing: 12) {
+            LinearGradient(
+                colors: [
+                    accentColor.opacity(0.28),
+                    accentColor.opacity(0.12),
+                    .clear
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 5)
+            .clipShape(Capsule())
+
+            VStack(alignment: .leading, spacing: 6) {
+                CadenceProWordmark(size: .small)
+
+                Text("Thank you for supporting Cadence.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+    }
+
+    private var lockedContent: some View {
+        Button(action: unlockAction) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    CadenceProWordmark(size: .small)
+
+                    Text("Unlock insights, Greig Mode, and data export.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ExportDataRow: View {
+    let isUnlocked: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.body)
+                    .premiumIconStyle(
+                        isPremiumUnlocked: isUnlocked,
+                        isFeatureLocked: !isUnlocked
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Export Data")
+                        .foregroundStyle(.primary)
+
+                    Text("Download your data as CSV")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if !isUnlocked {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption2)
+
+                        Text("Included in Pro")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

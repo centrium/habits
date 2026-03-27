@@ -44,18 +44,35 @@ struct HabitsListView: View {
     var body: some View {
         NavigationStack {
             List {
-                if let premiumInsightsSummary {
-                    PremiumInsightsStripView(summary: premiumInsightsSummary)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: 4,
-                                leading: 16,
-                                bottom: 6,
-                                trailing: 16
-                            )
+                CustomHomeHeader(showsPremiumAccent: purchaseService.isPremiumUnlocked)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 8,
+                            leading: 20,
+                            bottom: 8,
+                            trailing: 20
                         )
+                    )
+
+                if let premiumInsightsSummary {
+                    NavigationLink {
+                        GlobalInsightsView()
+                    } label: {
+                        PremiumInsightsStripView(summary: premiumInsightsSummary)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 4,
+                            leading: 16,
+                            bottom: 6,
+                            trailing: 16
+                        )
+                    )
                 }
 
                 ForEach(habits) { habit in
@@ -108,14 +125,23 @@ struct HabitsListView: View {
             }
             .listStyle(.plain)
             .contentMargins(.top, 12, for: .scrollContent)
-            .navigationBarTitleDisplayMode(.large)
-            .navigationTitle(HabitsListTitleCopy.baseTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     EditButton()
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if purchaseService.isPremiumUnlocked {
+                        NavigationLink {
+                            GlobalInsightsView()
+                        } label: {
+                            Image(systemName: "chart.line.text.clipboard")
+                        }
+                        .accessibilityLabel("Global Insights")
+                    }
+
                     NavigationLink {
                         SettingsView()
                     } label: {
@@ -157,11 +183,6 @@ struct HabitsListView: View {
                 }
             }
         }
-        .overlay(alignment: .topLeading) {
-            if purchaseService.isPremiumUnlocked {
-                PremiumTitleUnderline()
-            }
-        }
         .environmentObject(userSettings)
         .onAppear {
             presentHabitDetailForDeepLinkIfNeeded()
@@ -196,52 +217,17 @@ struct HabitsListView: View {
     }
 
     private var premiumInsightsSummary: PremiumInsightsStripSummary? {
-        guard purchaseService.isPremiumUnlocked, !habits.isEmpty else {
+        guard purchaseService.isPremiumUnlocked,
+              userSettings.showPremiumInsightsView,
+              userSettings.greigModeEnabled,
+              !habits.isEmpty else {
             return nil
         }
 
-        let now = Date()
-        let momentumService = MomentumScoreService(
+        return GlobalInsightsService(
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
-        )
-        let insightsService = HabitInsightsService(calendar: calculationCalendar)
-
-        let momentumScores = habits.map { habit in
-            momentumService.score(for: habit, now: now)
-        }
-        let consistencyScores = habits.map { habit in
-            insightsService.snapshot(for: habit, now: now).consistency
-        }
-        let atRiskCount = habits.reduce(into: 0) { count, habit in
-            let riskScore = PerformanceSignalsCalculator.habitRiskScore(
-                for: habit,
-                calendar: calculationCalendar,
-                now: now
-            )
-            if riskScore >= 0.5 {
-                count += 1
-            }
-        }
-
-        let averageMomentum = Int(
-            (
-                Double(momentumScores.reduce(0, +)) /
-                Double(max(momentumScores.count, 1))
-            ).rounded()
-        )
-        let averageConsistency = Int(
-            (
-                Double(consistencyScores.reduce(0, +)) /
-                Double(max(consistencyScores.count, 1))
-            ).rounded()
-        )
-
-        return PremiumInsightsStripCopy.summary(
-            momentum: averageMomentum,
-            consistency: averageConsistency,
-            atRiskCount: atRiskCount
-        )
+        ).snapshot(for: habits, now: .now)?.stripSummary
     }
 
     private var lockedHabitSlot: some View {
@@ -324,6 +310,26 @@ enum HabitsListTitleCopy {
     static let baseTitle = "Cadence"
 }
 
+private struct CustomHomeHeader: View {
+    let showsPremiumAccent: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showsPremiumAccent {
+                CadenceProWordmark(size: .large, animateSwoosh: true)
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                Text(HabitsListTitleCopy.baseTitle)
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
+    }
+}
+
 enum HabitDeletionConfirmationState {
     static func isPresentedBinding(for pendingHabit: Binding<Habit?>) -> Binding<Bool> {
         Binding(
@@ -355,37 +361,6 @@ private struct UpgradeHintRow: View {
     }
 }
 
-private struct PremiumInsightsStripSummary {
-    let primaryLabel: String
-    let primaryValue: String
-    let secondaryLabel: String
-    let secondaryValue: String
-    let secondarySuffix: String?
-}
-
-private enum PremiumInsightsStripCopy {
-    static func summary(momentum: Int, consistency: Int, atRiskCount: Int) -> PremiumInsightsStripSummary {
-        PremiumInsightsStripSummary(
-            primaryLabel: "Momentum ",
-            primaryValue: "\(momentum)%",
-            secondaryLabel: "Consistency ",
-            secondaryValue: "\(consistency)%",
-            secondarySuffix: secondarySuffix(for: atRiskCount)
-        )
-    }
-
-    private static func secondarySuffix(for atRiskCount: Int) -> String? {
-        switch atRiskCount {
-        case 0:
-            return "Steady today"
-        case 1:
-            return "1 needs attention"
-        default:
-            return "\(atRiskCount) need attention"
-        }
-    }
-}
-
 private struct PremiumInsightsStripView: View {
     let summary: PremiumInsightsStripSummary
     private let accentColor = Color.systemAccent
@@ -405,6 +380,8 @@ private struct PremiumInsightsStripView: View {
             .clipShape(Capsule())
 
             VStack(alignment: .leading, spacing: 5) {
+                ProSwoosh(size: .small)
+
                 (
                     Text(summary.primaryLabel)
                         .foregroundStyle(.primary) +
@@ -419,8 +396,6 @@ private struct PremiumInsightsStripView: View {
                     .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 14)
@@ -467,21 +442,6 @@ private struct PremiumInsightsStripView: View {
         }
 
         return line
-    }
-}
-
-private struct PremiumTitleUnderline: View {
-    private let underlineWidth: CGFloat = 60
-    private let underlineHeight: CGFloat = 2.5
-
-    var body: some View {
-        GeometryReader { geometry in
-            Rectangle()
-                .fill(Color.systemAccent.opacity(0.6))
-                .frame(width: underlineWidth, height: underlineHeight)
-                .offset(x: 20, y: geometry.safeAreaInsets.top + 46)
-        }
-        .allowsHitTesting(false)
     }
 }
 
