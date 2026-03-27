@@ -8,6 +8,7 @@ private enum GlobalInsightsSpacing {
 }
 
 struct GlobalInsightsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var userSettings: UserSettings
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
@@ -37,7 +38,7 @@ struct GlobalInsightsView: View {
                     .padding(.bottom, 36)
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
         .navigationTitle("Global Insights")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -48,6 +49,7 @@ struct GlobalInsightsView: View {
 }
 
 private struct GlobalInsightsHeroSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let hero: GlobalInsightsHero
 
     var body: some View {
@@ -55,8 +57,8 @@ private struct GlobalInsightsHeroSection: View {
             backgroundStyle: AnyShapeStyle(
                 LinearGradient(
                     colors: [
-                        Color.systemAccent.opacity(0.1),
-                        Color(.secondarySystemGroupedBackground)
+                        Color.systemAccent.opacity(colorScheme == .light ? 0.07 : 0.1),
+                        colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -65,7 +67,9 @@ private struct GlobalInsightsHeroSection: View {
             padding: GlobalInsightsSpacing.cardPadding,
             shadowOpacity: 0.1,
             shadowRadius: 15,
-            shadowYOffset: 4
+            shadowYOffset: 3,
+            accent: Color.systemAccent,
+            isHighlighted: true
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ProSwoosh(size: .small)
@@ -98,11 +102,12 @@ private struct GlobalInsightsHeroSection: View {
 }
 
 private struct GlobalInsightsMetricsSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let metrics: GlobalInsightsMetrics
 
     var body: some View {
         GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(Color(.secondarySystemGroupedBackground)),
+            backgroundStyle: AnyShapeStyle(colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground),
             padding: 18,
             shadowOpacity: 0.03,
             shadowRadius: 5,
@@ -137,11 +142,12 @@ private struct GlobalInsightsMetricsSection: View {
 }
 
 private struct GlobalInsightsHabitSnapshotSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let rows: [GlobalInsightHabitRow]
 
     var body: some View {
         GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(Color(.secondarySystemGroupedBackground)),
+            backgroundStyle: AnyShapeStyle(colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground),
             padding: 18
         ) {
             VStack(alignment: .leading, spacing: GlobalInsightsSpacing.titleToContent) {
@@ -193,6 +199,7 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 }
 
 private struct GlobalInsightsGreigSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let greig: GlobalInsightsGreig
 
     var body: some View {
@@ -200,8 +207,8 @@ private struct GlobalInsightsGreigSection: View {
             backgroundStyle: AnyShapeStyle(
                 LinearGradient(
                     colors: [
-                        Color.systemAccent.opacity(0.12),
-                        Color(.secondarySystemGroupedBackground)
+                        Color.systemAccent.opacity(colorScheme == .light ? 0.08 : 0.12),
+                        colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -210,7 +217,9 @@ private struct GlobalInsightsGreigSection: View {
             padding: GlobalInsightsSpacing.cardPadding,
             shadowOpacity: 0.08,
             shadowRadius: 11,
-            shadowYOffset: 3
+            shadowYOffset: 3,
+            accent: Color.systemAccent,
+            isHighlighted: true
         ) {
             VStack(alignment: .leading, spacing: GlobalInsightsSpacing.titleToContent) {
                 Text("Greig Mode")
@@ -262,9 +271,10 @@ private struct GlobalInsightsGreigSection: View {
 }
 
 private struct GlobalInsightsEmptyState: View {
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(Color(.secondarySystemGroupedBackground)),
+            backgroundStyle: AnyShapeStyle(colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground),
             padding: 22
         ) {
             VStack(alignment: .leading, spacing: 8) {
@@ -281,12 +291,15 @@ private struct GlobalInsightsEmptyState: View {
 }
 
 private struct GlobalInsightsSurface<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     let backgroundStyle: AnyShapeStyle
     let padding: CGFloat
     let shadowOpacity: Double
     let shadowRadius: CGFloat
     let shadowYOffset: CGFloat
     let content: Content
+    let accent: Color?
+    let isHighlighted: Bool
 
     init(
         backgroundStyle: AnyShapeStyle,
@@ -294,6 +307,8 @@ private struct GlobalInsightsSurface<Content: View>: View {
         shadowOpacity: Double = 0.05,
         shadowRadius: CGFloat = 8,
         shadowYOffset: CGFloat = 2,
+        accent: Color? = nil,
+        isHighlighted: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         self.backgroundStyle = backgroundStyle
@@ -301,6 +316,8 @@ private struct GlobalInsightsSurface<Content: View>: View {
         self.shadowOpacity = shadowOpacity
         self.shadowRadius = shadowRadius
         self.shadowYOffset = shadowYOffset
+        self.accent = accent
+        self.isHighlighted = isHighlighted
         self.content = content()
     }
 
@@ -314,8 +331,16 @@ private struct GlobalInsightsSurface<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.04))
+                .strokeBorder(
+                    (isHighlighted ? (accent ?? .primary).opacity(0.15) : (colorScheme == .light ? Color.primary.opacity(0.08) : Color.white.opacity(0.06)))
+                )
         )
-        .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, y: shadowYOffset)
+        .shadow(
+            color: colorScheme == .light
+                ? Color.black.opacity(isHighlighted ? 0.045 : 0.03)
+                : .clear,
+            radius: colorScheme == .light ? (isHighlighted ? 8 : 6) : 0,
+            y: shadowYOffset
+        )
     }
 }

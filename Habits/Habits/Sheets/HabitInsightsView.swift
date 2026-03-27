@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HabitInsightsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let habit: Habit
     let logAnchorDate: Date?
 
@@ -38,7 +39,7 @@ struct HabitInsightsView: View {
             .padding(.top, 26)
             .padding(.bottom, 40)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
         .navigationTitle(insights.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -84,7 +85,7 @@ private struct HabitInsightsCardsRenderer: View {
                 }
 
                 if !viewModel.notes.isEmpty {
-                    HabitInsightsPanel(background: Color(.tertiarySystemGroupedBackground)) {
+                    HabitInsightsPanel(background: Color.appTertiaryGroupedBackground) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(viewModel.notes, id: \.self) { note in
                                 Text(note)
@@ -625,7 +626,7 @@ private struct TrendCardView: View {
                                     .overlay {
                                         if isPeak(point) {
                                             RoundedRectangle(cornerRadius: 3)
-                                                .fill(Color.white.opacity(0.10))
+                                                .fill(Color.primary.opacity(0.08))
                                         }
                                     }
                                     .scaleEffect(y: hasAnimatedIn ? 1 : 0.02, anchor: .bottom)
@@ -1095,7 +1096,7 @@ private struct DebugCardView: View {
     let block: HabitInsightsDebugBlock
 
     var body: some View {
-        HabitInsightsPanel(background: Color(.tertiarySystemGroupedBackground)) {
+        HabitInsightsPanel(background: Color.appTertiaryGroupedBackground) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(block.heading)
                     .font(.headline)
@@ -1297,7 +1298,7 @@ private struct HabitInsightsPreviewScenario: Identifiable {
     let referenceDate = Date()
     let scenarios = HabitInsightsPreviewScenario.all(referenceDate: referenceDate, calendar: calendar)
 
-    return ScrollView {
+    ScrollView {
         VStack(alignment: .leading, spacing: 24) {
             ForEach(scenarios) { scenario in
                 VStack(alignment: .leading, spacing: 10) {
@@ -1324,6 +1325,6 @@ private struct HabitInsightsPreviewScenario: Identifiable {
         }
         .padding(.vertical, 20)
     }
-    .background(Color(.systemGroupedBackground))
+    .background(Color.appGroupedBackground)
 }
 #endif

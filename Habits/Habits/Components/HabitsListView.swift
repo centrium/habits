@@ -27,6 +27,7 @@ private enum ActiveSheet: Identifiable {
 }
 
 struct HabitsListView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
@@ -156,6 +157,17 @@ struct HabitsListView: View {
                         addHabit()
                     } label: {
                         Label("Add", systemImage: "plus")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(colorScheme == .light ? Color.white : Color.accentColor)
+                            .padding(.horizontal, colorScheme == .light ? 14 : 0)
+                            .padding(.vertical, colorScheme == .light ? 10 : 0)
+                            .background {
+                                if colorScheme == .light {
+                                    Capsule()
+                                        .fill(Color.systemAccent)
+                                        .shadow(color: Color.black.opacity(0.1), radius: 14, y: 6)
+                                }
+                            }
                     }
 
                     Spacer()
@@ -390,6 +402,7 @@ private struct UpgradeHintRow: View {
 }
 
 private struct PremiumInsightsStripView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let summary: PremiumInsightsStripSummary
     private let accentColor = Color.systemAccent
 
@@ -428,30 +441,7 @@ private struct PremiumInsightsStripView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 14)
         .padding(.horizontal, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(accentColor.opacity(0.04))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    accentColor.opacity(0.22),
-                                    accentColor.opacity(0.08),
-                                    .clear
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-        )
-        .shadow(color: accentColor.opacity(0.12), radius: 8, y: 2)
+        .appSurface(level: .highlighted, accent: accentColor, tinted: colorScheme == .light, cornerRadius: 16)
     }
 
     private var secondaryLine: Text {
@@ -474,6 +464,7 @@ private struct PremiumInsightsStripView: View {
 }
 
 private struct EmptyState: View {
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         VStack(spacing: 10) {
             Text("No habits yet")
@@ -485,11 +476,12 @@ private struct EmptyState: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .appSurface(level: .standard, cornerRadius: 16)
     }
 }
 
 private struct LockedHabitSlotCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -515,14 +507,7 @@ private struct LockedHabitSlotCard: View {
             Spacer()
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .opacity(0.6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.primary.opacity(0.05), lineWidth: 1)
-        )
+        .appSurface(level: .standard, cornerRadius: 16)
+        .opacity(colorScheme == .light ? 0.82 : 0.6)
     }
 }

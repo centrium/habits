@@ -153,7 +153,7 @@ struct HabitFormView: View {
                                     .frame(width: 28, height: 28)
                                     .overlay(
                                         Circle().stroke(
-                                            Color.white.opacity(selectedHex == hex ? 0.9 : 0.15),
+                                            Color.primary.opacity(selectedHex == hex ? 0.9 : 0.15),
                                             lineWidth: selectedHex == hex ? 2 : 1
                                         )
                                     )
@@ -646,7 +646,11 @@ private struct HabitReminderEditorSheet: View {
                         }
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.white.opacity(0.045))
+                                .fill(Color.appSecondaryBackground)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                                }
                         )
                     }
                 }
@@ -713,7 +717,7 @@ private struct HabitReminderEditorSheet: View {
             return .accentColor.opacity(0.12)
         }
 
-        return Color.white.opacity(0.05)
+        return Color.primary.opacity(0.05)
     }
 
     private func commitSelectedDateAndDismiss() {

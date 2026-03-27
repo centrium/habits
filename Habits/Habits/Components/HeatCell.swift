@@ -72,7 +72,9 @@ struct HeatCell: View {
     }
 
     private var visualIntensity: Double {
-        style.visualIntensity(forLevel: intensityLevel)
+        let base = style.visualIntensity(forLevel: intensityLevel)
+        guard colorScheme == .light, intensityLevel > 0 else { return base }
+        return min(base * 1.12, 1)
     }
 
     private var isActive: Bool {
@@ -81,13 +83,14 @@ struct HeatCell: View {
 
     private var fillColor: Color {
         if isLocked {
-            return Color.white.opacity(colorScheme == .dark ? 0.08 : 0.28)
+            return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
         }
 
         guard isActive else {
-            return style.inactiveStrokeColor.opacity(
-                min(style.inactiveFillOpacity * inactiveEmphasis, 1)
-            )
+            let opacity = colorScheme == .light
+                ? max(0.06, min(style.inactiveFillOpacity * inactiveEmphasis, 1))
+                : min(style.inactiveFillOpacity * inactiveEmphasis, 1)
+            return Color.primary.opacity(opacity)
         }
 
         return accent.opacity(visualIntensity)
@@ -95,16 +98,22 @@ struct HeatCell: View {
 
     private var borderColor: Color {
         if isLocked {
-            return Color.white.opacity(colorScheme == .dark ? 0.16 : 0.4)
+            return Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.14)
         }
 
         guard isActive else {
-            return style.inactiveStrokeColor.opacity(
-                min(style.inactiveStrokeOpacity * inactiveEmphasis, 1)
-            )
+            let opacity = colorScheme == .light
+                ? max(0.07, min(style.inactiveStrokeOpacity * inactiveEmphasis, 1))
+                : min(style.inactiveStrokeOpacity * inactiveEmphasis, 1)
+            return Color.primary.opacity(opacity)
         }
 
-        return accent.opacity(max(style.activeBorderOpacity(forLevel: intensityLevel), visualIntensity * 0.22))
+        return accent.opacity(
+            max(
+                style.activeBorderOpacity(forLevel: intensityLevel),
+                visualIntensity * (colorScheme == .light ? 0.28 : 0.22)
+            )
+        )
     }
 
     private var pixelLineWidth: CGFloat {

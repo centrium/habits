@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GradientGaugeView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let value: Double
     let labels: [String]
     let valueText: String
@@ -20,10 +21,10 @@ struct GradientGaugeView: View {
     private var gradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.blue.opacity(0.78),
-                Color.green.opacity(0.8),
-                Color.orange.opacity(0.8),
-                Color.red.opacity(0.78)
+                Color.blue.opacity(colorScheme == .dark ? 0.78 : 0.62),
+                Color.green.opacity(colorScheme == .dark ? 0.8 : 0.64),
+                Color.orange.opacity(colorScheme == .dark ? 0.8 : 0.64),
+                Color.red.opacity(colorScheme == .dark ? 0.78 : 0.62)
             ],
             startPoint: .leading,
             endPoint: .trailing
@@ -45,18 +46,22 @@ struct GradientGaugeView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.primary)
                             .frame(width: bubbleWidth, height: bubbleHeight)
-                            .background(.ultraThinMaterial)
+                            .background(
+                                colorScheme == .light
+                                    ? AnyShapeStyle(Color.appBackground)
+                                    : AnyShapeStyle(.ultraThinMaterial)
+                            )
                             .clipShape(Capsule())
                             .overlay(
                                 Capsule()
-                                    .strokeBorder(Color.white.opacity(0.22))
+                                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.22 : 0.1))
                             )
-                            .shadow(color: .black.opacity(0.12), radius: 10, y: 5)
+                            .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 10, y: 5)
 
                         Circle()
-                            .fill(Color.white.opacity(0.96))
+                            .fill(Color.appBackground.opacity(colorScheme == .dark ? 0.96 : 0.98))
                             .frame(width: indicatorSize, height: indicatorSize)
-                            .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+                            .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.07), radius: 4, y: 2)
                     }
                     .offset(x: indicatorX - (bubbleWidth / 2))
                 }
@@ -96,7 +101,7 @@ struct GradientGaugeView: View {
                 ZStack(alignment: .leading) {
                     ForEach(1..<labels.count, id: \.self) { index in
                         Rectangle()
-                            .fill(Color.white.opacity(0.5))
+                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.38 : 0.14))
                             .frame(width: 1, height: barHeight + 4)
                             .offset(x: (width * CGFloat(index) / CGFloat(labels.count)) - 0.5)
                     }
@@ -104,9 +109,9 @@ struct GradientGaugeView: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: barHeight / 2, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18))
+                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.08))
             }
-            .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+            .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04), radius: 8, y: 3)
     }
 
     private func indicatorPosition(in width: CGFloat) -> CGFloat {

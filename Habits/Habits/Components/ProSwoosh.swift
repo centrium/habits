@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ProSwoosh: View {
+    @Environment(\.colorScheme) private var colorScheme
     enum Size {
         case large
         case small
@@ -42,8 +43,8 @@ struct ProSwoosh: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color.systemAccent.opacity(0.9),
-                Color.systemAccent.opacity(0.3),
+                Color.systemAccent.opacity(colorScheme == .light ? 0.82 : 0.9),
+                Color.systemAccent.opacity(colorScheme == .light ? 0.22 : 0.3),
                 Color.systemAccent.opacity(0)
             ],
             startPoint: .leading,
@@ -199,8 +200,9 @@ struct CadenceProWordmark: View {
 
         let pro = Text(" Pro")
             .font(size.proFont)
-            .foregroundStyle(.secondary.opacity(0.7))
-            .baselineOffset(size.proBaselineOffset)
+            .foregroundStyle(.secondary.opacity(0.76))
+            .kerning(-0.15)
+            .baselineOffset(size.proBaselineOffset - (size == .large ? 1 : 0.5))
 
         return Text("\(title)\(pro)")
     }

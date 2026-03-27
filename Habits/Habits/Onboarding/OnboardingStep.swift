@@ -159,7 +159,13 @@ struct OnboardingFlowController {
 
 extension Color {
     static let systemAccent = Color.accentColor.opacity(0.9)
-    static let onboardingBackground = Color(.systemBackground)
+    static let appBackground = Color(uiColor: .systemBackground)
+    static let appSecondaryBackground = Color(uiColor: .secondarySystemBackground)
+    static let appGroupedBackground = Color(uiColor: .systemGroupedBackground)
+    static let appSecondaryGroupedBackground = Color(uiColor: .secondarySystemGroupedBackground)
+    static let appTertiaryGroupedBackground = Color(uiColor: .tertiarySystemGroupedBackground)
+    static let appSeparator = Color(uiColor: .separator)
+    static let onboardingBackground = appBackground
     static let onboardingAccent = Color.systemAccent
     static let onboardingSecondary = Color.secondary.opacity(0.8)
 }

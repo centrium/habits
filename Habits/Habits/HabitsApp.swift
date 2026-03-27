@@ -55,6 +55,7 @@ struct RootView: View {
 
 @main
 struct HabitsApp: App {
+    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @StateObject var deepLinkManager = DeepLinkManager.shared
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
@@ -102,11 +103,16 @@ struct HabitsApp: App {
                 .environmentObject(userSettings)
                 .environmentObject(deepLinkManager)
                 .environmentObject(purchaseService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appAppearance.preferredColorScheme)
                 .onOpenURL { url in
                     deepLinkManager.handle(url: url)
                 }
         }
         .modelContainer(container)
+    }
+
+    private var appAppearance: AppAppearance {
+        get { AppAppearance(rawValue: appAppearanceRawValue) ?? .system }
+        set { appAppearanceRawValue = newValue.rawValue }
     }
 }

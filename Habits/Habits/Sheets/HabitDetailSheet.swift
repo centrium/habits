@@ -154,10 +154,7 @@ struct HabitDetailSheet: View {
                         )
                     }
                     .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color(.secondarySystemBackground))
-                    )
+                    .appSurface(level: .standard, cornerRadius: 16)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 

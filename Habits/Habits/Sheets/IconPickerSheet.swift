@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct IconPickerSheet: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
     let selectedIcon: String?
@@ -84,17 +85,20 @@ struct IconPickerSheet: View {
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(
-                        isSelected
-                        ? accent.opacity(0.18)
-                        : Color(.secondarySystemBackground)
-                    )
+                    .fill(isSelected ? accent.opacity(colorScheme == .light ? 0.06 : 0.08) : Color.appBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
                             .stroke(
-                                isSelected ? accent : Color.secondary.opacity(0.15),
-                                lineWidth: isSelected ? 2 : 1
+                                isSelected
+                                    ? accent.opacity(0.15)
+                                    : (colorScheme == .light ? Color.primary.opacity(0.08) : Color.white.opacity(0.06)),
+                                lineWidth: 1
                             )
+                    )
+                    .shadow(
+                        color: Color.black.opacity(colorScheme == .light ? (isSelected ? 0.045 : 0.03) : 0),
+                        radius: colorScheme == .light ? (isSelected ? 8 : 6) : 0,
+                        y: colorScheme == .light ? (isSelected ? 3 : 2) : 0
                     )
 
                 if let systemName {

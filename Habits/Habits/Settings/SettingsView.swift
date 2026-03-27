@@ -9,6 +9,8 @@ struct SettingsView: View {
 
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     
     @Environment(\.modelContext) private var modelContext
     @State private var sharePayload: SharePayload?
@@ -39,6 +41,13 @@ struct SettingsView: View {
         EveningReflection.timeRange(for: Date(), calendar: .current)
     }
 
+    private var appAppearanceBinding: Binding<AppAppearance> {
+        Binding(
+            get: { AppAppearance(rawValue: appAppearanceRawValue) ?? .system },
+            set: { appAppearanceRawValue = $0.rawValue }
+        )
+    }
+
     private var previewMessage: String {
         let messages = EveningReflection.previewMessages
         guard !messages.isEmpty else { return "" }
@@ -64,6 +73,15 @@ struct SettingsView: View {
                         Text(preference.title).tag(preference)
                     }
                 }
+            }
+
+            Section("Appearance") {
+                Picker("Appearance", selection: appAppearanceBinding) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
 
             Section("Evening Reflection") {
@@ -94,7 +112,19 @@ struct SettingsView: View {
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(colorScheme == .light ? Color.appBackground : Color.clear)
+                        )
+                        .overlay {
+                            if colorScheme == .light {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                            } else {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.thinMaterial)
+                            }
+                        }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -212,6 +242,7 @@ struct SettingsView: View {
 }
 
 private struct ProSettingsCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     let isUnlocked: Bool
     @Binding var showProView: Bool
     @Binding var greigModeEnabled: Bool
@@ -246,30 +277,7 @@ private struct ProSettingsCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(accentColor.opacity(0.04))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    accentColor.opacity(0.22),
-                                    accentColor.opacity(0.08),
-                                    .clear
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-        )
-        .shadow(color: accentColor.opacity(0.12), radius: 8, y: 2)
+        .appSurface(level: .highlighted, accent: accentColor, tinted: colorScheme == .light, cornerRadius: 16)
     }
 
     private var divider: some View {

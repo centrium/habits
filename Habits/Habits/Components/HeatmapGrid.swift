@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct HeatmapGrid: View {
+    @Environment(\.colorScheme) private var colorScheme
     let accent: Color
     let days: [Date]
     let columnsCount: Int
@@ -32,7 +33,10 @@ struct HeatmapGrid: View {
                     .frame(width: cellSize, height: cellSize)
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
-                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                            .strokeBorder(
+                                Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.07),
+                                lineWidth: 1
+                            )
                     )
                     .contentShape(Rectangle())
                     .onTapGesture {

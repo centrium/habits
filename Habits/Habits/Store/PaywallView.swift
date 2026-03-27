@@ -37,6 +37,7 @@ struct PaywallView: View {
 
     @EnvironmentObject private var purchaseService: PurchaseService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var highlightedBenefitVisible = false
     @State private var previewVisible = false
 
@@ -328,37 +329,19 @@ private extension PaywallView {
                         .padding(10)
                         .background(
                             Circle()
-                                .fill(Color.blue.opacity(0.15))
+                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.15 : 0.1))
                                 .blur(radius: 8)
                         )
                         .background(
                             Circle()
-                                .fill(Color(.systemBackground).opacity(0.82))
+                                .fill(Color.appBackground.opacity(colorScheme == .dark ? 0.82 : 0.92))
                         )
                         .padding(12)
                 }
             }
             .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color(.secondarySystemBackground))
-                    .overlay(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.04),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(Color.white.opacity(0.05))
-            )
-            .opacity(previewVisible ? 1 : 0.88)
+            .appSurface(level: .standard, cornerRadius: 18)
+            .opacity(previewVisible ? 1 : (colorScheme == .light ? 0.94 : 0.88))
             .scaleEffect(previewVisible ? 1 : 0.97)
             .onAppear {
                 previewVisible = false
@@ -386,10 +369,7 @@ private extension PaywallView {
 
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .appSurface(level: .standard, cornerRadius: 18)
         .onAppear {
             guard highlightedFeature != nil else { return }
             highlightedBenefitVisible = false
@@ -406,7 +386,7 @@ private extension PaywallView {
             LinearGradient(
                 colors: [
                     Color.clear,
-                    Color.black.opacity(0.08)
+                    Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -421,7 +401,7 @@ private extension PaywallView {
             .padding(.top, 12)
             .padding(.bottom, 12)
         }
-        .background(.ultraThinMaterial)
+        .background(colorScheme == .light ? Color.appBackground : Color.clear)
     }
 
     var paywallFooter: some View {
@@ -437,7 +417,11 @@ private extension PaywallView {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .shadow(color: Color.blue.opacity(0.25), radius: 10, y: 4)
+            .shadow(
+                color: colorScheme == .light ? Color.black.opacity(0.08) : Color.blue.opacity(0.25),
+                radius: colorScheme == .light ? 6 : 10,
+                y: 4
+            )
 
             Text("One-time purchase. No subscription.")
                 .font(.caption)
@@ -455,14 +439,14 @@ private extension PaywallView {
         .padding(.top, 14)
         .padding(.bottom, 8)
         .background(
-            Color(.systemBackground).opacity(0.72),
+            Color.appBackground.opacity(colorScheme == .dark ? 0.72 : 1),
             in: RoundedRectangle(cornerRadius: 24, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.06))
+                .stroke(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.08))
         )
-        .shadow(color: .black.opacity(0.08), radius: 10, y: -2)
+        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.03 : 0), radius: colorScheme == .light ? 6 : 0, y: colorScheme == .light ? 2 : 0)
     }
 
     // MARK: Benefit Row
@@ -563,7 +547,11 @@ private extension PaywallView {
                 .padding(.horizontal, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(.systemBackground).opacity(0.58))
+                        .fill(Color.appBackground.opacity(colorScheme == .dark ? 0.58 : 0.88))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                        }
                 )
             }
         }

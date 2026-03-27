@@ -69,7 +69,7 @@ struct CalendarDayCell: View {
         }
 
         if isLocked {
-            return Color.white.opacity(colorScheme == .dark ? 0.08 : 0.28)
+            return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
         }
 
         return accent.opacity(backgroundOpacity)
@@ -90,11 +90,11 @@ struct CalendarDayCell: View {
 
         switch count {
         case 3...:
-            return Layout.threePlusLogsBackgroundOpacity
+            return colorScheme == .light ? 0.22 : Layout.threePlusLogsBackgroundOpacity
         case 2:
-            return Layout.twoLogsBackgroundOpacity
+            return colorScheme == .light ? 0.15 : Layout.twoLogsBackgroundOpacity
         case 1:
-            return Layout.oneLogBackgroundOpacity
+            return colorScheme == .light ? 0.10 : Layout.oneLogBackgroundOpacity
         default:
             return 0
         }
@@ -114,7 +114,7 @@ struct CalendarDayCell: View {
         }
 
         if isSelected {
-            return .white.opacity(0.95)
+            return Color.appBackground.opacity(0.95)
         }
 
         if isInDisplayedMonth {
@@ -191,10 +191,10 @@ struct CalendarDayCell: View {
         let lineWidth: CGFloat
 
         if isSelected {
-            strokeColor = Color.white.opacity(Layout.selectedStrokeOpacity)
+            strokeColor = Color.primary.opacity(Layout.selectedStrokeOpacity)
             lineWidth = Layout.selectedStrokeWidth
         } else if isToday {
-            strokeColor = Color.white.opacity(Layout.todayStrokeOpacity)
+            strokeColor = Color.primary.opacity(colorScheme == .light ? 0.28 : Layout.todayStrokeOpacity)
             lineWidth = Layout.todayStrokeWidth
         } else {
             strokeColor = nil
@@ -205,8 +205,8 @@ struct CalendarDayCell: View {
             RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
                 .strokeBorder(
                     isLocked
-                    ? Color.white.opacity(colorScheme == .dark ? 0.18 : 0.36)
-                    : Color.white.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
+                    ? Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.14)
+                    : Color.primary.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
                     lineWidth: Layout.baseStrokeWidth
                 )
 
@@ -224,7 +224,7 @@ struct CalendarDayCell: View {
                 .padding(.vertical, Layout.indicatorVerticalPadding)
                 .background(
                     Capsule()
-                        .fill(Color.black.opacity(Layout.indicatorPlateOpacity))
+                        .fill(Color.primary.opacity(Layout.indicatorPlateOpacity))
                 )
                 .padding(.bottom, Layout.indicatorBottomPadding)
         }
