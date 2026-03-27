@@ -28,6 +28,7 @@ struct ProSwoosh: View {
     let toAnimate: Bool
 
     @State private var hasAnimated = false
+    @State private var animationTask: Task<Void, Never>?
     @State private var scaleX: CGFloat
     @State private var opacity: Double
 
@@ -52,17 +53,54 @@ struct ProSwoosh: View {
         .scaleEffect(x: scaleX, y: 1, anchor: .leading)
         .opacity(opacity)
         .onAppear {
-            guard toAnimate, !hasAnimated else { return }
-            hasAnimated = true
-            triggerAnimation()
+            resetForAnimationIfNeeded()
+            scheduleAnimationIfNeeded()
+        }
+        .onChange(of: toAnimate) { _, _ in
+            resetForAnimationIfNeeded()
+            scheduleAnimationIfNeeded()
+        }
+        .onDisappear {
+            animationTask?.cancel()
+            animationTask = nil
         }
         .onTapGesture {
             guard toAnimate else { return }
+            animationTask?.cancel()
             scaleX = 0.08
             opacity = 0.35
             triggerAnimation()
         }
         .accessibilityHidden(true)
+    }
+
+    private func resetForAnimationIfNeeded() {
+        guard toAnimate else {
+            scaleX = 1
+            opacity = 1
+            return
+        }
+
+        guard !hasAnimated else { return }
+        scaleX = 0.08
+        opacity = 0.35
+    }
+
+    private func scheduleAnimationIfNeeded() {
+        animationTask?.cancel()
+
+        guard toAnimate, !hasAnimated else { return }
+
+        animationTask = Task {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                hasAnimated = true
+                triggerAnimation()
+                animationTask = nil
+            }
+        }
     }
 
     private func triggerAnimation() {
@@ -142,7 +180,9 @@ struct CadenceProWordmark: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: size.spacing) {
-            ProSwoosh(size: size.swooshSize, toAnimate: animateSwoosh)
+            if showsProLabel {
+                ProSwoosh(size: size.swooshSize, toAnimate: animateSwoosh)
+            }
 
             wordmarkText
         }

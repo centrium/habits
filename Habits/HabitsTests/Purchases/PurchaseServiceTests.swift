@@ -135,14 +135,26 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertEqual(premiumStatus, .premium)
     }
 
-    func testPremiumStatusStartsUnknownBeforeEntitlementsLoad() async {
+    func testPremiumStatusStartsFreeWithoutCachedEntitlement() async {
         let service = await makeService()
 
         let premiumStatus = await MainActor.run {
             service.premiumStatus
         }
 
-        XCTAssertEqual(premiumStatus, .unknown)
+        XCTAssertEqual(premiumStatus, .free)
+    }
+
+    func testPremiumStatusStartsPremiumWithCachedEntitlement() async {
+        let store = TestSettingsStore()
+        store.set(true, forKey: "purchase.cachedPremiumUnlocked")
+        let service = await makeService(store: store)
+
+        let premiumStatus = await MainActor.run {
+            service.premiumStatus
+        }
+
+        XCTAssertEqual(premiumStatus, .premium)
     }
 
     func testFreeUserCanOnlyAddOneReminder() {
@@ -170,12 +182,14 @@ final class PurchaseServiceTests: XCTestCase {
 
     private func makeService(
         productLoader: @escaping ([String]) async throws -> [StoreCatalogProduct] = { _ in [] },
-        currentEntitlementsLoader: @escaping () async -> [any PremiumEntitlementTransaction] = { [] }
+        currentEntitlementsLoader: @escaping () async -> [any PremiumEntitlementTransaction] = { [] },
+        store: (any SettingsKeyValueStore)? = nil
     ) async -> PurchaseService {
         await MainActor.run {
             PurchaseService(
                 productLoader: productLoader,
                 currentEntitlementsLoader: currentEntitlementsLoader,
+                premiumStatusStore: store,
                 shouldStartBackgroundTasks: false
             )
         }
@@ -184,4 +198,34 @@ final class PurchaseServiceTests: XCTestCase {
 
 private struct TestTransaction: PremiumEntitlementTransaction {
     let productID: String
+}
+
+private final class TestSettingsStore: SettingsKeyValueStore {
+    private var strings: [String: String] = [:]
+    private var bools: [String: Bool] = [:]
+    private var ints: [String: Int] = [:]
+
+    func string(forKey key: String) -> String? {
+        strings[key]
+    }
+
+    func set(_ value: String?, forKey key: String) {
+        strings[key] = value
+    }
+
+    func bool(forKey key: String) -> Bool? {
+        bools[key]
+    }
+
+    func set(_ value: Bool, forKey key: String) {
+        bools[key] = value
+    }
+
+    func int(forKey key: String) -> Int? {
+        ints[key]
+    }
+
+    func set(_ value: Int, forKey key: String) {
+        ints[key] = value
+    }
 }
