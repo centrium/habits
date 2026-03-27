@@ -5,6 +5,7 @@ struct ProSwoosh: View {
     enum Size {
         case large
         case small
+        case launch
 
         var width: CGFloat {
             switch self {
@@ -12,6 +13,8 @@ struct ProSwoosh: View {
                 return 60
             case .small:
                 return 36
+            case .launch:
+                return 80
             }
         }
 
@@ -21,6 +24,8 @@ struct ProSwoosh: View {
                 return 2.5
             case .small:
                 return 2
+            case .launch:
+                return 4
             }
         }
     }
@@ -122,6 +127,7 @@ struct CadenceProWordmark: View {
     enum Size {
         case large
         case small
+        case launch
 
         var swooshSize: ProSwoosh.Size {
             switch self {
@@ -129,6 +135,8 @@ struct CadenceProWordmark: View {
                 return .large
             case .small:
                 return .small
+            case .launch:
+                return .launch
             }
         }
 
@@ -138,6 +146,8 @@ struct CadenceProWordmark: View {
                 return .system(size: 40, weight: .bold)
             case .small:
                 return .system(size: 16, weight: .semibold)
+            case .launch:
+                return .system(size: 46, weight: .semibold)
             }
         }
 
@@ -147,6 +157,8 @@ struct CadenceProWordmark: View {
                 return .system(size: 14, weight: .semibold)
             case .small:
                 return .system(size: 10, weight: .semibold)
+            case .launch:
+                return .system(size: 14, weight: .semibold)
             }
         }
 
@@ -156,6 +168,8 @@ struct CadenceProWordmark: View {
                 return 16
             case .small:
                 return 7
+            case .launch:
+                return 18
             }
         }
 
@@ -165,6 +179,8 @@ struct CadenceProWordmark: View {
                 return 8
             case .small:
                 return 6
+            case .launch:
+                return 14
             }
         }
     }

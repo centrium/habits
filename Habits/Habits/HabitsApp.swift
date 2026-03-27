@@ -62,6 +62,7 @@ struct HabitsApp: App {
     @State private var container: ModelContainer?
     @State private var isPreparingContainer = false
     @State private var hasConfiguredRuntimeServices = false
+    @State private var isBootstrapVisible = true
 
     init() {
         self.init(container: nil)
@@ -76,15 +77,28 @@ struct HabitsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
+            ZStack {
                 if let container {
                     RootView()
                         .modelContainer(container)
                         .task {
                             configureRuntimeServicesIfNeeded(using: container)
                         }
-                } else {
-                    AppBootstrapView(isPremiumUnlocked: purchaseService.isPremiumUnlocked)
+                        .onAppear {
+                            guard isBootstrapVisible else { return }
+
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 180_000_000)
+                                withAnimation(.easeOut(duration: 0.18)) {
+                                    isBootstrapVisible = false
+                                }
+                                KeyboardWarmup.warm()
+                            }
+                        }
+                }
+
+                if isBootstrapVisible {
+                    AppBootstrapView()
                         .task {
                             await prepareContainerIfNeeded()
                         }
@@ -149,35 +163,50 @@ struct HabitsApp: App {
 }
 
 private struct AppBootstrapView: View {
-    let isPremiumUnlocked: Bool
+    private let containerWidth: CGFloat = 248
+    private let wordmarkWidth: CGFloat = 196
+    private let titleSize: CGFloat = 44
+    private let subtitleSize: CGFloat = 15
+    private let swooshBottomSpacing: CGFloat = 14
+    private let subtitleTopSpacing: CGFloat = 8
+    private let verticalOffset: CGFloat = -24
+    private let spinnerBottomPadding: CGFloat = 96
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color.appBackground,
-                    Color.appBackground.opacity(0.96),
-                    Color.systemAccent.opacity(0.08)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color.appBackground
+                .ignoresSafeArea()
 
-            VStack(spacing: 18) {
-                CadenceProWordmark(
-                    size: .large,
-                    animateSwoosh: isPremiumUnlocked,
-                    showsProLabel: isPremiumUnlocked
-                )
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ProSwoosh(size: .launch, toAnimate: false)
+                        .padding(.bottom, swooshBottomSpacing)
+
+                    Text("Cadence")
+                        .font(.system(size: titleSize, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .frame(width: wordmarkWidth, alignment: .leading)
+
+                Text("Where habits become performance")
+                    .font(.system(size: subtitleSize, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.84))
+                    .padding(.top, subtitleTopSpacing)
+                    .frame(width: containerWidth)
+            }
+            .frame(width: containerWidth)
+            .offset(y: verticalOffset)
+            .padding(.horizontal, 24)
+
+            VStack {
+                Spacer()
 
                 ProgressView()
                     .tint(.secondary.opacity(0.7))
+                    .padding(.bottom, spinnerBottomPadding)
             }
-            .padding(.horizontal, 24)
-        }
-        .task {
-            KeyboardWarmup.warm()
+            .ignoresSafeArea(edges: .bottom)
         }
     }
 }
