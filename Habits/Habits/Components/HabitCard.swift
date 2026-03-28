@@ -12,6 +12,7 @@ struct HabitCard: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @Bindable var habit: Habit
     @State private var isDetailPresented = false
     @State private var service: HabitLogService?
@@ -57,9 +58,10 @@ struct HabitCard: View {
             )
             .frame(height: headerHeight)
 
-            if service != nil {
+            if let service {
                 HabitHeatmap(
                     habit: habit,
+                    service: service,
                     calendarProvider: heatmapCalendarProvider,
                     selectedDate: selectedDate,
                     isInteractive: false,
@@ -112,10 +114,15 @@ struct HabitCard: View {
         }
         .onAppear {
             if service == nil {
-                service = HabitLogService(modelContext: modelContext, calendar: calculationCalendar)
+                service = HabitLogService(
+                    modelContext: modelContext,
+                    calendar: calculationCalendar,
+                    uiStateStore: uiStateStore
+                )
             }
 
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
+            service?.setUIStateStore(uiStateStore)
             service?.updateCalendar(calculationCalendar)
             service?.prepare(habit)
         }

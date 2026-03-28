@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct HabitHeader: View {
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
+
     let habit: Habit
     let selectedDate: Date
     let calendar: Calendar
@@ -16,8 +18,6 @@ struct HabitHeader: View {
     let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
     let currentStreak: Int?
-    let progressFractionOverride: Double?
-    let isCompleteOverride: Bool?
     let onQuickLog: (Date) -> Void
     let onQuickLogLongPress: ((Date) -> Void)?
 
@@ -30,8 +30,6 @@ struct HabitHeader: View {
         showsInlineProgressText: Bool,
         secondaryTextOverride: String?,
         currentStreak: Int? = nil,
-        progressFractionOverride: Double? = nil,
-        isCompleteOverride: Bool? = nil,
         onQuickLog: @escaping (Date) -> Void,
         onQuickLogLongPress: ((Date) -> Void)? = nil
     ) {
@@ -43,8 +41,6 @@ struct HabitHeader: View {
         self.showsInlineProgressText = showsInlineProgressText
         self.secondaryTextOverride = secondaryTextOverride
         self.currentStreak = currentStreak
-        self.progressFractionOverride = progressFractionOverride
-        self.isCompleteOverride = isCompleteOverride
         self.onQuickLog = onQuickLog
         self.onQuickLogLongPress = onQuickLogLongPress
     }
@@ -78,19 +74,27 @@ struct HabitHeader: View {
     }
 
     private var goalProgressFraction: Double {
-        progressFractionOverride ?? habit.progressFraction(
-            for: selectedDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ) ?? 0
+        if let optimistic = uiStateStore.progress(habitId: habit.id, date: selectedDate) {
+            return optimistic
+        } else {
+            return habit.progressFraction(
+                for: selectedDate,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            ) ?? 0
+        }
     }
 
     private var isComplete: Bool {
-        isCompleteOverride ?? habit.isComplete(
-            for: selectedDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
+        if let optimistic = uiStateStore.isComplete(habitId: habit.id, date: selectedDate) {
+            return optimistic
+        } else {
+            return habit.isComplete(
+                for: selectedDate,
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            )
+        }
     }
 
     private var quickLogAccessibilityLabel: String {

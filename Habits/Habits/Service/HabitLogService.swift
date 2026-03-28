@@ -19,9 +19,16 @@ final class HabitLogService {
         let metricsByDay: [Date: HabitDayMetrics]
     }
 
+    private struct PendingDayMetrics {
+        let count: Int
+        let value: Double
+        let intensity: Double
+    }
+
     private let modelContext: ModelContext
     private(set) var calendar: Calendar
     private let lastValueStore: any LastValueStore
+    private weak var uiStateStore: HabitUIStateStore?
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.1
     private var pendingSaveWorkItem: DispatchWorkItem?
@@ -29,20 +36,27 @@ final class HabitLogService {
     private let saveCoalescingDelay: TimeInterval = 0.12
     private var metricsRevisions: [UUID: Int] = [:]
     private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
+    private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
 
     init(
         modelContext: ModelContext,
         calendar: Calendar = .current,
-        lastValueStore: any LastValueStore = LogDerivedLastValueStore()
+        lastValueStore: any LastValueStore = LogDerivedLastValueStore(),
+        uiStateStore: HabitUIStateStore? = nil
     ) {
         self.modelContext = modelContext
         self.calendar = calendar
         self.lastValueStore = lastValueStore
+        self.uiStateStore = uiStateStore
     }
 
     func updateCalendar(_ calendar: Calendar) {
         self.calendar = calendar
         dayMetricsCache.removeAll()
+    }
+
+    func setUIStateStore(_ uiStateStore: HabitUIStateStore?) {
+        self.uiStateStore = uiStateStore
     }
 
     private func playHaptic(becameComplete: Bool) {
@@ -112,6 +126,57 @@ final class HabitLogService {
     private func invalidateMetricsCache(for habitID: UUID) {
         metricsRevisions[habitID, default: 0] += 1
         dayMetricsCache.removeValue(forKey: habitID)
+    }
+
+    private func dayKey(habitID: UUID, day: Date) -> String {
+        "\(habitID.uuidString)-\(calendar.startOfDay(for: day).timeIntervalSince1970)"
+    }
+
+    private func pendingDayMetrics(for habitID: UUID, day: Date) -> PendingDayMetrics? {
+        pendingDayMetricsByKey[dayKey(habitID: habitID, day: day)]
+    }
+
+    private func setPendingDayMetrics(
+        for habitID: UUID,
+        day: Date,
+        metrics: PendingDayMetrics
+    ) {
+        pendingDayMetricsByKey[dayKey(habitID: habitID, day: day)] = metrics
+    }
+
+    private func clearPendingDayMetrics(for habitID: UUID, day: Date) {
+        pendingDayMetricsByKey.removeValue(forKey: dayKey(habitID: habitID, day: day))
+    }
+
+    private func optimisticProgress(habitID: UUID, day: Date) -> Double? {
+        guard let uiStateStore else { return nil }
+        return MainActor.assumeIsolated {
+            uiStateStore.progress(habitId: habitID, date: day)
+        }
+    }
+
+    private func optimisticCompletion(habitID: UUID, day: Date) -> Bool? {
+        guard let uiStateStore else { return nil }
+        return MainActor.assumeIsolated {
+            uiStateStore.isComplete(habitId: habitID, date: day)
+        }
+    }
+
+    private func setOptimisticState(
+        habitID: UUID,
+        day: Date,
+        progress: Double,
+        isComplete: Bool
+    ) {
+        guard let uiStateStore else { return }
+        MainActor.assumeIsolated {
+            uiStateStore.setProgress(
+                habitId: habitID,
+                date: day,
+                progress: progress,
+                isComplete: isComplete
+            )
+        }
     }
 }
 
@@ -260,7 +325,34 @@ extension HabitLogService {
         requestedMetrics.reserveCapacity(normalizedDays.count)
 
         for day in normalizedDays {
-            requestedMetrics[day] = resolvedMetricsByDay[day] ?? .zero
+            if let pending = pendingDayMetrics(for: habit.id, day: day) {
+                requestedMetrics[day] = HabitDayMetrics(
+                    count: pending.count,
+                    value: pending.value,
+                    intensity: pending.intensity
+                )
+                continue
+            }
+
+            var metrics = resolvedMetricsByDay[day] ?? .zero
+            if let optimisticProgress = optimisticProgress(habitID: habit.id, day: day) {
+                metrics = HabitDayMetrics(
+                    count: metrics.count,
+                    value: metrics.value,
+                    intensity: clamp(optimisticProgress)
+                )
+            }
+            if let optimisticCompletion = optimisticCompletion(habitID: habit.id, day: day),
+               optimisticCompletion,
+               metrics.intensity <= 0 {
+                metrics = HabitDayMetrics(
+                    count: max(metrics.count, 1),
+                    value: max(metrics.value, 1),
+                    intensity: 1
+                )
+            }
+
+            requestedMetrics[day] = metrics
         }
 
         return requestedMetrics
@@ -276,11 +368,19 @@ extension HabitLogService {
 
     func count(for habit: Habit, on date: Date) -> Int {
         normalizeLogsIfNeeded(for: habit)
+        let normalizedDay = calendar.startOfDay(for: date)
+        if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
+            return pending.count
+        }
         return habit.count(on: date, calendar: calendar)
     }
 
     func value(for habit: Habit, on date: Date) -> Double {
         normalizeLogsIfNeeded(for: habit)
+        let normalizedDay = calendar.startOfDay(for: date)
+        if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
+            return pending.value
+        }
         return habit.value(on: date, calendar: calendar)
     }
 
@@ -359,11 +459,83 @@ extension HabitLogService {
         guard amount > 0 else { return 0 }
 
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
-        habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: calendar))
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
+        let modelDayValue = habit.value(on: normalizedDay, calendar: calendar)
+        let modelDayCount = habit.count(on: normalizedDay, calendar: calendar)
+        let pendingMetrics = pendingDayMetrics(for: habit.id, day: normalizedDay)
+        let currentDayValue = pendingMetrics?.value ?? modelDayValue
+        let currentDayCount = pendingMetrics?.count ?? modelDayCount
+        let newValue = currentDayValue + amount
+        let newCount = currentDayCount + 1
 
-        return habit.value(on: normalizedDay, calendar: calendar)
+        let newProgress = habit.progressFractionAfterAdding(
+            value: newValue,
+            date: normalizedDay,
+            calendar: calendar
+        )
+        let willBeComplete = habit.willBeCompleteAfterAdding(
+            value: newValue,
+            date: normalizedDay,
+            calendar: calendar
+        )
+
+        let intensity: Double = {
+            guard habit.hasGoal, let target = habit.effectiveTargetValue, target > 0 else {
+                return newValue > 0 ? 1 : 0
+            }
+
+            switch habit.goalType {
+            case .frequency:
+                return clamp(Double(newCount) / target)
+            case .cumulative:
+                return clamp(newValue / target)
+            }
+        }()
+
+        setPendingDayMetrics(
+            for: habit.id,
+            day: normalizedDay,
+            metrics: PendingDayMetrics(
+                count: newCount,
+                value: newValue,
+                intensity: intensity
+            )
+        )
+
+        let hasUIStateStore = uiStateStore != nil
+        if hasUIStateStore {
+            setOptimisticState(
+                habitID: habit.id,
+                day: normalizedDay,
+                progress: newProgress,
+                isComplete: willBeComplete
+            )
+            playHaptic(becameComplete: !wasComplete && willBeComplete)
+        }
+
+        guard hasUIStateStore else {
+            habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
+            invalidateMetricsCache(for: habit.id)
+            saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
+            clearPendingDayMetrics(for: habit.id, day: normalizedDay)
+            return habit.value(on: normalizedDay, calendar: calendar)
+        }
+
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+
+            await MainActor.run {
+                habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
+                self.invalidateMetricsCache(for: habit.id)
+                self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
+            }
+
+            await MainActor.run {
+                self.uiStateStore?.clear(habitId: habit.id, date: normalizedDay)
+                self.clearPendingDayMetrics(for: habit.id, day: normalizedDay)
+            }
+        }
+
+        return newValue
     }
 
     @discardableResult

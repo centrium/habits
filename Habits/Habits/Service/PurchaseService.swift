@@ -172,22 +172,16 @@ extension PurchaseService {
 
         let ids = StoreProduct.allCases.map(\.id)
 
-        print("Bundle ID:", Bundle.main.bundleIdentifier ?? "nil")
-        print("Requesting product IDs:", ids)
-
         do {
             let loadedProducts = try await productLoader(ids)
 
             products = loadedProducts
-
-            print("Loaded products count:", loadedProducts.count)
 
             if loadedProducts.isEmpty {
                 productLoadError = "No products returned from App Store Connect"
             }
 
         } catch {
-            print("Failed to fetch products:", error)
             products = []
             productLoadError = error.localizedDescription
         }
@@ -287,9 +281,7 @@ extension PurchaseService {
                 await transaction.finish()
                 await updateCurrentEntitlements()
 
-            } catch {
-                print(error)
-            }
+            } catch { }
 
         }
 
@@ -328,9 +320,7 @@ extension PurchaseService {
         do {
             try await AppStore.sync()
             await updateCurrentEntitlements()
-        } catch {
-            print(error)
-        }
+        } catch { }
 
     }
 

@@ -95,6 +95,7 @@ struct HabitsApp: App {
     @StateObject var deepLinkManager = DeepLinkManager.shared
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
+    @StateObject private var habitUIStateStore = HabitUIStateStore()
     @State private var container: ModelContainer?
     @State private var isPreparingContainer = false
     @State private var hasConfiguredRuntimeServices = false
@@ -122,6 +123,7 @@ struct HabitsApp: App {
             .environmentObject(userSettings)
             .environmentObject(deepLinkManager)
             .environmentObject(purchaseService)
+            .environmentObject(habitUIStateStore)
             .onOpenURL { url in
                 deepLinkManager.handle(url: url)
             }

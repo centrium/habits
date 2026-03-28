@@ -15,7 +15,8 @@ struct GitHubHeatmapGrid: View {
     let weeks: [Week]
     let selectedDate: Date
     let isInteractive: Bool
-    private let cellsByDate: [Date: HeatmapCell]
+    private let intensityByDate: [Date: Double]
+    private let lockedDates: Set<Date>
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
@@ -28,7 +29,8 @@ struct GitHubHeatmapGrid: View {
         weeks: [Week],
         selectedDate: Date,
         isInteractive: Bool,
-        cells: [HeatmapCell],
+        intensityByDate: [Date: Double],
+        lockedDates: Set<Date>,
         onTapDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void
     ) {
@@ -38,7 +40,8 @@ struct GitHubHeatmapGrid: View {
         self.weeks = weeks
         self.selectedDate = selectedDate
         self.isInteractive = isInteractive
-        self.cellsByDate = Dictionary(uniqueKeysWithValues: cells.map { ($0.date, $0) })
+        self.intensityByDate = intensityByDate
+        self.lockedDates = lockedDates
         self.onTapDay = onTapDay
         self.onTapLockedDay = onTapLockedDay
     }
@@ -124,24 +127,28 @@ struct GitHubHeatmapGrid: View {
                         let day = week.days[i]
 
                         if let day {
-                            let cell = cell(for: day)
-                            let isLockedDay = cell.isLocked
-                            HeatCell(
-                                date: day,
-                                accent: accent,
-                                intensityLevel: cell.normalizedIntensity,
-                                size: style.cellSize,
-                                style: style,
-                                isSelected: calendarProvider.calendar.isDate(day, inSameDayAs: selectedDate),
-                                isToday: cell.isToday,
-                                isInteractive: isInteractive || isLockedDay,
-                                isLocked: isLockedDay,
-                                inactiveEmphasis: premiumBoundaryWeekIndex == index ? 1.45 : 1,
-                                onTap: {
+                            let normalizedDay = calendarProvider.calendar.startOfDay(for: day)
+                            let isLockedDay = lockedDates.contains(normalizedDay)
+                            let intensity = intensityByDate[normalizedDay] ?? 0
+
+                            EquatableView(
+                                content: HeatmapCellView(
+                                    date: normalizedDay,
+                                    isSelected: calendarProvider.calendar.isDate(normalizedDay, inSameDayAs: selectedDate),
+                                    intensity: intensity,
+                                    accent: accent
+                                )
+                            )
+                            .frame(width: style.cellSize, height: style.cellSize)
+                            .opacity(isLockedDay ? 0.35 : 1)
+                            .contentShape(Rectangle())
+                            .allowsHitTesting(isInteractive || isLockedDay)
+                            .highPriorityGesture(
+                                TapGesture().onEnded {
                                     if isLockedDay {
-                                        onTapLockedDay(day)
+                                        onTapLockedDay(normalizedDay)
                                     } else {
-                                        onTapDay(day)
+                                        onTapDay(normalizedDay)
                                     }
                                 }
                             )
@@ -213,14 +220,14 @@ struct GitHubHeatmapGrid: View {
         weeks
             .flatMap(\.days)
             .compactMap { $0 }
-            .last(where: { cell(for: $0).isLocked })
+            .last(where: { lockedDates.contains(calendarProvider.calendar.startOfDay(for: $0)) })
     }
 
     private var premiumBoundaryWeekIndex: Int? {
         weeks.lastIndex { week in
             week.days
                 .compactMap { $0 }
-                .contains(where: { cell(for: $0).isLocked })
+                .contains(where: { lockedDates.contains(calendarProvider.calendar.startOfDay(for: $0)) })
         }
     }
 
@@ -230,19 +237,7 @@ struct GitHubHeatmapGrid: View {
         }
 
         let boundaryWeekDays = weeks[premiumBoundaryWeekIndex].days.compactMap { $0 }
-        return boundaryWeekDays.first(where: { !cell(for: $0).isLocked }) ?? boundaryLockedDate
-    }
-
-    private func cell(for date: Date) -> HeatmapCell {
-        let normalizedDate = calendarProvider.calendar.startOfDay(for: date)
-        return cellsByDate[normalizedDate] ?? HeatmapCell(
-            date: normalizedDate,
-            value: 0,
-            normalizedIntensity: 0,
-            isCompleted: false,
-            isToday: calendarProvider.calendar.isDateInToday(normalizedDate),
-            isLocked: false
-        )
+        return boundaryWeekDays.first(where: { !lockedDates.contains(calendarProvider.calendar.startOfDay(for: $0)) }) ?? boundaryLockedDate
     }
 }
 

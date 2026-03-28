@@ -196,9 +196,7 @@ struct SettingsView: View {
             let urls = try service.export().filter { FileManager.default.fileExists(atPath: $0.path) }
             guard !urls.isEmpty else { return }
             sharePayload = SharePayload(urls: urls)
-        } catch {
-            print("Export failed:", error)
-        }
+        } catch { }
     }
 
     func handleExportDataTap() {

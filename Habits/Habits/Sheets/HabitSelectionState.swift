@@ -24,8 +24,22 @@ final class HabitSelectionState: ObservableObject {
 
     func select(date: Date) {
         let normalizedSelectedDate = calendar.startOfDay(for: date)
-        selectedDate = normalizedSelectedDate
-        visibleMonth = navigator.visibleMonth(for: normalizedSelectedDate)
+        let newVisibleMonth = navigator.visibleMonth(for: normalizedSelectedDate)
+
+        let selectedDateChanged = !calendar.isDate(selectedDate, inSameDayAs: normalizedSelectedDate)
+        let visibleMonthChanged = !calendar.isDate(visibleMonth, equalTo: newVisibleMonth, toGranularity: .month)
+
+        guard selectedDateChanged || visibleMonthChanged else {
+            return
+        }
+
+        if selectedDateChanged {
+            selectedDate = normalizedSelectedDate
+        }
+
+        if visibleMonthChanged {
+            visibleMonth = newVisibleMonth
+        }
     }
 
     func select(heatmapDate: Date) {

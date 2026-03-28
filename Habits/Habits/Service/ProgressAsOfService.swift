@@ -1,6 +1,6 @@
 import Foundation
 
-struct ProgressAsOfSnapshot {
+struct ProgressAsOfSnapshot: Equatable {
     let current: Double
     let target: Double
     let progressFraction: Double

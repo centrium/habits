@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct CalendarMonthView: View {
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
+
     private enum SlideDirection {
         case left
         case right
@@ -69,6 +71,7 @@ struct CalendarMonthView: View {
     }
 
     var body: some View {
+        let _ = uiStateStore.progressByHabitAndDate.count
         let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
         let dayMetrics = service.dayMetrics(for: habit, on: days)
 
@@ -321,8 +324,9 @@ struct CalendarMonthView: View {
     }
 
     private func selectDay(_ day: Date) {
-        onSelectDay(day)
-        focusMonthIfNeeded(for: day)
+        let normalizedDate = calendar.startOfDay(for: day)
+        onSelectDay(normalizedDate)
+        focusMonthIfNeeded(for: normalizedDate)
     }
 
     private func openDayActions(for day: Date) {

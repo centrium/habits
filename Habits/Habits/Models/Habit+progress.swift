@@ -84,6 +84,49 @@ extension Habit {
         return min(max(rawProgress, 0.0), 1.0)
     }
 
+    func progressFractionAfterAdding(
+        value: Double,
+        date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Double {
+        guard let target = effectiveTargetValue, target > 0 else { return 0 }
+
+        let interval = periodRange(for: date, calendar: calendar, weekStartPreference: weekStartPreference)
+        let normalizedDay = calendar.startOfDay(for: date)
+
+        let currentPeriodTotal = progressTotal(in: interval)
+        let currentDayValue = self.value(on: normalizedDay, calendar: calendar)
+
+        switch goalType {
+        case .frequency:
+            let currentDayCount = Double(count(on: normalizedDay, calendar: calendar))
+            let inferredAdditionalEntries = max(0, Int((value - currentDayValue).rounded(.down)))
+            let updatedDayCount = currentDayCount + Double(inferredAdditionalEntries)
+            let updatedPeriodTotal = max(0, currentPeriodTotal - currentDayCount + updatedDayCount)
+            let progress = GoalProgress(actual: Int(updatedPeriodTotal), goal: Int(target))
+            return progress.fraction
+        case .cumulative:
+            let updatedDayValue = max(0, value)
+            let updatedPeriodTotal = max(0, currentPeriodTotal - currentDayValue + updatedDayValue)
+            return min(max(updatedPeriodTotal / target, 0), 1)
+        }
+    }
+
+    func willBeCompleteAfterAdding(
+        value: Double,
+        date: Date,
+        calendar: Calendar = .current,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> Bool {
+        progressFractionAfterAdding(
+            value: value,
+            date: date,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ) >= 1
+    }
+
     func progressDetails(
         for date: Date,
         calendar: Calendar = .current,

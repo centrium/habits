@@ -26,12 +26,15 @@ struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @StateObject private var selectionState: HabitSelectionState
     @State private var service: HabitLogService
     @State private var activeSheet: ActiveSheet?
     @State private var manualLogValue: Double? = nil
     @State private var insightsDetent: PresentationDetent = .large
     @State private var cachedProgressSnapshot: ProgressAsOfSnapshot?
+    @State private var snapshotRefreshTask: Task<Void, Never>?
+    @State private var selectedDate: Date
     private let onDeleted: (() -> Void)?
 
     let habit: Habit
@@ -46,14 +49,21 @@ struct HabitDetailSheet: View {
         self.onDeleted = onDeleted
         _selectionState = StateObject(wrappedValue: HabitSelectionState(calendar: initialCalendar))
         _service = State(initialValue: HabitLogService(modelContext: modelContext, calendar: initialCalendar))
+        _selectedDate = State(initialValue: initialCalendar.startOfDay(for: Date()))
     }
 
     var body: some View {
         let progressSnapshot = cachedProgressSnapshot
         let now = Date()
+        let calendar = service.calendar
         let progressRevision = service.metricsRevision(for: habit.id)
+        let displayedStreak = habit.displayStreak(
+            referenceDate: now,
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
         let premiumHistoryGate = PremiumHistoryGate.Context(
-            calendar: service.calendar,
+            calendar: calendar,
             premiumStatus: purchaseService.premiumStatus,
             now: now
         )
@@ -65,93 +75,92 @@ struct HabitDetailSheet: View {
 
             return progressSnapshot?.visibleMonthText
         }()
-        let displayedStreak = habit.displayStreak(
-            referenceDate: now,
-            calendar: service.calendar,
-            weekStartPreference: userSettings.weekStartPreference
-        )
 
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 12) {
-                        HabitHeader(
-                            habit: habit,
-                            selectedDate: selectionState.selectedDate,
-                            calendar: service.calendar,
-                            weekStartPreference: userSettings.weekStartPreference,
-                            showsQuickLogButton: true,
-                            showsInlineProgressText: false,
-                            secondaryTextOverride: loggingContextText,
-                            currentStreak: displayedStreak,
-                            progressFractionOverride: progressSnapshot?.progressFraction,
-                            isCompleteOverride: progressSnapshot?.isComplete,
-                            onQuickLog: { date in
-                                if habit.goalType == .frequency {
-                                    _ = service.quickLog(for: habit, on: date)
-                                } else {
+                        EquatableView(
+                            content: HeaderSection(
+                                habit: habit,
+                                selectedDate: selectedDate,
+                                metricsRevision: progressRevision,
+                                calendar: calculationCalendar,
+                                weekStartPreference: userSettings.weekStartPreference,
+                                loggingContextText: loggingContextText,
+                                currentStreak: displayedStreak,
+                                onQuickLog: { date in
+                                    if habit.goalType == .frequency {
+                                        _ = service.quickLog(for: habit, on: date)
+                                    } else {
+                                        presentManualEntry()
+                                    }
+                                },
+                                onQuickLogLongPress: habit.goalType == .cumulative ? { _ in
                                     presentManualEntry()
-                                }
-                            },
-                            onQuickLogLongPress: habit.goalType == .cumulative ? { _ in
-                                presentManualEntry()
-                            } : nil
+                                } : nil
+                            )
                         )
 
-                        if let progressSnapshot {
-                            HabitProgressSummary(
-                                headline: progressSnapshot.headlineText,
-                                contextText: progressSnapshot.contextText,
-                                visibleRangeText: progressSnapshot.visibleMonthText,
-                                percentText: percentText(progressSnapshot.progressFraction),
-                                progress: progressSnapshot.progressFraction,
-                                overflowText: progressSnapshot.overflowText,
-                                accent: Color(hex: habit.colorHex)
-                            )
-                            .pressableCardFeedback(scale: 0.985, opacity: 0.98)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if habit.goalType == .cumulative {
+                        EquatableView(
+                            content: ProgressSummarySection(
+                                snapshot: progressSnapshot,
+                                accentHex: habit.colorHex,
+                                isCumulativeGoal: habit.goalType == .cumulative,
+                                onTap: {
                                     presentManualEntry()
                                 }
-                            }
+                            )
+                        )
 
-                            Divider().opacity(0.2)
-                        }
+                        EquatableView(
+                            content: HeatmapSection(
+                                habitID: habit.id,
+                                selectedDate: selectedDate,
+                                metricsRevision: progressRevision,
+                                earliestVisibleDate: earliestCalendarDate,
+                                habit: habit,
+                                service: service,
+                                calendarProvider: heatmapCalendarProvider,
+                                onSelectDay: { day in
+                                    let normalized = calendar.startOfDay(for: day)
+                                    selectedDate = normalized
 
-                        HabitHeatmap(
-                            habit: habit,
-                            calendarProvider: heatmapCalendarProvider,
-                            selectedDate: selectionState.selectedDate,
-                            isInteractive: true,
-                            onSelectDay: { day in
-                                selectionState.select(heatmapDate: day)
-                            },
-                            onTapLockedDay: { _ in
-                                showPaywall(feature: .fullHeatmapHistory)
-                            }
+                                    if !calendar.isDate(normalized, equalTo: selectionState.visibleMonth, toGranularity: .month) {
+                                        selectionState.selectCalendarMonth(normalized)
+                                    }
+                                },
+                                onTapLockedDay: { _ in
+                                    showPaywall(feature: .fullHeatmapHistory)
+                                }
+                            )
                         )
 
                         Divider().opacity(0.2)
 
-                        CalendarMonthView(
-                            month: Binding(
-                                get: { selectionState.visibleMonth },
-                                set: { selectionState.selectCalendarMonth($0) }
-                            ),
-                            habit: habit,
-                            service: service,
-                            calendarProvider: calendarViewProvider,
-                            selectedDate: selectionState.selectedDate,
-                            monthSummaryText: calendarMonthSummaryText,
-                            premiumHistoryGate: premiumHistoryGate,
-                            earliestVisibleDate: earliestCalendarDate,
-                            onSelectDay: { day in
-                                selectionState.select(date: day)
-                            },
-                            onTapLockedDay: { _ in
-                                showPaywall(feature: .fullHeatmapHistory)
-                            }
+                        EquatableView(
+                            content: CalendarSection(
+                                habitID: habit.id,
+                                selectedDate: selectedDate,
+                                visibleMonth: selectionState.visibleMonth,
+                                metricsRevision: progressRevision,
+                                monthSummaryText: calendarMonthSummaryText,
+                                earliestVisibleDate: earliestCalendarDate,
+                                month: Binding(
+                                    get: { selectionState.visibleMonth },
+                                    set: { selectionState.selectCalendarMonth($0) }
+                                ),
+                                habit: habit,
+                                service: service,
+                                calendarProvider: calendarViewProvider,
+                                premiumHistoryGate: premiumHistoryGate,
+                                onSelectDay: { day in
+                                    selectedDate = calendar.startOfDay(for: day)
+                                },
+                                onTapLockedDay: { _ in
+                                    showPaywall(feature: .fullHeatmapHistory)
+                                }
+                            )
                         )
                     }
                     .padding(14)
@@ -189,8 +198,6 @@ struct HabitDetailSheet: View {
                 .padding(.bottom, 24)
             }
             .scrollContentBackground(.hidden)
-            .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture().onEnded { })
             .background(
                 Color(.systemBackground)
                     .ignoresSafeArea()
@@ -259,7 +266,7 @@ struct HabitDetailSheet: View {
                 NavigationStack {
                     HabitInsightsView(
                         habit: habit,
-                        logAnchorDate: selectionState.selectedDate
+                        logAnchorDate: selectedDate
                     )
                 }
                 .presentationDetents([.medium, .large], selection: $insightsDetent)
@@ -275,7 +282,7 @@ struct HabitDetailSheet: View {
                     formattingContext: service.valueFormattingContext(for: habit),
                     inputContext: service.valueInputContext(for: habit)
                 ) { newValue in
-                    _ = service.addLog(for: habit, on: selectionState.selectedDate, value: max(0, newValue))
+                    _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
                     manualLogValue = newValue
                 }
                 .presentationDetents([.medium])
@@ -289,9 +296,10 @@ struct HabitDetailSheet: View {
 
         }
         .onAppear {
+            service.setUIStateStore(uiStateStore)
             service.updateCalendar(calculationCalendar)
             service.prepare(habit)
-            refreshProgressSnapshot(now: now)
+            scheduleProgressSnapshotRefresh(now: now)
 
             guard purchaseService.premiumStatus != .premium else { return }
 
@@ -310,26 +318,24 @@ struct HabitDetailSheet: View {
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             service.updateCalendar(calculationCalendar)
-            refreshProgressSnapshot()
+            scheduleProgressSnapshotRefresh()
         }
-        .onChange(of: selectionState.selectedDate) { _, _ in
-            refreshProgressSnapshot()
+        .onChange(of: selectedDate) { _, _ in
+            scheduleProgressSnapshotRefresh()
         }
         .onChange(of: selectionState.visibleMonth) { _, _ in
-            refreshProgressSnapshot()
+            scheduleProgressSnapshotRefresh()
         }
         .onChange(of: progressRevision) { _, _ in
-            refreshProgressSnapshot()
+            scheduleProgressSnapshotRefresh()
         }
-    }
-
-    private func percentText(_ progress: Double) -> String {
-        let percent = Int((progress * 100).rounded())
-        return "\(percent)%"
+        .onReceive(uiStateStore.$progressByHabitAndDate) { _ in
+            scheduleProgressSnapshotRefresh()
+        }
     }
 
     private var loggingContextText: String {
-        "Logging for \(selectionState.selectedDate.formatted(date: .abbreviated, time: .omitted))"
+        "Logging for \(selectedDate.formatted(date: .abbreviated, time: .omitted))"
     }
 
     private func presentManualEntry() {
@@ -341,22 +347,37 @@ struct HabitDetailSheet: View {
         activeSheet = .paywall(feature)
     }
 
+    private func scheduleProgressSnapshotRefresh(now: Date = Date()) {
+        snapshotRefreshTask?.cancel()
+
+        snapshotRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+
+            guard !Task.isCancelled else { return }
+
+            refreshProgressSnapshot(now: now)
+        }
+    }
+
     private func refreshProgressSnapshot(now: Date = Date()) {
         let progressService = ProgressAsOfService(
             calendar: service.calendar,
             weekStartPreference: userSettings.weekStartPreference,
             now: { now }
         )
+
         let metricDays = progressService.metricDays(
             for: habit,
             visibleMonth: selectionState.visibleMonth,
-            selectedDate: selectionState.selectedDate
+            selectedDate: selectedDate
         )
+
         let dayMetrics = service.dayMetrics(for: habit, on: metricDays)
+
         cachedProgressSnapshot = progressService.snapshot(
             for: habit,
             visibleMonth: selectionState.visibleMonth,
-            selectedDate: selectionState.selectedDate,
+            selectedDate: selectedDate,
             dayMetrics: dayMetrics
         )
     }
@@ -375,6 +396,165 @@ struct HabitDetailSheet: View {
 
     private var heatmapCalendarProvider: CalendarProvider {
         weekLayoutStrategy.calendarProviderForHeatmap()
+    }
+}
+
+private struct HeaderSection: View, Equatable {
+    let habit: Habit
+    let selectedDate: Date
+    let metricsRevision: Int
+    let calendar: Calendar
+    let weekStartPreference: WeekStartPreference
+    let loggingContextText: String
+    let currentStreak: Int
+    let onQuickLog: (Date) -> Void
+    let onQuickLogLongPress: ((Date) -> Void)?
+
+    static func == (lhs: HeaderSection, rhs: HeaderSection) -> Bool {
+        lhs.habit.id == rhs.habit.id &&
+        lhs.habit.name == rhs.habit.name &&
+        lhs.habit.subtitle == rhs.habit.subtitle &&
+        lhs.habit.iconName == rhs.habit.iconName &&
+        lhs.habit.colorHex == rhs.habit.colorHex &&
+        lhs.habit.goalTypeRaw == rhs.habit.goalTypeRaw &&
+        lhs.habit.streakGoalTypeRaw == rhs.habit.streakGoalTypeRaw &&
+        lhs.habit.targetValue == rhs.habit.targetValue &&
+        lhs.habit.unit == rhs.habit.unit &&
+        lhs.habit.allowsDecimals == rhs.habit.allowsDecimals &&
+        lhs.selectedDate == rhs.selectedDate &&
+        lhs.metricsRevision == rhs.metricsRevision &&
+        lhs.weekStartPreference == rhs.weekStartPreference &&
+        lhs.loggingContextText == rhs.loggingContextText &&
+        lhs.currentStreak == rhs.currentStreak
+    }
+
+    var body: some View {
+        HabitHeader(
+            habit: habit,
+            selectedDate: selectedDate,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference,
+            showsQuickLogButton: true,
+            showsInlineProgressText: false,
+            secondaryTextOverride: loggingContextText,
+            currentStreak: currentStreak,
+            onQuickLog: onQuickLog,
+            onQuickLogLongPress: onQuickLogLongPress
+        )
+    }
+}
+
+private struct ProgressSummarySection: View, Equatable {
+    let snapshot: ProgressAsOfSnapshot?
+    let accentHex: String
+    let isCumulativeGoal: Bool
+    let onTap: () -> Void
+
+    static func == (lhs: ProgressSummarySection, rhs: ProgressSummarySection) -> Bool {
+        lhs.snapshot == rhs.snapshot &&
+        lhs.accentHex == rhs.accentHex &&
+        lhs.isCumulativeGoal == rhs.isCumulativeGoal
+    }
+
+    var body: some View {
+        Group {
+            if let snapshot {
+                HabitProgressSummary(
+                    headline: snapshot.headlineText,
+                    contextText: snapshot.contextText,
+                    visibleRangeText: snapshot.visibleMonthText,
+                    percentText: percentText(snapshot.progressFraction),
+                    progress: snapshot.progressFraction,
+                    overflowText: snapshot.overflowText,
+                    accent: Color(hex: accentHex)
+                )
+                .pressableCardFeedback(scale: 0.985, opacity: 0.98)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard isCumulativeGoal else { return }
+                    onTap()
+                }
+
+                Divider().opacity(0.2)
+            }
+        }
+    }
+
+    private func percentText(_ progress: Double) -> String {
+        let percent = Int((progress * 100).rounded())
+        return "\(percent)%"
+    }
+}
+
+private struct HeatmapSection: View, Equatable {
+    let habitID: UUID
+    let selectedDate: Date
+    let metricsRevision: Int
+    let earliestVisibleDate: Date?
+    let habit: Habit
+    let service: HabitLogService
+    let calendarProvider: CalendarProvider
+    let onSelectDay: (Date) -> Void
+    let onTapLockedDay: (Date) -> Void
+
+    static func == (lhs: HeatmapSection, rhs: HeatmapSection) -> Bool {
+        lhs.habitID == rhs.habitID &&
+        lhs.selectedDate == rhs.selectedDate &&
+        lhs.metricsRevision == rhs.metricsRevision &&
+        lhs.earliestVisibleDate == rhs.earliestVisibleDate
+    }
+
+    var body: some View {
+        HabitHeatmap(
+            habit: habit,
+            service: service,
+            calendarProvider: calendarProvider,
+            selectedDate: selectedDate,
+            earliestVisibleDate: earliestVisibleDate,
+            isInteractive: true,
+            onSelectDay: onSelectDay,
+            onTapLockedDay: onTapLockedDay
+        )
+    }
+}
+
+private struct CalendarSection: View, Equatable {
+    let habitID: UUID
+    let selectedDate: Date
+    let visibleMonth: Date
+    let metricsRevision: Int
+    let monthSummaryText: String?
+    let earliestVisibleDate: Date?
+    let month: Binding<Date>
+    let habit: Habit
+    let service: HabitLogService
+    let calendarProvider: CalendarProvider
+    let premiumHistoryGate: PremiumHistoryGate.Context
+    let onSelectDay: (Date) -> Void
+    let onTapLockedDay: (Date) -> Void
+
+    static func == (lhs: CalendarSection, rhs: CalendarSection) -> Bool {
+        lhs.habitID == rhs.habitID &&
+        lhs.selectedDate == rhs.selectedDate &&
+        lhs.visibleMonth == rhs.visibleMonth &&
+        lhs.metricsRevision == rhs.metricsRevision &&
+        lhs.monthSummaryText == rhs.monthSummaryText &&
+        lhs.earliestVisibleDate == rhs.earliestVisibleDate
+    }
+
+    var body: some View {
+        CalendarMonthView(
+            month: month,
+            habit: habit,
+            service: service,
+            calendarProvider: calendarProvider,
+            selectedDate: selectedDate,
+            monthSummaryText: monthSummaryText,
+            premiumHistoryGate: premiumHistoryGate,
+            earliestVisibleDate: earliestVisibleDate,
+            onSelectDay: onSelectDay,
+            onTapLockedDay: onTapLockedDay
+        )
     }
 }
 

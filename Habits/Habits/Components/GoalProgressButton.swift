@@ -37,7 +37,6 @@ struct GoalProgressButton: View {
 
     var body: some View {
         Button {
-            Haptics.impactLight()
             action()
         } label: {
             ZStack {
@@ -65,11 +64,11 @@ struct GoalProgressButton: View {
                     longPressAction?()
                 }
         )
-        .animation(AppMotion.quickFade, value: clampedProgress)
-        .animation(AppMotion.quickFade, value: isComplete)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .onChange(of: isComplete) { oldValue, newValue in
             guard !oldValue, newValue else { return }
-            Haptics.success()
             triggerPulse()
         }
         .onChange(of: clampedProgress) { oldValue, newValue in
