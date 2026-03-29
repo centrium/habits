@@ -66,23 +66,13 @@ struct StoreCatalogProduct {
 
 @MainActor
 final class PurchaseService: ObservableObject {
-    private enum Keys {
-        static let cachedPremiumUnlocked = "purchase.cachedPremiumUnlocked"
-    }
-
     private let productLoader: ([String]) async throws -> [StoreCatalogProduct]
     private let currentEntitlementsLoader: () async -> [any PremiumEntitlementTransaction]
-    private let premiumStatusStore: any SettingsKeyValueStore
     private var updatesTask: Task<Void, Never>?
     private var productLoadTask: Task<Void, Never>?
-    private var entitlementRefreshTask: Task<Void, Never>?
 
     @Published var products: [StoreCatalogProduct] = []
-    @Published var premiumStatus: PremiumStatus = .unknown {
-        didSet {
-            persistPremiumStatus(premiumStatus)
-        }
-    }
+    @Published var premiumStatus: PremiumStatus = .unknown
     @Published var isLoadingProducts: Bool = false
     @Published var hasLoadedProducts: Bool = false
     @Published var productLoadError: String?
@@ -98,7 +88,6 @@ final class PurchaseService: ObservableObject {
     init(
         productLoader: (([String]) async throws -> [StoreCatalogProduct])? = nil,
         currentEntitlementsLoader: (() async -> [any PremiumEntitlementTransaction])? = nil,
-        premiumStatusStore: (any SettingsKeyValueStore)? = nil,
         shouldStartBackgroundTasks: Bool = true
     ) {
         self.productLoader = productLoader ?? { ids in
@@ -118,19 +107,14 @@ final class PurchaseService: ObservableObject {
 
             return entitlements
         }
-        self.premiumStatusStore = premiumStatusStore ?? UserDefaultsSettingsStore()
-        self.premiumStatus = Self.bootstrapPremiumStatus(from: self.premiumStatusStore)
 
         guard shouldStartBackgroundTasks else {
             return
         }
 
         updatesTask = Task {
-            await self.listenForTransactions()
-        }
-
-        entitlementRefreshTask = Task(priority: .userInitiated) {
             await self.updateCurrentEntitlements()
+            await self.listenForTransactions()
         }
 
         productLoadTask = Task(priority: .utility) {
@@ -141,26 +125,8 @@ final class PurchaseService: ObservableObject {
     deinit {
         updatesTask?.cancel()
         productLoadTask?.cancel()
-        entitlementRefreshTask?.cancel()
     }
 
-}
-
-private extension PurchaseService {
-    static func bootstrapPremiumStatus(from store: any SettingsKeyValueStore) -> PremiumStatus {
-        (store.bool(forKey: Keys.cachedPremiumUnlocked) ?? false) ? .premium : .free
-    }
-
-    func persistPremiumStatus(_ status: PremiumStatus) {
-        switch status {
-        case .premium:
-            premiumStatusStore.set(true, forKey: Keys.cachedPremiumUnlocked)
-        case .free:
-            premiumStatusStore.set(false, forKey: Keys.cachedPremiumUnlocked)
-        case .unknown:
-            break
-        }
-    }
 }
 
 extension PurchaseService {

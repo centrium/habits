@@ -64,7 +64,14 @@ struct HabitDetailSheet: View {
             premiumStatus: purchaseService.premiumStatus,
             now: now
         )
-        let earliestCalendarDate = purchaseService.premiumStatus == .premium ? nil : premiumHistoryGate.earliestVisibleDate
+        let earliestCalendarDate: Date? = {
+            switch purchaseService.premiumStatus {
+            case .free:
+                return premiumHistoryGate.earliestVisibleDate
+            case .unknown, .premium:
+                return nil
+            }
+        }()
         let calendarMonthSummaryText: String? = {
             guard !premiumHistoryGate.isLocked(date: selectionState.visibleMonth) else {
                 return nil
@@ -213,9 +220,12 @@ struct HabitDetailSheet: View {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
 
                     Button {
-                        if purchaseService.hasAccess(to: .advancedInsights) {
+                        switch purchaseService.premiumStatus {
+                        case .unknown:
+                            return
+                        case .premium:
                             activeSheet = .insights
-                        } else {
+                        case .free:
                             showPaywall(feature: .advancedInsights)
                         }
                     } label: {
@@ -224,7 +234,7 @@ struct HabitDetailSheet: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Color.systemAccent)
 
-                            if !purchaseService.isPremiumUnlocked {
+                            if purchaseService.premiumStatus == .free {
                                 Image(systemName: "lock.fill")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -296,7 +306,7 @@ struct HabitDetailSheet: View {
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
 
-            guard purchaseService.premiumStatus != .premium else { return }
+            guard purchaseService.premiumStatus == .free else { return }
 
             let minimumVisibleMonth = calendarViewProvider.calendar.dateInterval(
                 of: .month,
@@ -339,6 +349,7 @@ struct HabitDetailSheet: View {
     }
 
     private func showPaywall(feature: PremiumFeature) {
+        guard purchaseService.premiumStatus != .unknown else { return }
         activeSheet = .paywall(feature)
     }
 

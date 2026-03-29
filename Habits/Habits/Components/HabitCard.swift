@@ -75,6 +75,7 @@ struct HabitCard: View {
                         selectedDate = day
                     },
                     onTapLockedDay: { _ in
+                        guard purchaseService.premiumStatus != .unknown else { return }
                         showHeatmapPaywall = true
                     },
                     isCompact: true
@@ -119,8 +120,6 @@ struct HabitCard: View {
         }
         .onAppear {
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            habitLogService.updateCalendar(calculationCalendar)
-            habitLogService.prepare(habit)
             
             if displayedStreak == 0 {
                 updateDisplayedStreak()
@@ -131,7 +130,6 @@ struct HabitCard: View {
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            habitLogService.updateCalendar(calculationCalendar)
             updateDisplayedStreak()
         }
     }

@@ -164,10 +164,13 @@ struct SettingsView: View {
 
             Section {
                 ProSettingsCard(
-                    isUnlocked: purchaseService.isPremiumUnlocked,
+                    premiumStatus: purchaseService.premiumStatus,
                     showProView: $userSettings.showPremiumInsightsView,
                     greigModeEnabled: $userSettings.greigModeEnabled,
-                    unlockAction: { activePaywall = .advancedInsights }
+                    unlockAction: {
+                        guard purchaseService.premiumStatus == .free else { return }
+                        activePaywall = .advancedInsights
+                    }
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -175,7 +178,7 @@ struct SettingsView: View {
 
             Section("Data") {
                 ExportDataRow(
-                    isUnlocked: purchaseService.isPremiumUnlocked,
+                    premiumStatus: purchaseService.premiumStatus,
                     action: handleExportDataTap
                 )
             }
@@ -200,9 +203,12 @@ struct SettingsView: View {
     }
 
     func handleExportDataTap() {
-        if purchaseService.hasAccess(to: .dataExport) {
+        switch purchaseService.premiumStatus {
+        case .unknown:
+            return
+        case .premium:
             exportCSV()
-        } else {
+        case .free:
             Haptics.impactLight()
             activePaywall = .dataExport
         }
@@ -224,7 +230,7 @@ struct SettingsView: View {
 
 private struct ProSettingsCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    let isUnlocked: Bool
+    let premiumStatus: PremiumStatus
     @Binding var showProView: Bool
     @Binding var greigModeEnabled: Bool
     let unlockAction: () -> Void
@@ -233,7 +239,8 @@ private struct ProSettingsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if isUnlocked {
+            switch premiumStatus {
+            case .premium:
                 proSummaryContent
 
                 divider
@@ -253,8 +260,10 @@ private struct ProSettingsCard: View {
                 )
                 .accessibilityLabel("Greig Mode")
                 .accessibilityHint("Show potential insights based on your strongest performance.")
-            } else {
+            case .free:
                 lockedContent
+            case .unknown:
+                neutralContent
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -334,10 +343,23 @@ private struct ProSettingsCard: View {
         }
         .buttonStyle(.plain)
     }
+
+    private var neutralContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CadenceProWordmark(size: .small)
+
+            Text("Checking subscription status...")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+    }
 }
 
 private struct ExportDataRow: View {
-    let isUnlocked: Bool
+    let premiumStatus: PremiumStatus
     let action: () -> Void
 
     var body: some View {
@@ -346,8 +368,8 @@ private struct ExportDataRow: View {
                 Image(systemName: "square.and.arrow.up")
                     .font(.body)
                     .premiumIconStyle(
-                        isPremiumUnlocked: isUnlocked,
-                        isFeatureLocked: !isUnlocked
+                        isPremiumUnlocked: premiumStatus == .premium,
+                        isFeatureLocked: premiumStatus == .free
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -361,7 +383,7 @@ private struct ExportDataRow: View {
 
                 Spacer()
 
-                if !isUnlocked {
+                if premiumStatus == .free {
                     HStack(spacing: 4) {
                         Image(systemName: "lock.fill")
                             .font(.caption2)

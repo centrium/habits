@@ -33,6 +33,7 @@ struct HabitsListView: View {
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
+    @EnvironmentObject private var habitLogService: HabitLogService
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
     @State private var activeSheet: ActiveSheet?
@@ -46,7 +47,7 @@ struct HabitsListView: View {
     var body: some View {
         NavigationStack {
             List {
-                CustomHomeHeader(showsPremiumAccent: purchaseService.isPremiumUnlocked)
+                CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(
@@ -135,7 +136,7 @@ struct HabitsListView: View {
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if purchaseService.isPremiumUnlocked {
+                    if purchaseService.premiumStatus == .premium {
                         NavigationLink {
                             GlobalInsightsView()
                         } label: {
@@ -197,7 +198,11 @@ struct HabitsListView: View {
         }
         .environmentObject(userSettings)
         .onAppear {
+            habitLogService.updateCalendar(calculationCalendar)
             presentHabitDetailForDeepLinkIfNeeded()
+        }
+        .onChange(of: userSettings.weekStartPreference) { _, _ in
+            habitLogService.updateCalendar(calculationCalendar)
         }
         .onChange(of: deepLinkManager.selectedHabitID) { _, _ in
             presentHabitDetailForDeepLinkIfNeeded()
@@ -213,6 +218,8 @@ struct HabitsListView: View {
             flushPendingReorderPersistence()
         }
         .task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
             if userSettings.eveningReflectionEnabled {
                 await NotificationService.shared.scheduleEveningReflection(
                     hour: userSettings.eveningReflectionHour,
@@ -225,14 +232,22 @@ struct HabitsListView: View {
     }
 
     private var habitLimitPolicy: HabitLimitPolicy {
-        HabitLimitPolicy(
+        let hasUnlimitedHabitsAccess: Bool
+        switch purchaseService.premiumStatus {
+        case .premium, .unknown:
+            hasUnlimitedHabitsAccess = true
+        case .free:
+            hasUnlimitedHabitsAccess = false
+        }
+
+        return HabitLimitPolicy(
             habitCount: habits.count,
-            hasUnlimitedHabitsAccess: purchaseService.hasAccess(to: .unlimitedHabits)
+            hasUnlimitedHabitsAccess: hasUnlimitedHabitsAccess
         )
     }
 
     private var premiumInsightsSummary: PremiumInsightsStripSummary? {
-        guard purchaseService.isPremiumUnlocked,
+        guard purchaseService.premiumStatus == .premium,
               userSettings.showPremiumInsightsView,
               userSettings.greigModeEnabled,
               !habits.isEmpty else {
@@ -271,16 +286,22 @@ struct HabitsListView: View {
     }
 
     private func addHabit() {
-        if purchaseService.hasAccess(to: .unlimitedHabits) {
+        switch purchaseService.premiumStatus {
+        case .unknown:
+            return
+        case .premium:
             activeSheet = .addHabit
-        } else if habits.count >= HabitLimitPolicy.freeHabitLimit {
-            showPaywall(feature: .unlimitedHabits)
-        } else {
-            activeSheet = .addHabit
+        case .free:
+            if habits.count >= HabitLimitPolicy.freeHabitLimit {
+                showPaywall(feature: .unlimitedHabits)
+            } else {
+                activeSheet = .addHabit
+            }
         }
     }
 
     private func showPaywall(feature: PremiumFeature) {
+        guard purchaseService.premiumStatus != .unknown else { return }
         activeSheet = .paywall(feature)
     }
 

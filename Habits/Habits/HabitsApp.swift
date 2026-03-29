@@ -9,6 +9,20 @@ import SwiftUI
 import SwiftData
 import UserNotifications
 
+enum StartupProfiler {
+    nonisolated static let launchStartTime = CFAbsoluteTimeGetCurrent()
+    @MainActor private static var hasLoggedFirstInteractiveRender = false
+
+    @MainActor
+    static func logFirstInteractiveRender() {
+        guard !hasLoggedFirstInteractiveRender else { return }
+        hasLoggedFirstInteractiveRender = true
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - launchStartTime
+        print("Startup time to first interactive screen: \(elapsed)s")
+    }
+}
+
 enum RootDestination: Equatable {
     case onboarding
     case habitsList
@@ -24,67 +38,60 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
+    @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var userSettings: UserSettings
+    @State private var hasCompletedInitialWidgetSync = false
 
     var body: some View {
         Group {
-            switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
-            case .habitsList:
-                HabitsListView()
-                    .environmentObject(userSettings)
-                    .environmentObject(deepLinkManager)
-            case .onboarding:
-                OnboardingView()
-                    .environmentObject(userSettings)
-                    .environmentObject(deepLinkManager)
+            switch purchaseService.premiumStatus {
+            case .unknown:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .free, .premium:
+                switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
+                case .habitsList:
+                    HabitsListView()
+                        .environmentObject(userSettings)
+                        .environmentObject(deepLinkManager)
+                case .onboarding:
+                    OnboardingView()
+                        .environmentObject(userSettings)
+                        .environmentObject(deepLinkManager)
+                }
             }
         }
         .onAppear {
-            WidgetDataSync.sync(in: modelContext)
             deepLinkManager.processPendingHabitIfNeeded()
+            Task { @MainActor in
+                await Task.yield()
+                StartupProfiler.logFirstInteractiveRender()
+            }
+            scheduleWidgetSync(delayNanoseconds: 200_000_000, marksInitialSync: true)
         }
         .onChange(of: deepLinkManager.pendingHabitID) { _, _ in
             deepLinkManager.processPendingHabitIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            WidgetDataSync.sync(in: modelContext)
+            guard hasCompletedInitialWidgetSync else { return }
+            scheduleWidgetSync(delayNanoseconds: 200_000_000, marksInitialSync: false)
         }
     }
-}
 
-private struct ThemedAppContainer: View {
-    let container: ModelContainer?
-    @Binding var isBootstrapVisible: Bool
-    let configureRuntimeServicesIfNeeded: (ModelContainer) -> Void
-    let prepareContainerIfNeeded: @MainActor () async -> Void
+    private func scheduleWidgetSync(
+        delayNanoseconds: UInt64,
+        marksInitialSync: Bool
+    ) {
+        Task(priority: .utility) {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled else { return }
 
-    var body: some View {
-        ZStack {
-            if let container {
-                RootView()
-                    .modelContainer(container)
-                    .task {
-                        configureRuntimeServicesIfNeeded(container)
-                    }
-                    .onAppear {
-                        guard isBootstrapVisible else { return }
-
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 180_000_000)
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                isBootstrapVisible = false
-                            }
-                            KeyboardWarmup.warm()
-                        }
-                    }
-            }
-
-            if isBootstrapVisible {
-                AppBootstrapView()
-                    .task {
-                        await prepareContainerIfNeeded()
-                    }
+            await MainActor.run {
+                _ = WidgetDataSync.sync(in: modelContext)
+                if marksInitialSync {
+                    hasCompletedInitialWidgetSync = true
+                }
             }
         }
     }
@@ -99,9 +106,9 @@ struct HabitsApp: App {
     @State private var habitLogService: HabitLogService?
     
     @State private var container: ModelContainer?
+    @State private var startupModelContext: ModelContext?
     @State private var isPreparingContainer = false
     @State private var hasConfiguredRuntimeServices = false
-    @State private var isBootstrapVisible = true
 
     init() {
         self.init(container: nil)
@@ -117,26 +124,22 @@ struct HabitsApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if let habitLogService {
-                    ThemedAppContainer(
-                        container: container,
-                        isBootstrapVisible: $isBootstrapVisible,
-                        configureRuntimeServicesIfNeeded: configureRuntimeServicesIfNeeded(using:),
-                        prepareContainerIfNeeded: prepareContainerIfNeeded
-                    )
+                if let container, let habitLogService {
+                    RootView()
+                        .modelContainer(container)
                     .environmentObject(userSettings)
                     .environmentObject(deepLinkManager)
                     .environmentObject(purchaseService)
                     .environmentObject(habitUIStateStore)
                     .environmentObject(habitLogService)
                 } else {
-                    AppBootstrapView()
-                        .task {
-                            await prepareContainerIfNeeded()
-                            if let container {
-                                configureRuntimeServicesIfNeeded(using: container)
-                            }
-                        }
+                    Color.clear
+                }
+            }
+            .task {
+                await prepareContainerIfNeeded()
+                if let container {
+                    configureRuntimeServicesIfNeeded(using: container)
                 }
             }
             .onOpenURL { url in
@@ -174,75 +177,32 @@ struct HabitsApp: App {
     }
 
     private func configureRuntimeServicesIfNeeded(using container: ModelContainer) {
+        if startupModelContext == nil {
+            startupModelContext = ModelContext(container)
+        }
+
+        guard let startupModelContext else { return }
+
         if habitLogService == nil {
             habitLogService = HabitLogService(
-                modelContext: ModelContext(container),
+                modelContext: startupModelContext,
                 uiStateStore: habitUIStateStore
             )
         }
 
         guard !hasConfiguredRuntimeServices else { return }
 
-        NotificationService.shared.configureModelContextProvider { [container] in
-            ModelContext(container)
+        NotificationService.shared.configureModelContextProvider { [startupModelContext] in
+            startupModelContext
         }
         NotificationService.shared.registerNotificationCategories()
-        NotificationActionHandler.shared.configureModelContextProvider { [container] in
-            ModelContext(container)
+        NotificationActionHandler.shared.configureModelContextProvider { [startupModelContext] in
+            startupModelContext
         }
         NotificationActionHandler.shared.configureHabitLogServiceProvider { [habitLogService] in
             habitLogService
         }
 
         hasConfiguredRuntimeServices = true
-    }
-}
-
-private struct AppBootstrapView: View {
-    private let containerWidth: CGFloat = 248
-    private let wordmarkWidth: CGFloat = 196
-    private let titleSize: CGFloat = 44
-    private let subtitleSize: CGFloat = 15
-    private let swooshBottomSpacing: CGFloat = 14
-    private let subtitleTopSpacing: CGFloat = 8
-    private let verticalOffset: CGFloat = -24
-    private let spinnerBottomPadding: CGFloat = 96
-
-    var body: some View {
-        ZStack {
-            Color.appBackground
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ProSwoosh(size: .launch, toAnimate: false)
-                        .padding(.bottom, swooshBottomSpacing)
-
-                    Text("Cadence")
-                        .font(.system(size: titleSize, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                .frame(width: wordmarkWidth, alignment: .leading)
-
-                Text("Where habits become performance")
-                    .font(.system(size: subtitleSize, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.84))
-                    .padding(.top, subtitleTopSpacing)
-                    .frame(width: containerWidth)
-            }
-            .frame(width: containerWidth)
-            .offset(y: verticalOffset)
-            .padding(.horizontal, 24)
-
-            VStack {
-                Spacer()
-
-                ProgressView()
-                    .tint(.secondary.opacity(0.7))
-                    .padding(.bottom, spinnerBottomPadding)
-            }
-            .ignoresSafeArea(edges: .bottom)
-        }
     }
 }

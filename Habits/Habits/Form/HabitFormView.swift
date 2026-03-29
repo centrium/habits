@@ -74,12 +74,6 @@ private struct HabitReminderEditorItem: Identifiable, Equatable {
     let isNew: Bool
 }
 
-enum ReminderEntitlementPolicy {
-    static func canAddReminder(reminderCount: Int, isPremiumUnlocked: Bool) -> Bool {
-        isPremiumUnlocked || reminderCount < 1
-    }
-}
-
 struct HabitFormView: View {
     @EnvironmentObject private var purchaseService: PurchaseService
 
@@ -244,7 +238,7 @@ struct HabitFormView: View {
                 Button {
                     if canAddReminder {
                         addReminder()
-                    } else {
+                    } else if purchaseService.premiumStatus == .free {
                         activePaywallContext = .multipleReminders
                     }
                 } label: {
@@ -407,14 +401,16 @@ struct HabitFormView: View {
     }
 
     private var canAddReminder: Bool {
-        ReminderEntitlementPolicy.canAddReminder(
-            reminderCount: reminders.count,
-            isPremiumUnlocked: purchaseService.isPremiumUnlocked
-        )
+        switch purchaseService.premiumStatus {
+        case .premium:
+            return true
+        case .free, .unknown:
+            return reminders.count < 1
+        }
     }
 
     private var showsMultipleReminderUpgradeHint: Bool {
-        !purchaseService.isPremiumUnlocked && reminders.count >= 1
+        purchaseService.premiumStatus == .free && reminders.count >= 1
     }
 
     private func deleteReminders(at offsets: IndexSet) {
