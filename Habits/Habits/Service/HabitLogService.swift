@@ -453,7 +453,6 @@ extension HabitLogService {
 extension HabitLogService {
     @discardableResult
     func addLog(for habit: Habit, on day: Date, value: Double) -> Double {
-        normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let amount = max(0, value)
         guard amount > 0 else { return 0 }
@@ -520,19 +519,12 @@ extension HabitLogService {
             return habit.value(on: normalizedDay, calendar: calendar)
         }
 
-        Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-
-            await MainActor.run {
-                habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
-                self.invalidateMetricsCache(for: habit.id)
-                self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
-            }
-
-            await MainActor.run {
-                self.uiStateStore?.clear(habitId: habit.id, date: normalizedDay)
-                self.clearPendingDayMetrics(for: habit.id, day: normalizedDay)
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
+            self.invalidateMetricsCache(for: habit.id)
+            self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
+            self.uiStateStore?.clear(habitId: habit.id, date: normalizedDay)
+            self.clearPendingDayMetrics(for: habit.id, day: normalizedDay)
         }
 
         return newValue

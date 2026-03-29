@@ -20,9 +20,23 @@ struct HabitCard: View {
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
     @State private var showHeatmapPaywall = false
+    @State private var displayedStreak: Int = 0
     private let onDeleted: (() -> Void)?
 
     private let headerHeight: CGFloat = 40
+    
+    private func updateDisplayedStreak() {
+        let now = Date()
+        let newValue = habit.displayStreak(
+            referenceDate: now,
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
+
+        if newValue != displayedStreak {
+            displayedStreak = newValue
+        }
+    }
 
     init(habit: Habit, onDeleted: (() -> Void)? = nil) {
         self.habit = habit
@@ -30,13 +44,14 @@ struct HabitCard: View {
     }
 
     var body: some View {
-        let now = Date()
+        /*let now = Date()
         let displayedStreak = habit.displayStreak(
             referenceDate: now,
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
         )
-
+*/
+        
         VStack(alignment: .leading, spacing: 12) {
             HabitHeader(
                 habit: habit,
@@ -125,10 +140,18 @@ struct HabitCard: View {
             service?.setUIStateStore(uiStateStore)
             service?.updateCalendar(calculationCalendar)
             service?.prepare(habit)
+            
+            if displayedStreak == 0 {
+                updateDisplayedStreak()
+            }
+        }
+        .onChange(of: habit.logs) { _, _ in
+            updateDisplayedStreak()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
             service?.updateCalendar(calculationCalendar)
+            updateDisplayedStreak()
         }
     }
 
