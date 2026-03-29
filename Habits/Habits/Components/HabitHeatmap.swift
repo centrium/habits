@@ -149,6 +149,7 @@ struct HabitHeatmap: View {
     }
     
     private var compactHeatmap: some View {
+        let revision = service.metricsRevision(for: habit.id)
         let calendar = calendarProvider.calendar
         let today = calendar.startOfDay(for: Date())
 
@@ -163,6 +164,7 @@ struct HabitHeatmap: View {
         .padding(.top, 6)
         .padding(.bottom, 4)
         .frame(height: 40)
+        .id(revision)
     }
     
     private func weekGrid(days: [Date], isRecent: Bool) -> some View {

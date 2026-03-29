@@ -198,11 +198,7 @@ struct HabitDetailSheet: View {
                 .padding(.bottom, 24)
             }
             .scrollContentBackground(.hidden)
-            .background(
-                Color(.systemBackground)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-            )
+            .background(Color(.systemBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -211,6 +207,8 @@ struct HabitDetailSheet: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.subheadline.weight(.semibold))
+                            .frame(width: 44, height: 44) // 👈 critical
+                            .contentShape(Rectangle())    // 👈 ensures full tap area
                     }
                     .buttonStyle(TactileButtonStyle())
                 }
@@ -248,7 +246,8 @@ struct HabitDetailSheet: View {
 
                 }
             }
-        }
+        }Frijimilk
+        .toolbarRole(.navigationStack)
         .presentationBackground(Color(.systemBackground))
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
