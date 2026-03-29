@@ -40,6 +40,7 @@ struct HabitsListView: View {
     @State private var habitPendingDeletion: Habit?
     @State private var detailPresentationDetent: PresentationDetent = .large
     @State private var pendingReorderCommitTask: Task<Void, Never>?
+    @State private var showGlobalInsights = false
     
 
     init() {}
@@ -60,22 +61,17 @@ struct HabitsListView: View {
                     )
 
                 if let premiumInsightsSummary {
-                    NavigationLink {
-                        GlobalInsightsView()
-                    } label: {
-                        PremiumInsightsStripView(summary: premiumInsightsSummary)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(
-                        EdgeInsets(
-                            top: 4,
-                            leading: 16,
-                            bottom: 6,
-                            trailing: 16
-                        )
-                    )
+                    Button {
+                           openGlobalInsights()
+                       } label: {
+                           PremiumInsightsStripView(summary: premiumInsightsSummary)
+                       }
+                       .buttonStyle(.plain)
+                       .listRowSeparator(.hidden)
+                       .listRowBackground(Color.clear)
+                       .listRowInsets(
+                           EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16)
+                       )
                 }
 
                 ForEach(habits) { habit in
@@ -109,6 +105,9 @@ struct HabitsListView: View {
                         .listRowBackground(Color.clear)
                 }
             }
+            .navigationDestination(isPresented: $showGlobalInsights) {
+                   GlobalInsightsView()
+               }
             .alert(
                 "Delete Habit?",
                 isPresented: HabitDeletionConfirmationState.isPresentedBinding(
@@ -136,14 +135,23 @@ struct HabitsListView: View {
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if purchaseService.premiumStatus == .premium {
-                        NavigationLink {
-                            GlobalInsightsView()
-                        } label: {
-                            Image(systemName: "chart.line.text.clipboard")
+                    Button {
+                        openGlobalInsights()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.systemAccent)
+
+                            if purchaseService.premiumStatus == .free {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        .accessibilityLabel("Global Insights")
                     }
+                    .buttonStyle(TactileButtonStyle())
+                    .accessibilityLabel("Global Insights")
 
                     NavigationLink {
                         SettingsView()
@@ -196,6 +204,7 @@ struct HabitsListView: View {
                 }
             }
         }
+
         .environmentObject(userSettings)
         .onAppear {
             habitLogService.updateCalendar(calculationCalendar)
@@ -244,6 +253,19 @@ struct HabitsListView: View {
             habitCount: habits.count,
             hasUnlimitedHabitsAccess: hasUnlimitedHabitsAccess
         )
+    }
+    
+    private func openGlobalInsights() {
+        switch purchaseService.premiumStatus {
+        case .unknown:
+            return
+
+        case .premium:
+            showGlobalInsights = true
+
+        case .free:
+            showPaywall(feature: .advancedInsights)
+        }
     }
 
     private var premiumInsightsSummary: PremiumInsightsStripSummary? {
@@ -443,12 +465,7 @@ private struct PremiumInsightsStripView: View {
             VStack(alignment: .leading, spacing: 5) {
                 ProSwoosh(size: .small)
 
-                (
-                    Text(summary.primaryLabel)
-                        .foregroundStyle(.primary) +
-                    Text(summary.primaryValue)
-                        .foregroundStyle(accentColor)
-                )
+                Text(primaryLine)
                     .font(.headline)
                     .lineLimit(1)
 
@@ -464,19 +481,36 @@ private struct PremiumInsightsStripView: View {
         .appSurface(level: .highlighted, accent: accentColor, tinted: colorScheme == .light, cornerRadius: 16)
     }
 
+    private var primaryLine: AttributedString {
+        var label = AttributedString(summary.primaryLabel)
+        label.foregroundColor = .primary
+
+        var value = AttributedString(summary.primaryValue)
+        value.foregroundColor = accentColor
+
+        return label + value
+    }
+
     private var secondaryLine: Text {
-        var line =
-            Text(summary.secondaryLabel)
-            .foregroundStyle(.secondary) +
-            Text(summary.secondaryValue)
-            .foregroundStyle(accentColor)
+        Text(secondaryAttributedLine)
+    }
+
+    private var secondaryAttributedLine: AttributedString {
+        var line = AttributedString(summary.secondaryLabel)
+        line.foregroundColor = .secondary
+
+        var value = AttributedString(summary.secondaryValue)
+        value.foregroundColor = accentColor
+        line += value
 
         if let secondarySuffix = summary.secondarySuffix {
-            line = line +
-                Text(" · ")
-                .foregroundStyle(.secondary) +
-                Text(secondarySuffix)
-                .foregroundStyle(.secondary)
+            var separator = AttributedString(" · ")
+            separator.foregroundColor = .secondary
+            line += separator
+
+            var suffix = AttributedString(secondarySuffix)
+            suffix.foregroundColor = .secondary
+            line += suffix
         }
 
         return line
