@@ -6,13 +6,10 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct HabitCard: View {
-    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
-    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @EnvironmentObject private var habitLogService: HabitLogService
     
     @Bindable var habit: Habit
@@ -94,7 +91,6 @@ struct HabitCard: View {
         .sheet(isPresented: $isDetailPresented) {
             HabitDetailSheet(
                 habit: habit,
-                modelContext: modelContext,
                 initialCalendar: calculationCalendar,
                 onDeleted: onDeleted
             )
@@ -123,7 +119,6 @@ struct HabitCard: View {
         }
         .onAppear {
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            habitLogService.setUIStateStore(uiStateStore)
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             

@@ -96,7 +96,7 @@ struct HabitsApp: App {
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
     @StateObject private var habitUIStateStore = HabitUIStateStore()
-    @StateObject private var habitLogService = HabitLogServiceHolder()
+    @State private var habitLogService: HabitLogService?
     
     @State private var container: ModelContainer?
     @State private var isPreparingContainer = false
@@ -116,16 +116,29 @@ struct HabitsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ThemedAppContainer(
-                container: container,
-                isBootstrapVisible: $isBootstrapVisible,
-                configureRuntimeServicesIfNeeded: configureRuntimeServicesIfNeeded(using:),
-                prepareContainerIfNeeded: prepareContainerIfNeeded
-            )
-            .environmentObject(userSettings)
-            .environmentObject(deepLinkManager)
-            .environmentObject(purchaseService)
-            .environmentObject(habitUIStateStore)
+            Group {
+                if let habitLogService {
+                    ThemedAppContainer(
+                        container: container,
+                        isBootstrapVisible: $isBootstrapVisible,
+                        configureRuntimeServicesIfNeeded: configureRuntimeServicesIfNeeded(using:),
+                        prepareContainerIfNeeded: prepareContainerIfNeeded
+                    )
+                    .environmentObject(userSettings)
+                    .environmentObject(deepLinkManager)
+                    .environmentObject(purchaseService)
+                    .environmentObject(habitUIStateStore)
+                    .environmentObject(habitLogService)
+                } else {
+                    AppBootstrapView()
+                        .task {
+                            await prepareContainerIfNeeded()
+                            if let container {
+                                configureRuntimeServicesIfNeeded(using: container)
+                            }
+                        }
+                }
+            }
             .onOpenURL { url in
                 deepLinkManager.handle(url: url)
             }
@@ -161,6 +174,13 @@ struct HabitsApp: App {
     }
 
     private func configureRuntimeServicesIfNeeded(using container: ModelContainer) {
+        if habitLogService == nil {
+            habitLogService = HabitLogService(
+                modelContext: ModelContext(container),
+                uiStateStore: habitUIStateStore
+            )
+        }
+
         guard !hasConfiguredRuntimeServices else { return }
 
         NotificationService.shared.configureModelContextProvider { [container] in
@@ -169,6 +189,9 @@ struct HabitsApp: App {
         NotificationService.shared.registerNotificationCategories()
         NotificationActionHandler.shared.configureModelContextProvider { [container] in
             ModelContext(container)
+        }
+        NotificationActionHandler.shared.configureHabitLogServiceProvider { [habitLogService] in
+            habitLogService
         }
 
         hasConfiguredRuntimeServices = true

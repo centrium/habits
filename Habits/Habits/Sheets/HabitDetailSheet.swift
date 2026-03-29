@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 
 private enum ActiveSheet: Identifiable {
@@ -27,8 +26,8 @@ struct HabitDetailSheet: View {
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
+    @EnvironmentObject private var habitLogService: HabitLogService
     @StateObject private var selectionState: HabitSelectionState
-    @State private var service: HabitLogService
     @State private var activeSheet: ActiveSheet?
     @State private var manualLogValue: Double? = nil
     @State private var insightsDetent: PresentationDetent = .large
@@ -41,22 +40,20 @@ struct HabitDetailSheet: View {
 
     init(
         habit: Habit,
-        modelContext: ModelContext,
         initialCalendar: Calendar = .autoupdatingCurrent,
         onDeleted: (() -> Void)? = nil
     ) {
         self.habit = habit
         self.onDeleted = onDeleted
         _selectionState = StateObject(wrappedValue: HabitSelectionState(calendar: initialCalendar))
-        _service = State(initialValue: HabitLogService(modelContext: modelContext, calendar: initialCalendar))
         _selectedDate = State(initialValue: initialCalendar.startOfDay(for: Date()))
     }
 
     var body: some View {
         let progressSnapshot = cachedProgressSnapshot
         let now = Date()
-        let calendar = service.calendar
-        let progressRevision = service.metricsRevision(for: habit.id)
+        let calendar = habitLogService.calendar
+        let progressRevision = habitLogService.metricsRevision(for: habit.id)
         let displayedStreak = habit.displayStreak(
             referenceDate: now,
             calendar: calculationCalendar,
@@ -91,7 +88,7 @@ struct HabitDetailSheet: View {
                                 currentStreak: displayedStreak,
                                 onQuickLog: { date in
                                     if habit.goalType == .frequency {
-                                        _ = service.quickLog(for: habit, on: date)
+                                        _ = habitLogService.quickLog(for: habit, on: date)
                                     } else {
                                         presentManualEntry()
                                     }
@@ -120,7 +117,7 @@ struct HabitDetailSheet: View {
                                 metricsRevision: progressRevision,
                                 earliestVisibleDate: earliestCalendarDate,
                                 habit: habit,
-                                service: service,
+                                service: habitLogService,
                                 calendarProvider: heatmapCalendarProvider,
                                 onSelectDay: { day in
                                     let normalized = calendar.startOfDay(for: day)
@@ -151,7 +148,7 @@ struct HabitDetailSheet: View {
                                     set: { selectionState.selectCalendarMonth($0) }
                                 ),
                                 habit: habit,
-                                service: service,
+                                service: habitLogService,
                                 calendarProvider: calendarViewProvider,
                                 premiumHistoryGate: premiumHistoryGate,
                                 onSelectDay: { day in
@@ -278,10 +275,10 @@ struct HabitDetailSheet: View {
                     goalName: habit.name,
                     unitLabel: habit.trimmedUnit,
                     initialValue: manualLogValue,
-                    formattingContext: service.valueFormattingContext(for: habit),
-                    inputContext: service.valueInputContext(for: habit)
+                    formattingContext: habitLogService.valueFormattingContext(for: habit),
+                    inputContext: habitLogService.valueInputContext(for: habit)
                 ) { newValue in
-                    _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
+                    _ = habitLogService.addLog(for: habit, on: selectedDate, value: max(0, newValue))
                     manualLogValue = newValue
                 }
                 .presentationDetents([.medium])
@@ -295,9 +292,8 @@ struct HabitDetailSheet: View {
 
         }
         .onAppear {
-            service.setUIStateStore(uiStateStore)
-            service.updateCalendar(calculationCalendar)
-            service.prepare(habit)
+            habitLogService.updateCalendar(calculationCalendar)
+            habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
 
             guard purchaseService.premiumStatus != .premium else { return }
@@ -316,7 +312,7 @@ struct HabitDetailSheet: View {
             }
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
-            service.updateCalendar(calculationCalendar)
+            habitLogService.updateCalendar(calculationCalendar)
             scheduleProgressSnapshotRefresh()
         }
         .onChange(of: selectedDate) { _, _ in
@@ -338,7 +334,7 @@ struct HabitDetailSheet: View {
     }
 
     private func presentManualEntry() {
-        manualLogValue = service.suggestedQuickEntryValue(for: habit)
+        manualLogValue = habitLogService.suggestedQuickEntryValue(for: habit)
         activeSheet = .valueEntry
     }
 
@@ -360,7 +356,7 @@ struct HabitDetailSheet: View {
 
     private func refreshProgressSnapshot(now: Date = Date()) {
         let progressService = ProgressAsOfService(
-            calendar: service.calendar,
+            calendar: habitLogService.calendar,
             weekStartPreference: userSettings.weekStartPreference,
             now: { now }
         )
@@ -371,7 +367,7 @@ struct HabitDetailSheet: View {
             selectedDate: selectedDate
         )
 
-        let dayMetrics = service.dayMetrics(for: habit, on: metricDays)
+        let dayMetrics = habitLogService.dayMetrics(for: habit, on: metricDays)
 
         cachedProgressSnapshot = progressService.snapshot(
             for: habit,
@@ -382,7 +378,7 @@ struct HabitDetailSheet: View {
     }
 
     private var weekLayoutStrategy: WeekLayoutStrategy {
-        userSettings.weekLayoutStrategy(base: service.calendar)
+        userSettings.weekLayoutStrategy(base: habitLogService.calendar)
     }
 
     private var calculationCalendar: Calendar {

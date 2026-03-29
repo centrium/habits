@@ -14,34 +14,18 @@ protocol NotificationReminderSyncing {
     func syncNotifications(for habit: Habit) async
 }
 
-protocol HabitLogServiceProtocol {
-    @discardableResult
-    func quickLog(for habit: Habit, on day: Date) -> Double
-}
-
-protocol HabitLogServiceBuilding {
-    func make(modelContext: ModelContext) -> HabitLogServiceProtocol
-}
-
 protocol DeepLinkManaging: AnyObject {
     @MainActor
     func openHabit(_ id: UUID)
 }
 
 extension NotificationService: NotificationReminderSyncing {}
-extension HabitLogService: HabitLogServiceProtocol {}
 extension DeepLinkManager: DeepLinkManaging {}
 
 final class SharedDeepLinkManager: DeepLinkManaging {
     @MainActor
     func openHabit(_ id: UUID) {
         DeepLinkManager.shared.openHabit(id)
-    }
-}
-
-struct HabitLogServiceBuilder: HabitLogServiceBuilding {
-    func make(modelContext: ModelContext) -> HabitLogServiceProtocol {
-        HabitLogService(modelContext: modelContext)
     }
 }
 
@@ -52,27 +36,32 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
 
     private let defaultModelContextProvider: () -> ModelContext?
     private var modelContextProviderStorage: (() -> ModelContext?)?
+    private let defaultHabitLogServiceProvider: () -> HabitLogService?
+    private var habitLogServiceProviderStorage: (() -> HabitLogService?)?
     private let notificationService: NotificationReminderSyncing
     private let notificationCenter: NotificationCenterProtocol
     private let deepLinkManager: DeepLinkManaging
-    private let habitLogServiceBuilder: HabitLogServiceBuilding
 
     init(
         notificationService: NotificationReminderSyncing? = nil,
         notificationCenter: NotificationCenterProtocol = UNUserNotificationCenter.current(),
         deepLinkManager: DeepLinkManaging? = nil,
-        habitLogServiceBuilder: HabitLogServiceBuilding? = nil,
-        modelContextProvider: @escaping () -> ModelContext? = { nil }
+        modelContextProvider: @escaping () -> ModelContext? = { nil },
+        habitLogServiceProvider: @escaping () -> HabitLogService? = { nil }
     ) {
         self.defaultModelContextProvider = modelContextProvider
+        self.defaultHabitLogServiceProvider = habitLogServiceProvider
         self.notificationService = notificationService ?? NotificationService.shared
         self.notificationCenter = notificationCenter
         self.deepLinkManager = deepLinkManager ?? SharedDeepLinkManager()
-        self.habitLogServiceBuilder = habitLogServiceBuilder ?? HabitLogServiceBuilder()
     }
 
     func configureModelContextProvider(_ modelContextProvider: @escaping () -> ModelContext?) {
         self.modelContextProviderStorage = modelContextProvider
+    }
+
+    func configureHabitLogServiceProvider(_ habitLogServiceProvider: @escaping () -> HabitLogService?) {
+        self.habitLogServiceProviderStorage = habitLogServiceProvider
     }
 
     func userNotificationCenter(
@@ -124,7 +113,7 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
 
         guard let habit = try? context.fetch(descriptor).first else { return }
 
-        let service = habitLogServiceBuilder.make(modelContext: context)
+        guard let service = habitLogServiceProviderStorage?() ?? defaultHabitLogServiceProvider() else { return }
 
         service.quickLog(for: habit, on: Date())
 

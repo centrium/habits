@@ -256,11 +256,9 @@ final class NotificationService {
     }
 
     private func syncSingleHabitRemindersWithoutBundling(for habit: Habit) async {
-        if let context = resolvedModelContext() {
-            let logService = HabitLogService(modelContext: context)
-            if logService.isHabitCompletedToday(habit) {
-                return
-            }
+        let today = Calendar.current.startOfDay(for: Date())
+        if habit.isComplete(for: today, calendar: .current) {
+            return
         }
 
         var status = await notificationStatus()
@@ -386,13 +384,4 @@ final class NotificationService {
             completedHabitsToday: completedHabitsToday
         )
     }
-}
-
-extension HabitLogService {
-
-    func isHabitCompletedToday(_ habit: Habit) -> Bool {
-        let today = calendar.startOfDay(for: Date())
-        return habit.isComplete(for: today, calendar: calendar)
-    }
-
 }

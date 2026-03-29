@@ -185,7 +185,6 @@ struct HabitsListView: View {
                 case .habitDetail(let habit):
                     HabitDetailSheet(
                         habit: habit,
-                        modelContext: modelContext,
                         initialCalendar: calculationCalendar
                     ) {
                         activeSheet = nil

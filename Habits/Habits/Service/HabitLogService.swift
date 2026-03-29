@@ -29,7 +29,7 @@ final class HabitLogService: ObservableObject {
     private let modelContext: ModelContext
     private(set) var calendar: Calendar
     private let lastValueStore: any LastValueStore
-    private weak var uiStateStore: HabitUIStateStore?
+    private let uiStateStore: HabitUIStateStore
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.1
     private var pendingSaveWorkItem: DispatchWorkItem?
@@ -43,7 +43,7 @@ final class HabitLogService: ObservableObject {
         modelContext: ModelContext,
         calendar: Calendar = .current,
         lastValueStore: any LastValueStore = LogDerivedLastValueStore(),
-        uiStateStore: HabitUIStateStore? = nil
+        uiStateStore: HabitUIStateStore
     ) {
         self.modelContext = modelContext
         self.calendar = calendar
@@ -54,10 +54,6 @@ final class HabitLogService: ObservableObject {
     func updateCalendar(_ calendar: Calendar) {
         self.calendar = calendar
         dayMetricsCache.removeAll()
-    }
-
-    func setUIStateStore(_ uiStateStore: HabitUIStateStore?) {
-        self.uiStateStore = uiStateStore
     }
 
     private func playHaptic(becameComplete: Bool) {
@@ -151,14 +147,12 @@ final class HabitLogService: ObservableObject {
     }
 
     private func optimisticProgress(habitID: UUID, day: Date) -> Double? {
-        guard let uiStateStore else { return nil }
         return MainActor.assumeIsolated {
             uiStateStore.progress(habitId: habitID, date: day)
         }
     }
 
     private func optimisticCompletion(habitID: UUID, day: Date) -> Bool? {
-        guard let uiStateStore else { return nil }
         return MainActor.assumeIsolated {
             uiStateStore.isComplete(habitId: habitID, date: day)
         }
@@ -170,7 +164,6 @@ final class HabitLogService: ObservableObject {
         progress: Double,
         isComplete: Bool
     ) {
-        guard let uiStateStore else { return }
         MainActor.assumeIsolated {
             uiStateStore.setProgress(
                 habitId: habitID,
@@ -502,30 +495,19 @@ extension HabitLogService {
             )
         )
 
-        let hasUIStateStore = uiStateStore != nil
-        if hasUIStateStore {
-            setOptimisticState(
-                habitID: habit.id,
-                day: normalizedDay,
-                progress: newProgress,
-                isComplete: willBeComplete
-            )
-            playHaptic(becameComplete: !wasComplete && willBeComplete)
-        }
-
-        guard hasUIStateStore else {
-            habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
-            invalidateMetricsCache(for: habit.id)
-            saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
-            clearPendingDayMetrics(for: habit.id, day: normalizedDay)
-            return habit.value(on: normalizedDay, calendar: calendar)
-        }
+        setOptimisticState(
+            habitID: habit.id,
+            day: normalizedDay,
+            progress: newProgress,
+            isComplete: willBeComplete
+        )
+        playHaptic(becameComplete: !wasComplete && willBeComplete)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
             self.invalidateMetricsCache(for: habit.id)
             self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
-            self.uiStateStore?.clear(habitId: habit.id, date: normalizedDay)
+            self.uiStateStore.clear(habitId: habit.id, date: normalizedDay)
             self.clearPendingDayMetrics(for: habit.id, day: normalizedDay)
         }
 
