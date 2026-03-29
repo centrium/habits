@@ -44,13 +44,6 @@ struct HabitCard: View {
     }
 
     var body: some View {
-        /*let now = Date()
-        let displayedStreak = habit.displayStreak(
-            referenceDate: now,
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        )
-*/
         
         VStack(alignment: .leading, spacing: 12) {
             HabitHeader(
@@ -85,7 +78,8 @@ struct HabitCard: View {
                     },
                     onTapLockedDay: { _ in
                         showHeatmapPaywall = true
-                    }
+                    },
+                    isCompact: true
                 )
             }
         }
