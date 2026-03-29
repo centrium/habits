@@ -96,6 +96,8 @@ struct HabitsApp: App {
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
     @StateObject private var habitUIStateStore = HabitUIStateStore()
+    @StateObject private var habitLogService = HabitLogServiceHolder()
+    
     @State private var container: ModelContainer?
     @State private var isPreparingContainer = false
     @State private var hasConfiguredRuntimeServices = false

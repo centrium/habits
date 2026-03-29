@@ -5,11 +5,12 @@
 //  Created by Matt Adams on 24/02/2026.
 //
 
+import Combine
 import Foundation
 import QuartzCore
 import SwiftData
 
-final class HabitLogService {
+final class HabitLogService: ObservableObject {
     private struct CachedDayMetrics {
         let revision: Int
         let timeZoneIdentifier: String
@@ -124,6 +125,7 @@ final class HabitLogService {
     }
 
     private func invalidateMetricsCache(for habitID: UUID) {
+        objectWillChange.send()
         metricsRevisions[habitID, default: 0] += 1
         dayMetricsCache.removeValue(forKey: habitID)
     }

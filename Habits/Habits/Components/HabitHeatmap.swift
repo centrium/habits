@@ -149,7 +149,8 @@ struct HabitHeatmap: View {
     }
     
     private var compactHeatmap: some View {
-        let revision = service.metricsRevision(for: habit.id)
+        let revision = service.metricsRevision(for: habit.id) // 👈 ADD THIS
+
         let calendar = calendarProvider.calendar
         let today = calendar.startOfDay(for: Date())
 
@@ -157,24 +158,37 @@ struct HabitHeatmap: View {
             calendar.date(byAdding: .day, value: -$0, to: today)
         }.reversed()
 
+        let dayMetrics = service.dayMetrics(for: habit, on: days)
+
         return HStack(spacing: 6) {
-            weekGrid(days: Array(days.prefix(7)), isRecent: false)
-            weekGrid(days: Array(days.suffix(7)), isRecent: true)
+            weekGrid(
+                days: Array(days.prefix(7)),
+                dayMetrics: dayMetrics,
+                isRecent: false
+            )
+
+            weekGrid(
+                days: Array(days.suffix(7)),
+                dayMetrics: dayMetrics,
+                isRecent: true
+            )
         }
+        .id(revision) // 👈 ADD THIS
         .padding(.top, 6)
         .padding(.bottom, 4)
         .frame(height: 40)
-        .id(revision)
     }
     
-    private func weekGrid(days: [Date], isRecent: Bool) -> some View {
+    private func weekGrid(
+        days: [Date],
+        dayMetrics: [Date: HabitDayMetrics],
+        isRecent: Bool
+    ) -> some View {
         let calendar = calendarProvider.calendar
-        let dayMetrics = service.dayMetrics(for: habit, on: days)
-
         let columns = Array(repeating: GridItem(.flexible(), spacing: 2.5), count: 7)
 
         return LazyVGrid(columns: columns, spacing: 2.5) {
-            ForEach(Array(days.enumerated()), id: \.element) { index, day in
+            ForEach(days, id: \.self) { day in
                 let raw = clamp(dayMetrics[day]?.intensity ?? 0)
                 let adjusted = pow(raw, 0.7)
                 let boosted = isRecent ? min(adjusted * 1.1, 1.0) : adjusted
@@ -185,8 +199,6 @@ struct HabitHeatmap: View {
                     .scaleEffect(isRecent ? 1.0 : 0.90)
                     .offset(y: isRecent ? 0 : 1.5)
                     .frame(height: 14)
-                
-
                     .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)

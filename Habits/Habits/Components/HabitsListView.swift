@@ -33,13 +33,13 @@ struct HabitsListView: View {
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
-    
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
 
     @State private var activeSheet: ActiveSheet?
     @State private var habitPendingDeletion: Habit?
     @State private var detailPresentationDetent: PresentationDetent = .large
     @State private var pendingReorderCommitTask: Task<Void, Never>?
+    
 
     init() {}
 

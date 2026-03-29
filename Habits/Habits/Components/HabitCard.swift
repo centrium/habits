@@ -13,9 +13,10 @@ struct HabitCard: View {
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
+    @EnvironmentObject private var habitLogService: HabitLogService
+    
     @Bindable var habit: Habit
     @State private var isDetailPresented = false
-    @State private var service: HabitLogService?
     @State private var selectedDetent: PresentationDetent = .large
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
@@ -57,7 +58,7 @@ struct HabitCard: View {
                 currentStreak: displayedStreak,
                 onQuickLog: { date in
                     if habit.goalType == .frequency {
-                        _ = service?.quickLog(for: habit, on: date)
+                        _ = habitLogService.quickLog(for: habit, on: date)
                     } else {
                         showQuickEntry = true
                     }
@@ -66,10 +67,10 @@ struct HabitCard: View {
             )
             .frame(height: headerHeight)
 
-            if let service {
+
                 HabitHeatmap(
                     habit: habit,
-                    service: service,
+                    service: habitLogService,
                     calendarProvider: heatmapCalendarProvider,
                     selectedDate: selectedDate,
                     isInteractive: false,
@@ -81,7 +82,7 @@ struct HabitCard: View {
                     },
                     isCompact: true
                 )
-            }
+            
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -102,38 +103,29 @@ struct HabitCard: View {
                 .presentationCornerRadius(24)
         }
         .sheet(isPresented: $showQuickEntry) {
-            if let service {
                 CumulativeQuickEntrySheet(
                     goalName: habit.name,
                     unitLabel: habit.trimmedUnit,
-                    initialValue: service.suggestedQuickEntryValue(for: habit),
-                    formattingContext: service.valueFormattingContext(for: habit),
-                    inputContext: service.valueInputContext(for: habit)
+                    initialValue: habitLogService.suggestedQuickEntryValue(for: habit),
+                    formattingContext: habitLogService.valueFormattingContext(for: habit),
+                    inputContext: habitLogService.valueInputContext(for: habit)
                 ) { newValue in
-                    _ = service.addLog(for: habit, on: selectedDate, value: max(0, newValue))
+                    _ = habitLogService.addLog(for: habit, on: selectedDate, value: max(0, newValue))
                 }
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)
-            }
+            
         }
         .sheet(isPresented: $showHeatmapPaywall) {
             PaywallView(feature: .fullHeatmapHistory)
                 .environmentObject(purchaseService)
         }
         .onAppear {
-            if service == nil {
-                service = HabitLogService(
-                    modelContext: modelContext,
-                    calendar: calculationCalendar,
-                    uiStateStore: uiStateStore
-                )
-            }
-
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            service?.setUIStateStore(uiStateStore)
-            service?.updateCalendar(calculationCalendar)
-            service?.prepare(habit)
+            habitLogService.setUIStateStore(uiStateStore)
+            habitLogService.updateCalendar(calculationCalendar)
+            habitLogService.prepare(habit)
             
             if displayedStreak == 0 {
                 updateDisplayedStreak()
@@ -144,7 +136,7 @@ struct HabitCard: View {
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            service?.updateCalendar(calculationCalendar)
+            habitLogService.updateCalendar(calculationCalendar)
             updateDisplayedStreak()
         }
     }

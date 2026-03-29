@@ -246,7 +246,7 @@ struct HabitDetailSheet: View {
 
                 }
             }
-        }Frijimilk
+        }
         .toolbarRole(.navigationStack)
         .presentationBackground(Color(.systemBackground))
         .sheet(item: $activeSheet) { sheet in
