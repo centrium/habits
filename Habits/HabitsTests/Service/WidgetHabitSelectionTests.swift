@@ -135,12 +135,12 @@ final class WidgetHabitSelectionTests: XCTestCase {
         XCTAssertEqual(primaryHabit.name, "Read")
         XCTAssertEqual(completedCount, 2)
         XCTAssertEqual(state.titleText, "All done")
-        XCTAssertEqual(state.subtitleText, "2/2 completed")
+        XCTAssertEqual(state.subtitleText, "2 completed today")
     }
 
     func testResolveFocusWidgetStateReturnsNeedsAttentionForIncompleteHabit() {
         let completed = makeHabit(name: "Walk", goalType: .binary, isCompleteToday: true, hasActivityToday: true)
-        let incomplete = makeHabit(name: "Read", goalType: .goal, progress: 0, hasActivityToday: false, streak: 4)
+        let incomplete = makeHabit(name: "Read", goalType: .goal, streak: 4, progress: 0, hasActivityToday: false)
 
         let state = resolveFocusWidgetState([completed, incomplete])
 
@@ -150,11 +150,11 @@ final class WidgetHabitSelectionTests: XCTestCase {
 
         XCTAssertEqual(habit.name, "Read")
         XCTAssertEqual(state.titleText, "Read")
-        XCTAssertEqual(state.subtitleText, "Don't break streak (4)")
+        XCTAssertEqual(state.subtitleText, "Keep 4-day streak")
     }
 
     func testResolveFocusWidgetStateUsesStartCopyForZeroStreakHabit() {
-        let incomplete = makeHabit(name: "Write", goalType: .binary, hasActivityToday: false, streak: 0)
+        let incomplete = makeHabit(name: "Write", goalType: .binary, streak: 0, hasActivityToday: false)
 
         let state = resolveFocusWidgetState([incomplete])
 
@@ -163,7 +163,7 @@ final class WidgetHabitSelectionTests: XCTestCase {
         }
 
         XCTAssertEqual(habit.name, "Write")
-        XCTAssertEqual(state.subtitleText, "Start your streak")
+        XCTAssertEqual(state.subtitleText, "Log today")
     }
 
     private func makeHabit(

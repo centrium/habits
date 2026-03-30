@@ -40,7 +40,7 @@ final class WidgetHabitMomentumTests: XCTestCase {
         let summary = habit.momentumSummary
 
         XCTAssertEqual(summary.direction, .improving(deltaPercent: 20))
-        XCTAssertEqual(summary.direction.summaryText, "Up 20% vs prior 7d")
+        XCTAssertEqual(summary.direction.summaryText, "↑ 20% vs last 7 days")
     }
 
     func testMomentumSummaryDetectsDecliningDirectionFromRecentActivity() {
@@ -52,7 +52,7 @@ final class WidgetHabitMomentumTests: XCTestCase {
         let summary = habit.momentumSummary
 
         XCTAssertEqual(summary.direction, .declining(deltaPercent: 54))
-        XCTAssertEqual(summary.direction.summaryText, "Down 54% vs prior 7d")
+        XCTAssertEqual(summary.direction.summaryText, "↓ 54% vs last 7 days")
     }
 
     func testMomentumSummaryReturnsStableDirectionForSmallWeeklyChange() {
@@ -64,7 +64,7 @@ final class WidgetHabitMomentumTests: XCTestCase {
         let summary = habit.momentumSummary
 
         XCTAssertEqual(summary.direction, .stable)
-        XCTAssertEqual(summary.direction.summaryText, "Flat vs prior 7d")
+        XCTAssertEqual(summary.direction.summaryText, "No change vs last 7 days")
     }
 
     private func makeHabit(

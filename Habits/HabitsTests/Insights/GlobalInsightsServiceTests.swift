@@ -120,8 +120,8 @@ final class GlobalInsightsServiceTests: XCTestCase {
 
         let snapshot = makeService().snapshot(for: [strong, atRisk, filler, nearGoal], now: now)
 
-        XCTAssertEqual(snapshot?.topHabits.map(\.name), ["At Risk", "Near Goal", "Strong"])
-        XCTAssertEqual(snapshot?.topHabits.map(\.statusLabel), ["Needs attention", "On track", "Strong"])
+        XCTAssertEqual(snapshot?.topHabits.map(\.name), ["At Risk", "Filler", "Strong"])
+        XCTAssertEqual(snapshot?.topHabits.map(\.statusLabel), ["Needs attention", "Needs attention", "Strong"])
     }
 
     func testGreigProjectionUsesMonthlyCompletedSessionsAndWeeklyLift() {
@@ -152,8 +152,8 @@ final class GlobalInsightsServiceTests: XCTestCase {
         let snapshot = makeService().snapshot(for: [habitOne, habitTwo], now: now)
 
         XCTAssertEqual(snapshot?.greig.trajectoryText, "At this pace, you'll complete ~12 sessions this month.")
-        XCTAssertEqual(snapshot?.greig.suggestionText, "Add 1 extra session weekly.")
-        XCTAssertEqual(snapshot?.greig.outcomeText, "Projected outcome: ~15 sessions this month (+3).")
+        XCTAssertEqual(snapshot?.greig.suggestionText, "One extra session a week gets you to")
+        XCTAssertEqual(snapshot?.greig.outcomeText, "~15 sessions this month.")
     }
 
     private func makeService() -> GlobalInsightsService {

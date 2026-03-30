@@ -19,7 +19,7 @@ final class PaywallViewTests: XCTestCase {
         XCTAssertEqual(titles[2], "Unlock Your Full Cadence History")
         XCTAssertEqual(titles[3], "Export Your Cadence Data")
         XCTAssertEqual(titles[4], "Stay consistent throughout the day")
-        XCTAssertEqual(titles[5], "Upgrade to Premium")
+        XCTAssertEqual(titles[5], "Upgrade to Pro")
     }
 
     func testTriggeredFeatureAppearsFirstInBenefits() async {
@@ -46,7 +46,7 @@ final class PaywallViewTests: XCTestCase {
             PaywallView.purchaseButtonTitle(price: "£9.99")
         }
 
-        XCTAssertEqual(title, "Unlock Premium – £9.99")
+        XCTAssertEqual(title, "Unlock with Pro – £9.99")
     }
 
     func testPaywallPreviewMatchesFeature() async {
