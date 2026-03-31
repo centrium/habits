@@ -53,9 +53,11 @@ struct HabitCard: View {
                 showsInlineProgressText: true,
                 secondaryTextOverride: nil,
                 currentStreak: displayedStreak,
-                onQuickLog: { date in
+                onQuickLog: { _ in
+                    let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+                    selectedDate = currentDay
                     if habit.goalType == .frequency {
-                        _ = habitLogService.quickLog(for: habit, on: date)
+                        _ = habitLogService.quickLog(for: habit, on: currentDay)
                     } else {
                         showQuickEntry = true
                     }
@@ -107,7 +109,8 @@ struct HabitCard: View {
                     formattingContext: habitLogService.valueFormattingContext(for: habit),
                     inputContext: habitLogService.valueInputContext(for: habit)
                 ) { newValue in
-                    _ = habitLogService.addLog(for: habit, on: selectedDate, value: max(0, newValue))
+                    let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+                    _ = habitLogService.addLog(for: habit, on: currentDay, value: max(0, newValue))
                 }
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
