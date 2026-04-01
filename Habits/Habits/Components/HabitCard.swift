@@ -19,6 +19,8 @@ struct HabitCard: View {
     @State private var showQuickEntry = false
     @State private var showHeatmapPaywall = false
     @State private var displayedStreak: Int = 0
+    private let isReordering: Bool
+    private let trailingAccessory: AnyView?
     private let onDeleted: (() -> Void)?
 
     private let headerHeight: CGFloat = 40
@@ -36,8 +38,15 @@ struct HabitCard: View {
         }
     }
 
-    init(habit: Habit, onDeleted: (() -> Void)? = nil) {
+    init(
+        habit: Habit,
+        isReordering: Bool = false,
+        trailingAccessory: AnyView? = nil,
+        onDeleted: (() -> Void)? = nil
+    ) {
         self.habit = habit
+        self.isReordering = isReordering
+        self.trailingAccessory = trailingAccessory
         self.onDeleted = onDeleted
     }
 
@@ -49,10 +58,12 @@ struct HabitCard: View {
                 selectedDate: selectedDate,
                 calendar: calculationCalendar,
                 weekStartPreference: userSettings.weekStartPreference,
+                isReordering: isReordering,
                 showsQuickLogButton: true,
                 showsInlineProgressText: true,
                 secondaryTextOverride: nil,
                 currentStreak: displayedStreak,
+                trailingAccessory: trailingAccessory,
                 onQuickLog: { _ in
                     let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
                     selectedDate = currentDay

@@ -14,10 +14,12 @@ struct HabitHeader: View {
     let selectedDate: Date
     let calendar: Calendar
     let weekStartPreference: WeekStartPreference
+    let isReordering: Bool
     let showsQuickLogButton: Bool
     let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
     let currentStreak: Int?
+    let trailingAccessory: AnyView?
     let onQuickLog: (Date) -> Void
     let onQuickLogLongPress: ((Date) -> Void)?
 
@@ -26,10 +28,12 @@ struct HabitHeader: View {
         selectedDate: Date,
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system,
+        isReordering: Bool = false,
         showsQuickLogButton: Bool,
         showsInlineProgressText: Bool,
         secondaryTextOverride: String?,
         currentStreak: Int? = nil,
+        trailingAccessory: AnyView? = nil,
         onQuickLog: @escaping (Date) -> Void,
         onQuickLogLongPress: ((Date) -> Void)? = nil
     ) {
@@ -37,10 +41,12 @@ struct HabitHeader: View {
         self.selectedDate = selectedDate
         self.calendar = calendar
         self.weekStartPreference = weekStartPreference
+        self.isReordering = isReordering
         self.showsQuickLogButton = showsQuickLogButton
         self.showsInlineProgressText = showsInlineProgressText
         self.secondaryTextOverride = secondaryTextOverride
         self.currentStreak = currentStreak
+        self.trailingAccessory = trailingAccessory
         self.onQuickLog = onQuickLog
         self.onQuickLogLongPress = onQuickLogLongPress
     }
@@ -130,21 +136,28 @@ struct HabitHeader: View {
 
             Spacer()
 
-            if showsQuickLogButton {
-                GoalProgressButton(
-                    accent: accent,
-                    hasGoal: habit.hasGoal,
-                    progressFraction: goalProgressFraction,
-                    isComplete: isComplete,
-                    accessibilityLabel: quickLogAccessibilityLabel,
-                    action: {
-                        onQuickLog(selectedDate)
-                    },
-                    longPressAction: onQuickLogLongPress.map { action in
-                        { action(selectedDate) }
-                    }
-                )
+            Group {
+                if isReordering, let trailingAccessory {
+                    trailingAccessory
+                        .transition(.opacity.combined(with: .scale))
+                } else if showsQuickLogButton {
+                    GoalProgressButton(
+                        accent: accent,
+                        hasGoal: habit.hasGoal,
+                        progressFraction: goalProgressFraction,
+                        isComplete: isComplete,
+                        accessibilityLabel: quickLogAccessibilityLabel,
+                        action: {
+                            onQuickLog(selectedDate)
+                        },
+                        longPressAction: onQuickLogLongPress.map { action in
+                            { action(selectedDate) }
+                        }
+                    )
+                    .transition(.opacity.combined(with: .scale))
+                }
             }
+            .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
     }
 }

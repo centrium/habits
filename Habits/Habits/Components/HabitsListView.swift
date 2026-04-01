@@ -42,6 +42,7 @@ struct HabitsListView: View {
     @State private var detailPresentationDetent: PresentationDetent = .large
     @State private var pendingReorderCommitTask: Task<Void, Never>?
     @State private var showGlobalInsights = false
+    @State private var isReordering: Bool = false
     @State private var activeItem: Habit?
     @State private var pressingItemID: Habit.ID?
     @State private var dragOffset: CGSize = .zero
@@ -56,7 +57,7 @@ struct HabitsListView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: isReordering ? 18 : 12) {
                     CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 20)
@@ -79,9 +80,12 @@ struct HabitsListView: View {
                         DraggableHabitRow(
                             habit: habit,
                             isDragging: activeItem?.id == habit.id,
-                            isPressing: pressingItemID == habit.id && activeItem == nil
+                            isPressing: pressingItemID == habit.id && activeItem == nil,
+                            isReordering: isReordering,
+                            trailingAccessory: AnyView(reorderHandle(for: habit))
                         )
-                        .opacity(activeItem?.id == habit.id ? 0 : 1)
+                        .opacity(activeItem?.id == habit.id ? 0 : (isReordering ? 0.96 : 1))
+                        .padding(.vertical, isReordering ? 2 : 0)
                         .background(
                             GeometryReader { geo in
                                 Color.clear
@@ -93,7 +97,6 @@ struct HabitsListView: View {
                                     }
                             }
                         )
-                        .contentShape(Rectangle())
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button {
                                 requestDeletion(of: habit)
@@ -102,7 +105,6 @@ struct HabitsListView: View {
                             }
                             .tint(.red)
                         }
-                        .gesture(reorderGesture(for: habit))
                     }
 
                     if habitLimitPolicy.showsUpgradeHint {
@@ -125,6 +127,7 @@ struct HabitsListView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 4)
+                .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
             }
             .coordinateSpace(name: "container")
             .overlay {
@@ -135,7 +138,13 @@ struct HabitsListView: View {
 
                     if let activeItem,
                        let frame = frames[activeItem.id] {
-                        DraggableHabitRow(habit: activeItem, isDragging: true, isPressing: false)
+                        DraggableHabitRow(
+                            habit: activeItem,
+                            isDragging: true,
+                            isPressing: false,
+                            isReordering: isReordering,
+                            trailingAccessory: AnyView(reorderHandle(for: activeItem))
+                        )
                             .frame(width: frame.width, height: frame.height)
                             .position(
                                 x: fingerLocation.x - touchOffset.width,
@@ -170,6 +179,28 @@ struct HabitsListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        if !isReordering {
+                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                        }
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            isReordering.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isReordering ? "checkmark" : "arrow.up.arrow.down")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(isReordering ? Color.systemAccent : Color.secondary)
+                            .frame(width: 36, height: 36)
+                            .background {
+                                if isReordering {
+                                    Circle()
+                                        .fill(Color.systemAccent.opacity(0.12))
+                                }
+                            }
+                    }
+                    .accessibilityLabel(isReordering ? "Done reordering" : "Reorder habits")
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         openGlobalInsights()
@@ -360,6 +391,7 @@ struct HabitsListView: View {
                 case .second(true, let drag?):
                     if activeItem == nil {
                         guard let frame = frames[habit.id] else { return }
+                        fingerLocation = drag.location
                         activeItem = habit
                         pressingItemID = nil
                         initialFrame = frame
@@ -392,6 +424,29 @@ struct HabitsListView: View {
                     touchOffset = .zero
                 }
             }
+    }
+
+    @ViewBuilder
+    private func reorderHandle(for habit: Habit) -> some View {
+        let accent = Color(hex: habit.colorHex)
+        let isPressed = pressingItemID == habit.id && activeItem == nil
+        let isDraggingThisItem = activeItem?.id == habit.id
+
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color(uiColor: .tertiarySystemFill).opacity(0.7))
+            .overlay {
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isDraggingThisItem ? accent : accent.opacity(0.6))
+            }
+            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
+            .scaleEffect(isPressed ? 0.96 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .gesture(reorderGesture(for: habit))
+            .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isPressed)
+            .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDraggingThisItem)
+            .accessibilityLabel("Reorder \(habit.name)")
     }
 
     private func handleReorder(translation: CGSize) {
@@ -518,18 +573,24 @@ private struct DraggableHabitRow: View {
     let habit: Habit
     let isDragging: Bool
     let isPressing: Bool
+    let isReordering: Bool
+    let trailingAccessory: AnyView?
 
     var body: some View {
-        HabitCard(habit: habit)
+        HabitCard(
+            habit: habit,
+            isReordering: isReordering,
+            trailingAccessory: trailingAccessory
+        )
             .frame(maxWidth: .infinity)
-            .scaleEffect(isPressing ? 0.98 : (isDragging ? 1.035 : 1.0))
+            .scaleEffect(isPressing ? 0.98 : (isDragging ? 1.038 : (isReordering ? 0.995 : 1.0)))
             .shadow(
                 color: .black.opacity(isDragging ? 0.2 : 0.06),
-                radius: isDragging ? 18 : 6,
+                radius: isDragging ? 20 : 6,
                 y: isDragging ? 10 : 2
             )
             .zIndex(isDragging ? 1 : 0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+            .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDragging)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)
     }
 }
