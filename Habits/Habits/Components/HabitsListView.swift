@@ -41,43 +41,56 @@ struct HabitsListView: View {
     @State private var detailPresentationDetent: PresentationDetent = .large
     @State private var pendingReorderCommitTask: Task<Void, Never>?
     @State private var showGlobalInsights = false
+    @State private var activeItem: Habit?
+    @State private var dragOffset: CGSize = .zero
+    @State private var fingerLocation: CGPoint = .zero
+    @State private var touchOffset: CGSize = .zero
+    @State private var frames: [Habit.ID: CGRect] = [:]
+    @State private var initialFrame: CGRect = .zero
     
 
     init() {}
 
     var body: some View {
         NavigationStack {
-            List {
-                CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(
-                        EdgeInsets(
-                            top: 8,
-                            leading: 20,
-                            bottom: 8,
-                            trailing: 20
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .padding(.bottom, 8)
+
+                    if let premiumInsightsSummary {
+                        Button {
+                            openGlobalInsights()
+                        } label: {
+                            PremiumInsightsStripView(summary: premiumInsightsSummary)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 2)
+                        .padding(.bottom, 4)
+                    }
+
+                    ForEach(habits) { habit in
+                        DraggableHabitRow(
+                            habit: habit,
+                            isActive: activeItem?.id == habit.id
                         )
-                    )
-
-                if let premiumInsightsSummary {
-                    Button {
-                           openGlobalInsights()
-                       } label: {
-                           PremiumInsightsStripView(summary: premiumInsightsSummary)
-                       }
-                       .buttonStyle(.plain)
-                       .listRowSeparator(.hidden)
-                       .listRowBackground(Color.clear)
-                       .listRowInsets(
-                           EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16)
-                       )
-                }
-
-                ForEach(habits) { habit in
-                    HabitCard(habit: habit)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+                        .opacity(activeItem?.id == habit.id ? 0 : 1)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onAppear {
+                                        frames[habit.id] = geo.frame(in: .named("container"))
+                                    }
+                                    .onChange(of: geo.frame(in: .named("container"))) { _, newFrame in
+                                        frames[habit.id] = newFrame
+                                    }
+                            }
+                        )
+                        .contentShape(Rectangle())
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button {
                                 requestDeletion(of: habit)
@@ -86,25 +99,46 @@ struct HabitsListView: View {
                             }
                             .tint(.red)
                         }
-                }
-                .onMove(perform: moveHabit)
+                        .gesture(reorderGesture(for: habit))
+                    }
 
-                if habitLimitPolicy.showsUpgradeHint {
-                    UpgradeHintRow()
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
+                    if habitLimitPolicy.showsUpgradeHint {
+                        UpgradeHintRow()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 2)
+                    }
 
-                if habitLimitPolicy.showsLockedSlot {
-                    lockedHabitSlot
-                }
+                    if habitLimitPolicy.showsLockedSlot {
+                        lockedHabitSlot
+                            .padding(.horizontal, 16)
+                    }
 
-                if habits.isEmpty {
-                    EmptyState()
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+                    if habits.isEmpty {
+                        EmptyState()
+                            .padding(.horizontal, 16)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+            }
+            .coordinateSpace(name: "container")
+            .overlay {
+                if let activeItem,
+                   let frame = frames[activeItem.id] {
+                    DraggableHabitRow(habit: activeItem, isActive: true)
+                        .frame(width: frame.width, height: frame.height)
+                        .position(
+                            x: fingerLocation.x - touchOffset.width,
+                            y: fingerLocation.y - touchOffset.height
+                        )
+                        .scaleEffect(1.03)
+                        .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
+                        .zIndex(1000)
                 }
             }
+            .scrollDisabled(activeItem != nil)
             .navigationDestination(isPresented: $showGlobalInsights) {
                    GlobalInsightsView()
                }
@@ -125,15 +159,10 @@ struct HabitsListView: View {
             } message: { habit in
                 Text(HabitDeletionConfirmationState.message(for: habit))
             }
-            .listStyle(.plain)
             .contentMargins(.top, 12, for: .scrollContent)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    EditButton()
-                }
-
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         openGlobalInsights()
@@ -289,13 +318,16 @@ struct HabitsListView: View {
             LockedHabitSlotCard()
         }
         .buttonStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 
-    private func moveHabit(from source: IndexSet, to destination: Int) {
+    private func reorderHabit(from source: Int, to destination: Int) {
+        guard source != destination else { return }
+
         var reordered = habits
-        reordered.move(fromOffsets: source, toOffset: destination)
+        reordered.move(
+            fromOffsets: IndexSet(integer: source),
+            toOffset: destination
+        )
 
         let didChange = reordered.enumerated().contains { index, habit in
             habit.orderIndex != index
@@ -305,6 +337,75 @@ struct HabitsListView: View {
         _ = HabitListMutation.applyOrderIndexesInMemory(to: reordered)
 
         scheduleReorderPersistence()
+    }
+
+    private func reorderGesture(for habit: Habit) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.2)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("container")))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    break
+
+                case .second(true, let drag?):
+                    if activeItem == nil {
+                        guard let frame = frames[habit.id] else { return }
+                        activeItem = habit
+                        initialFrame = frame
+                        touchOffset = CGSize(
+                            width: drag.startLocation.x - frame.midX,
+                            height: drag.startLocation.y - frame.midY
+                        )
+                        dragOffset = .zero
+                    }
+
+                    guard activeItem?.id == habit.id else { return }
+                    fingerLocation = drag.location
+                    dragOffset = drag.translation
+                    handleReorder(translation: drag.translation)
+
+                default:
+                    break
+                }
+            }
+            .onEnded { _ in
+                withAnimation(.spring()) {
+                    activeItem = nil
+                    dragOffset = .zero
+                    fingerLocation = .zero
+                    touchOffset = .zero
+                }
+            }
+    }
+
+    private func handleReorder(translation: CGSize) {
+        guard let activeItem,
+              frames[activeItem.id] != nil else { return }
+
+        let locationY = initialFrame.midY + translation.height
+
+        guard let currentIndex = habits.firstIndex(where: { $0.id == activeItem.id }) else {
+            return
+        }
+
+        for (index, habit) in habits.enumerated() {
+            guard habit.id != activeItem.id,
+                  let frame = frames[habit.id] else { continue }
+
+            if locationY > frame.midY && index > currentIndex {
+                withAnimation(.interactiveSpring()) {
+                    reorderHabit(from: currentIndex, to: index + 1)
+                }
+                return
+            }
+
+            if locationY < frame.midY && index < currentIndex {
+                withAnimation(.interactiveSpring()) {
+                    reorderHabit(from: currentIndex, to: index)
+                }
+                return
+            }
+        }
     }
 
     private func addHabit() {
@@ -392,6 +493,23 @@ struct HabitsListView: View {
         DispatchQueue.main.async {
             deepLinkManager.clearSelectedHabit(deepLinkedHabitID)
         }
+    }
+}
+
+private struct DraggableHabitRow: View {
+    let habit: Habit
+    let isActive: Bool
+
+    var body: some View {
+        HabitCard(habit: habit)
+            .frame(maxWidth: .infinity)
+            .scaleEffect(isActive ? 1.03 : 1.0)
+            .shadow(
+                color: .black.opacity(isActive ? 0.18 : 0.06),
+                radius: isActive ? 16 : 6,
+                y: isActive ? 8 : 2
+            )
+            .zIndex(isActive ? 1 : 0)
     }
 }
 
