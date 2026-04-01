@@ -69,9 +69,10 @@ struct HabitsListView: View {
                             openGlobalInsights()
                         } label: {
                             PremiumInsightsStripView(summary: premiumInsightsSummary)
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
+                        .contentShape(Rectangle())
                         .padding(.top, 2)
                         .padding(.bottom, 4)
                     }
@@ -110,18 +111,15 @@ struct HabitsListView: View {
                     if habitLimitPolicy.showsUpgradeHint {
                         UpgradeHintRow()
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
                             .padding(.top, 2)
                     }
 
                     if habitLimitPolicy.showsLockedSlot {
                         lockedHabitSlot
-                            .padding(.horizontal, 16)
                     }
 
                     if habits.isEmpty {
                         EmptyState()
-                            .padding(.horizontal, 16)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -644,7 +642,6 @@ private struct UpgradeHintRow: View {
 }
 
 private struct PremiumInsightsStripView: View {
-    @Environment(\.colorScheme) private var colorScheme
     let summary: PremiumInsightsStripSummary
     private let accentColor = Color.systemAccent
 
@@ -670,15 +667,13 @@ private struct PremiumInsightsStripView: View {
                     .lineLimit(1)
 
                 secondaryLine
-                    .font(.caption)
+                    .font(.subheadline)
                     .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
-        .appSurface(level: .highlighted, accent: accentColor, tinted: colorScheme == .light, cornerRadius: 16)
+        .cardContainer()
     }
 
     private var primaryLine: AttributedString {
@@ -718,7 +713,6 @@ private struct PremiumInsightsStripView: View {
 }
 
 private struct EmptyState: View {
-    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         VStack(spacing: 10) {
             Text("No habits yet")
@@ -728,9 +722,8 @@ private struct EmptyState: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(16)
         .frame(maxWidth: .infinity)
-        .appSurface(level: .standard, cornerRadius: 16)
+        .cardContainer()
     }
 }
 
@@ -760,8 +753,7 @@ private struct LockedHabitSlotCard: View {
 
             Spacer()
         }
-        .padding(14)
-        .appSurface(level: .standard, cornerRadius: 16)
+        .cardContainer()
         .opacity(colorScheme == .light ? 0.82 : 0.6)
     }
 }

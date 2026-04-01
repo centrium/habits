@@ -164,6 +164,21 @@ private struct AppSurfaceModifier: ViewModifier {
     }
 }
 
+struct CardContainerModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(.systemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+    }
+}
+
 extension View {
     func pressableCardFeedback(
         scale: CGFloat = 0.97,
@@ -191,5 +206,9 @@ extension View {
                 cornerRadius: cornerRadius
             )
         )
+    }
+
+    func cardContainer() -> some View {
+        modifier(CardContainerModifier())
     }
 }
