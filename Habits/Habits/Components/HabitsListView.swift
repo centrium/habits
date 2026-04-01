@@ -8,6 +8,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 private enum ActiveSheet: Identifiable {
     case addHabit
@@ -42,6 +43,7 @@ struct HabitsListView: View {
     @State private var pendingReorderCommitTask: Task<Void, Never>?
     @State private var showGlobalInsights = false
     @State private var activeItem: Habit?
+    @State private var pressingItemID: Habit.ID?
     @State private var dragOffset: CGSize = .zero
     @State private var fingerLocation: CGPoint = .zero
     @State private var touchOffset: CGSize = .zero
@@ -76,7 +78,8 @@ struct HabitsListView: View {
                     ForEach(habits) { habit in
                         DraggableHabitRow(
                             habit: habit,
-                            isActive: activeItem?.id == habit.id
+                            isDragging: activeItem?.id == habit.id,
+                            isPressing: pressingItemID == habit.id && activeItem == nil
                         )
                         .opacity(activeItem?.id == habit.id ? 0 : 1)
                         .background(
@@ -125,17 +128,21 @@ struct HabitsListView: View {
             }
             .coordinateSpace(name: "container")
             .overlay {
-                if let activeItem,
-                   let frame = frames[activeItem.id] {
-                    DraggableHabitRow(habit: activeItem, isActive: true)
-                        .frame(width: frame.width, height: frame.height)
-                        .position(
-                            x: fingerLocation.x - touchOffset.width,
-                            y: fingerLocation.y - touchOffset.height
-                        )
-                        .scaleEffect(1.03)
-                        .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
-                        .zIndex(1000)
+                ZStack {
+                    Color.black.opacity(activeItem != nil ? 0.03 : 0)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+
+                    if let activeItem,
+                       let frame = frames[activeItem.id] {
+                        DraggableHabitRow(habit: activeItem, isDragging: true, isPressing: false)
+                            .frame(width: frame.width, height: frame.height)
+                            .position(
+                                x: fingerLocation.x - touchOffset.width,
+                                y: fingerLocation.y - touchOffset.height
+                            )
+                            .zIndex(1000)
+                    }
                 }
             }
             .scrollDisabled(activeItem != nil)
@@ -345,18 +352,23 @@ struct HabitsListView: View {
             .onChanged { value in
                 switch value {
                 case .first(true):
+                    if activeItem == nil {
+                        pressingItemID = habit.id
+                    }
                     break
 
                 case .second(true, let drag?):
                     if activeItem == nil {
                         guard let frame = frames[habit.id] else { return }
                         activeItem = habit
+                        pressingItemID = nil
                         initialFrame = frame
                         touchOffset = CGSize(
                             width: drag.startLocation.x - frame.midX,
                             height: drag.startLocation.y - frame.midY
                         )
                         dragOffset = .zero
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     }
 
                     guard activeItem?.id == habit.id else { return }
@@ -369,8 +381,12 @@ struct HabitsListView: View {
                 }
             }
             .onEnded { _ in
-                withAnimation(.spring()) {
+                if activeItem != nil {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                     activeItem = nil
+                    pressingItemID = nil
                     dragOffset = .zero
                     fingerLocation = .zero
                     touchOffset = .zero
@@ -393,14 +409,16 @@ struct HabitsListView: View {
                   let frame = frames[habit.id] else { continue }
 
             if locationY > frame.midY && index > currentIndex {
-                withAnimation(.interactiveSpring()) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.85)) {
                     reorderHabit(from: currentIndex, to: index + 1)
                 }
                 return
             }
 
             if locationY < frame.midY && index < currentIndex {
-                withAnimation(.interactiveSpring()) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.85)) {
                     reorderHabit(from: currentIndex, to: index)
                 }
                 return
@@ -498,18 +516,21 @@ struct HabitsListView: View {
 
 private struct DraggableHabitRow: View {
     let habit: Habit
-    let isActive: Bool
+    let isDragging: Bool
+    let isPressing: Bool
 
     var body: some View {
         HabitCard(habit: habit)
             .frame(maxWidth: .infinity)
-            .scaleEffect(isActive ? 1.03 : 1.0)
+            .scaleEffect(isPressing ? 0.98 : (isDragging ? 1.035 : 1.0))
             .shadow(
-                color: .black.opacity(isActive ? 0.18 : 0.06),
-                radius: isActive ? 16 : 6,
-                y: isActive ? 8 : 2
+                color: .black.opacity(isDragging ? 0.2 : 0.06),
+                radius: isDragging ? 18 : 6,
+                y: isDragging ? 10 : 2
             )
-            .zIndex(isActive ? 1 : 0)
+            .zIndex(isDragging ? 1 : 0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)
     }
 }
 
