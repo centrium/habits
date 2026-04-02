@@ -16,7 +16,7 @@ struct IconPickerSheet: View {
     let accentHex: String
     let onSelect: (String?) -> Void
 
-    private var accent: Color { Color(hex: accentHex) }
+    private var accent: Color { HabitColor.from(hex: accentHex).color }
 
     // Curated set — calm, neutral, habit-friendly
     private let icons: [String] = [

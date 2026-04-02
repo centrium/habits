@@ -7,7 +7,7 @@ struct AddHabitSheet: View {
 
     @State private var name: String = ""
     @State private var subtitle: String = ""
-    @State private var selectedHex: String = "#7C3AED"
+    @State private var selectedHex: String = HabitColor.default.hex
     @State private var iconName: String? = nil
     @State private var hasStreakGoal: Bool = false
     @State private var goalType: GoalType = .frequency
@@ -21,19 +21,6 @@ struct AddHabitSheet: View {
     @State private var reminders: [HabitReminderDraft] = []
 
     private let onHabitAdded: ((Habit) -> Void)?
-
-    private let palette: [(String, String)] = [
-        ("Violet", "#7C3AED"),
-        ("Blue",   "#3B82F6"),
-        ("Mint",   "#34D399"),
-        ("Green",  "#22C55E"),
-        ("Cyan",   "#06B6D4"),
-        ("Amber",  "#F59E0B"),
-        ("Orange", "#F97316"),
-        ("Pink",   "#EC4899"),
-        ("Rose",   "#F43F5E"),
-        ("Teal",   "#14B8A6")
-    ]
 
     init(onHabitAdded: ((Habit) -> Void)? = nil) {
         self.onHabitAdded = onHabitAdded
@@ -54,7 +41,6 @@ struct AddHabitSheet: View {
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
                 reminders: $reminders,
-                palette: palette,
             )
             .navigationTitle("New")
             .toolbar {
@@ -108,7 +94,7 @@ struct AddHabitSheet: View {
 
         let habit = Habit(
             name: trimmedName,
-            colorHex: selectedHex,
+            colorHex: HabitColor.from(hex: selectedHex).hex,
             subtitle: finalSubtitle,
             iconName: finalIcon,
             hasStreakGoal: hasStreakGoal,

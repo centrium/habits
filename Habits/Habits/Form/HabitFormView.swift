@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct HabitReminderDraft: Identifiable, Equatable {
     var id: UUID
@@ -76,6 +75,7 @@ private struct HabitReminderEditorItem: Identifiable, Equatable {
 }
 
 struct HabitFormView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var purchaseService: PurchaseService
 
     @Binding var name: String
@@ -90,13 +90,10 @@ struct HabitFormView: View {
     @Binding var unit: String
     @Binding var allowsDecimals: Bool
     @Binding var reminders: [HabitReminderDraft]
-
-    let palette: [(String, String)]
     var showsDelete: Bool = false
     var onDelete: (() -> Void)? = nil
 
     @State private var showIconPicker = false
-    @State private var customColor: Color = .accentColor
     @State private var showingFrequencyTargetEditor = false
     @State private var showingCumulativeTargetEditor = false
     @State private var editingReminder: HabitReminderEditorItem?
@@ -136,37 +133,36 @@ struct HabitFormView: View {
 
             Section("Colour") {
                 LazyVGrid(columns: colorSwatchColumns, spacing: 12) {
-                    ForEach(palette, id: \.1) { item in
-                        let hex = item.1
-                        let color = Color(hex: hex)
-                        let isSelected = isSameHex(selectedHex, hex)
+                    ForEach(HabitColor.allCases) { paletteColor in
+                        let isSelected = isSameHex(selectedHex, paletteColor.hex)
 
                         Button {
-                            selectedHex = hex
-                            customColor = Color(hex: hex)
+                            selectedHex = paletteColor.hex
                         } label: {
                             Circle()
-                                .fill(color)
+                                .fill(paletteColor.color)
                                 .frame(width: colorSwatchSize, height: colorSwatchSize)
-                                .overlay(
-                                    Circle().stroke(
-                                        Color.primary.opacity(isSelected ? 0.9 : 0.15),
-                                        lineWidth: isSelected ? 2.5 : 1
-                                    )
-                                )
+                                .frame(width: 40, height: 40)
                                 .overlay {
-                                    if isSelected {
-                                        Image(systemName: "checkmark")
-                                            .font(.caption2.weight(.bold))
-                                            .foregroundStyle(.white.opacity(0.95))
-                                    }
+                                    Circle()
+                                        .stroke(
+                                            isSelected
+                                            ? (colorScheme == .dark ? Color.white.opacity(0.95) : Color.black.opacity(0.8))
+                                            : Color.primary.opacity(0.16),
+                                            lineWidth: isSelected ? 2.5 : 1
+                                        )
+                                        .frame(width: 34, height: 34)
                                 }
-                                .frame(maxWidth: .infinity, minHeight: colorSwatchSize)
+                                .scaleEffect(isSelected ? 1.05 : 1)
+                                .shadow(
+                                    color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08),
+                                    radius: isSelected ? 2.6 : 1.6,
+                                    y: isSelected ? 1.4 : 0.8
+                                )
                         }
                         .buttonStyle(TactileButtonStyle())
+                        .accessibilityLabel(paletteColor.name)
                     }
-
-                    customColorSwatch
                 }
                 .padding(.vertical, 4)
                 .padding(.horizontal, 2)
@@ -183,7 +179,7 @@ struct HabitFormView: View {
 
                         if let iconName, !iconName.isEmpty {
                             Image(systemName: iconName)
-                                .foregroundStyle(Color(hex: selectedHex))
+                                .foregroundStyle(HabitColor.from(hex: selectedHex).color)
                         } else {
                             Text("None")
                                 .foregroundStyle(.secondary)
@@ -279,7 +275,7 @@ struct HabitFormView: View {
             }
         }
         .onAppear {
-            customColor = Color(hex: selectedHex)
+            selectedHex = HabitColor.from(hex: selectedHex).hex
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 focusedField = .name
             }
@@ -396,63 +392,15 @@ struct HabitFormView: View {
         }
     }
 
+    private let colorSwatchSize: CGFloat = 28
     private let colorSwatchColumns = [
         GridItem(.flexible(minimum: 0), spacing: 10),
         GridItem(.flexible(minimum: 0), spacing: 10),
         GridItem(.flexible(minimum: 0), spacing: 10),
         GridItem(.flexible(minimum: 0), spacing: 10),
         GridItem(.flexible(minimum: 0), spacing: 10),
-        GridItem(.flexible(minimum: 0), spacing: 12),
+        GridItem(.flexible(minimum: 0), spacing: 10),
     ]
-
-    private let colorSwatchSize: CGFloat = 28
-
-    private var customColorBinding: Binding<Color> {
-        Binding(
-            get: { customColor },
-            set: { newColor in
-                customColor = newColor
-                selectedHex = hexString(from: newColor)
-            }
-        )
-    }
-
-    private var customColorSwatch: some View {
-        let isSelected = usesCustomColor
-
-        return ZStack {
-            ColorPicker(
-                "",
-                selection: customColorBinding,
-                supportsOpacity: false
-            )
-            .labelsHidden()
-            .frame(width: colorSwatchSize, height: colorSwatchSize)
-            .clipShape(Circle())
-            .contentShape(Circle())
-            .accessibilityLabel("Custom Colour")
-            .accessibilityHint("Choose a custom habit colour")
-            .overlay(
-                Circle().stroke(
-                    Color.primary.opacity(isSelected ? 0.9 : 0.15),
-                    lineWidth: isSelected ? 2.5 : 1
-                )
-            )
-            .overlay {
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.95))
-                }
-            }
-            .shadow(
-                color: Color.black.opacity(0.04),
-                radius: 1,
-                y: 1
-            )
-        }
-        .frame(maxWidth: .infinity, minHeight: colorSwatchSize)
-    }
 
     private func enabledBinding(for reminderID: UUID) -> Binding<Bool> {
         Binding(
@@ -647,12 +595,6 @@ struct HabitFormView: View {
         }
     }
 
-    private var usesCustomColor: Bool {
-        !palette.contains { _, hex in
-            isSameHex(hex, selectedHex)
-        }
-    }
-
     private func isSameHex(_ lhs: String, _ rhs: String) -> Bool {
         lhs
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -660,25 +602,6 @@ struct HabitFormView: View {
         rhs
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-    }
-
-    private func hexString(from color: Color) -> String {
-        let uiColor = UIColor(color)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-
-        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
-            return selectedHex
-        }
-
-        return String(
-            format: "#%02X%02X%02X",
-            Int(round(red * 255)),
-            Int(round(green * 255)),
-            Int(round(blue * 255))
-        )
     }
 }
 

@@ -23,6 +23,7 @@ struct CumulativeQuickEntrySheet: View {
 
     @State private var value: Double
     @State private var showClearConfirmation = false
+    private let ctaAccent = Color.systemAccent
 
     init(
         goalName: String,
@@ -124,14 +125,19 @@ struct CumulativeQuickEntrySheet: View {
             } label: {
                 Text(ctaText)
                     .font(.headline)
+                    .foregroundStyle(.white)
+                    .shadow(color: Color.black.opacity(0.25), radius: 0.8, y: 0.6)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .padding(.horizontal, 12)
                     .background(
                         Capsule()
-                            .fill(Color.systemAccent)
+                            .fill(ctaAccent)
+                            .overlay {
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            }
                     )
-                    .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
             .disabled(isConfirmDisabled)

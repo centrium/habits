@@ -118,7 +118,7 @@ struct CalendarMonthView: View {
                                 intensity: isLockedDay ? 0 : metrics.intensity,
                                 count: count,
                                 indicatorText: indicatorText,
-                                accent: Color(hex: habit.colorHex),
+                                accent: habit.curatedAccentColor,
                                 isInDisplayedMonth: isInDisplayedMonth,
                                 isDisabled: isDisabledDay,
                                 isLocked: isLockedDay,

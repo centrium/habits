@@ -23,26 +23,13 @@ struct EditHabitSheet: View {
     @State private var reminders: [HabitReminderDraft]
     @State private var showDeleteConfirmation: Bool = false
 
-    private let palette: [(String, String)] = [
-        ("Violet", "#7C3AED"),
-        ("Blue",   "#3B82F6"),
-        ("Mint",   "#34D399"),
-        ("Green",  "#22C55E"),
-        ("Cyan",   "#06B6D4"),
-        ("Amber",  "#F59E0B"),
-        ("Orange", "#F97316"),
-        ("Pink",   "#EC4899"),
-        ("Rose",   "#F43F5E"),
-        ("Teal",   "#14B8A6")
-    ]
-
     init(habit: Habit, onDeleted: (() -> Void)? = nil) {
         self.habit = habit
         self.onDeleted = onDeleted
 
         _name = State(initialValue: habit.name)
         _subtitle = State(initialValue: habit.subtitle ?? "")
-        _selectedHex = State(initialValue: habit.colorHex)
+        _selectedHex = State(initialValue: HabitColor.from(hex: habit.colorHex).hex)
         _iconName = State(initialValue: habit.iconName)
 
         _hasStreakGoal = State(initialValue: habit.hasStreakGoal)
@@ -70,7 +57,6 @@ struct EditHabitSheet: View {
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
                 reminders: $reminders,
-                palette: palette,
                 showsDelete: true,
                 onDelete: {
                     showDeleteConfirmation = true
@@ -119,7 +105,7 @@ struct EditHabitSheet: View {
 
         return trimmedName == habit.name &&
                (trimmedSubtitle.isEmpty ? nil : trimmedSubtitle) == habit.subtitle &&
-               selectedHex == habit.colorHex &&
+               HabitColor.from(hex: selectedHex).hex == HabitColor.from(hex: habit.colorHex).hex &&
                iconName == habit.iconName &&
                hasStreakGoal == habit.hasStreakGoal &&
                goalType == habit.goalType &&
@@ -162,7 +148,7 @@ struct EditHabitSheet: View {
         habit.name = trimmedName
         habit.subtitle = finalSubtitle
         habit.iconName = finalIcon
-        habit.colorHex = selectedHex
+        habit.colorHex = HabitColor.from(hex: selectedHex).hex
 
         habit.hasStreakGoal = hasStreakGoal
         habit.goalType = goalType

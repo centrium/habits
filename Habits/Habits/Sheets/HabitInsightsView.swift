@@ -14,7 +14,7 @@ struct HabitInsightsView: View {
     @State private var hasAnimatedIn = false
 
     private var accent: Color {
-        Color(hex: habit.colorHex)
+        habit.curatedAccentColor
     }
 
     private var insights: HabitInsightsViewModel {
@@ -1245,7 +1245,7 @@ private struct HabitInsightsPreviewScenario: Identifiable {
         let createdAt = calendar.date(byAdding: .month, value: -6, to: referenceDate) ?? referenceDate
         let habit = Habit(
             name: title,
-            colorHex: "#22A699",
+            colorHex: HabitColor.teal.hex,
             hasStreakGoal: hasGoal,
             goalPeriod: goalPeriod,
             goalType: goalType,
@@ -1316,7 +1316,7 @@ private struct HabitInsightsPreviewScenario: Identifiable {
 
                     HabitInsightsCardsRenderer(
                         viewModel: model,
-                        accent: Color(hex: scenario.habit.colorHex),
+                        accent: scenario.habit.curatedAccentColor,
                         hasAnimatedIn: true
                     )
                     .padding(.horizontal, 20)

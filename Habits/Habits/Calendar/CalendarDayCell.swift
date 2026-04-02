@@ -115,7 +115,7 @@ struct CalendarDayCell: View {
         }
 
         if isSelected {
-            return Color.appBackground.opacity(0.95)
+            return .white.opacity(0.95)
         }
 
         if isInDisplayedMonth {
@@ -145,6 +145,11 @@ struct CalendarDayCell: View {
         ZStack {
             RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
                 .fill(backgroundFill)
+
+            if isSelected {
+                RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
+                    .fill(Color.black.opacity(0.24))
+            }
 
             VStack(spacing: 0) {
                 Text(dayNumber)

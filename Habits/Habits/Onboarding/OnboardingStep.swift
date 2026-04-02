@@ -68,11 +68,11 @@ enum QuickHabitPreset: String, CaseIterable, Identifiable {
     var colorHex: String {
         switch self {
         case .walk:
-            return "#3B82F6"
+            return HabitColor.cobalt.hex
         case .read:
-            return "#14B8A6"
+            return HabitColor.teal.hex
         case .drinkWater:
-            return "#0EA5E9"
+            return HabitColor.cyan.hex
         }
     }
 }

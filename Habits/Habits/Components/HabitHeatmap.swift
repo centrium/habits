@@ -46,7 +46,7 @@ struct HabitHeatmap: View {
     }
 
     private var accent: Color {
-        Color(hex: habit.colorHex)
+        habit.curatedAccentColor
     }
 
     private var gridHeight: CGFloat {

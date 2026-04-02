@@ -732,7 +732,7 @@ private struct ProgressSummarySection: View, Equatable {
                     progress: snapshot.progressFraction,
                     behaviourNudgeText: behaviourNudgeText,
                     overflowText: snapshot.overflowText,
-                    accent: Color(hex: accentHex)
+                    accent: HabitColor.from(hex: accentHex).color
                 )
                 .pressableCardFeedback(scale: 0.985, opacity: 0.98)
                 .contentShape(Rectangle())
@@ -753,6 +753,7 @@ private struct ProgressSummarySection: View, Equatable {
 }
 
 private struct KeyActionsSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let isCumulativeGoal: Bool
     let isCompleteToday: Bool
     let accentHex: String
@@ -764,46 +765,101 @@ private struct KeyActionsSection: View {
         isCompleteToday ? "Add more" : "Log Today"
     }
 
+    private var accent: Color {
+        HabitColor.from(hex: accentHex).color
+    }
+
+    private var primaryBaseAccent: Color {
+        accent
+    }
+
+    private var secondaryBaseAccent: Color {
+        accent
+    }
+
+    private var secondaryTextColor: Color {
+        .white.opacity(colorScheme == .dark ? 0.92 : 0.96)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Button {
-                Haptics.impactLight()
-                withAnimation(.easeOut(duration: 0.08)) {
-                    isPrimaryPressed = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                    withAnimation(.easeOut(duration: 0.14)) {
-                        isPrimaryPressed = false
-                    }
-                }
-                onQuickLog()
-            } label: {
-                Label(primaryLabelText, systemImage: "checkmark.circle.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.95)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 4)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color(hex: accentHex))
+            primaryButton
+            .buttonStyle(.plain)
             .scaleEffect(isPrimaryPressed ? 0.985 : 1)
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.1), radius: 4, y: 2)
 
             if isCumulativeGoal {
-                Button(action: onManualEntry) {
-                    Label("Add Value", systemImage: "plus.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.95)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 4)
-                }
-                .buttonStyle(.bordered)
-                .tint(Color(hex: accentHex))
+                secondaryButton
+                .buttonStyle(.plain)
             }
         }
+    }
+
+    private var primaryButton: some View {
+        Button {
+            Haptics.impactLight()
+            withAnimation(.easeOut(duration: 0.08)) {
+                isPrimaryPressed = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                withAnimation(.easeOut(duration: 0.14)) {
+                    isPrimaryPressed = false
+                }
+            }
+            onQuickLog()
+        } label: {
+            Label(primaryLabelText, systemImage: "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.95)
+                .foregroundStyle(Color.white)
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.2),
+                    radius: 0.8,
+                    y: 0.6
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+                .background(primaryButtonBackground)
+        }
+    }
+
+    private var secondaryButton: some View {
+        Button(action: onManualEntry) {
+            Label("Add Value", systemImage: "plus.circle")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.95)
+                .foregroundStyle(secondaryTextColor)
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16),
+                    radius: 0.6,
+                    y: 0.5
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+                .background(secondaryButtonBackground)
+        }
+    }
+
+    private var primaryButtonBackground: some View {
+        Capsule()
+            .fill(primaryBaseAccent)
+            .overlay {
+                Capsule()
+                    .stroke(Color.white.opacity(colorScheme == .dark ? 0.1 : 0.08), lineWidth: 1)
+            }
+    }
+
+    private var secondaryButtonBackground: some View {
+        Capsule()
+            .fill(secondaryBaseAccent)
+            .overlay {
+                Capsule()
+                    .stroke(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.1), lineWidth: 1)
+            }
     }
 }
 
@@ -939,6 +995,7 @@ private struct HabitProgressSummary: View {
 
     var body: some View {
         let clampedProgress = min(max(progress, 0), 1)
+        let progressAccent = accent
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -963,8 +1020,13 @@ private struct HabitProgressSummary: View {
                         .fill(Color(uiColor: .secondarySystemFill))
 
                     Capsule(style: .continuous)
-                        .fill(accent)
+                        .fill(progressAccent)
                         .frame(width: fillWidth)
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+                                .frame(width: fillWidth)
+                        }
                 }
             }
             .frame(height: 10)

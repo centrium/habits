@@ -25,7 +25,6 @@ private enum ActiveSheet: Identifiable {
 }
 
 struct HabitsListView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
@@ -128,17 +127,26 @@ struct HabitsListView: View {
                     Button {
                         addHabit()
                     } label: {
+                        let accent = Color.systemAccent
+
                         Label("Add", systemImage: "plus")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(colorScheme == .light ? Color.white : Color.accentColor)
-                            .padding(.horizontal, colorScheme == .light ? 14 : 0)
-                            .padding(.vertical, colorScheme == .light ? 10 : 0)
+                            .foregroundStyle(Color.white)
+                            .shadow(
+                                color: Color.black.opacity(0.25),
+                                radius: 0.8,
+                                y: 0.6
+                            )
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
                             .background {
-                                if colorScheme == .light {
-                                    Capsule()
-                                        .fill(Color.systemAccent)
-                                        .shadow(color: Color.black.opacity(0.1), radius: 14, y: 6)
-                                }
+                                Capsule()
+                                    .fill(accent)
+                                    .overlay {
+                                        Capsule()
+                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                    }
+                                    .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
                             }
                     }
 
@@ -436,7 +444,7 @@ struct HabitsListView: View {
 
     @ViewBuilder
     private func reorderHandle(for habit: Habit) -> some View {
-        let accent = Color(hex: habit.colorHex)
+        let accent = habit.curatedAccentColor
         let isPressed = pressingItemID == habit.id && activeItem == nil
         let isDraggingThisItem = activeItem?.id == habit.id
 

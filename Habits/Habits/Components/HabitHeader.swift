@@ -54,7 +54,7 @@ struct HabitHeader: View {
         self.onQuickLogLongPress = onQuickLogLongPress
     }
 
-    private var accent: Color { Color(hex: habit.colorHex) }
+    private var accent: Color { habit.curatedAccentColor }
 
     private var subtitleText: String {
         if let secondaryTextOverride, !secondaryTextOverride.isEmpty {
@@ -232,7 +232,7 @@ struct HabitHeaderPreview: View {
     let iconName: String?
     let colorHex: String
 
-    private var accent: Color { Color(hex: colorHex) }
+    private var accent: Color { HabitColor.from(hex: colorHex).color }
 
     private var displaySubtitle: String {
         let trimmed = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

@@ -29,7 +29,11 @@ struct HabitBadge: View {
                     .accessibilityLabel("\(habitName) icon")
             } else {
                 Circle()
-                    .fill(accent.opacity(0.9))
+                    .fill(accent)
+                    .overlay {
+                        Circle()
+                            .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
+                    }
                     .frame(width: size, height: size)
                     .accessibilityHidden(true)
             }
