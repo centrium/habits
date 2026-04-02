@@ -67,6 +67,7 @@ struct RootView: View {
                 await Task.yield()
                 StartupProfiler.logFirstInteractiveRender()
             }
+            KeyboardWarmup.warmAfterInitialRenderIfNeeded()
             scheduleWidgetSync(delayNanoseconds: 200_000_000, marksInitialSync: true)
         }
         .onChange(of: deepLinkManager.pendingHabitID) { _, _ in
