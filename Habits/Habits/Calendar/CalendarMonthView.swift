@@ -95,7 +95,7 @@ struct CalendarMonthView: View {
                         ForEach(Array(calendarProvider.orderedVeryShortStandaloneWeekdaySymbols.enumerated()), id: \.offset) { _, label in
                             Text(label)
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.secondary.opacity(0.78))
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -192,11 +192,11 @@ struct CalendarMonthView: View {
             HStack(spacing: 8) {
                 VStack(spacing: 2) {
                     Text(monthLabel)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
 
                     if habit.goalType == .cumulative {
                         Text(monthSummaryText ?? displayedMonthSummaryText)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -205,7 +205,7 @@ struct CalendarMonthView: View {
                     Button("Today") {
                         jumpToCurrentMonth()
                     }
-                    .font(.subheadline)
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 8)
@@ -266,7 +266,7 @@ struct CalendarMonthView: View {
     }
 
     private var monthAnimation: Animation {
-        AppMotion.monthSlide
+        .easeInOut(duration: 0.2)
     }
 
     private var monthIdentity: String {
@@ -284,7 +284,7 @@ struct CalendarMonthView: View {
                 .frame(width: navVisualSize, height: navVisualSize)
                 .background(
                     Circle()
-                        .fill(Color.secondary.opacity(0.14))
+                        .fill(Color.secondary.opacity(0.10))
                 )
         }
         .buttonStyle(TactileButtonStyle())

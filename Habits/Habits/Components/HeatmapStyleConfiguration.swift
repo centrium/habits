@@ -53,7 +53,7 @@ struct HeatmapStyleConfiguration {
         selectedStrokeWidth: 1.5,
         todayStrokeOpacity: 0.28,
         todayStrokeWidth: 1,
-        monthLabelOpacity: 0.62,
+        monthLabelOpacity: 0.72,
         monthLabelTracking: 0.8,
         rowLabelOpacity: 0.60,
         rightEdgeFadeWidth: 10,

@@ -374,7 +374,7 @@ struct HabitDetailSheet: View {
     ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 0) {
                     EquatableView(
                         content: HeatmapSection(
                             habitID: habit.id,
@@ -397,8 +397,10 @@ struct HabitDetailSheet: View {
                             }
                         )
                     )
+                    .padding(.top, 14)
+                    .padding(.bottom, 16)
 
-                    Divider().opacity(0.2)
+                    Divider().opacity(0.08)
 
                     EquatableView(
                         content: CalendarSection(
@@ -428,6 +430,8 @@ struct HabitDetailSheet: View {
                             }
                         )
                     )
+                    .padding(.top, 12)
+                    .opacity(0.96)
                 }
                 .padding(12)
                 .appSurface(level: .standard, cornerRadius: 16)

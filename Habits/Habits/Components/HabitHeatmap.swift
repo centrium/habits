@@ -53,8 +53,20 @@ struct HabitHeatmap: View {
         (style.cellSize * 7) + (style.verticalSpacing * 6)
     }
 
+    private var heatmapTopPadding: CGFloat {
+        max(12, style.titleToGridSpacing)
+    }
+
+    private var heatmapBottomPadding: CGFloat {
+        10
+    }
+
+    private var heatmapContentHeight: CGFloat {
+        style.monthLabelHeight + style.monthLabelToGridSpacing + gridHeight
+    }
+
     private var heatmapHeight: CGFloat {
-        style.titleToGridSpacing + style.monthLabelHeight + style.monthLabelToGridSpacing + gridHeight
+        heatmapTopPadding + heatmapContentHeight + heatmapBottomPadding
     }
 
     var body: some View {
@@ -122,7 +134,8 @@ struct HabitHeatmap: View {
                 onTapLockedDay(day)
             }
         )
-        .padding(.top, style.titleToGridSpacing)
+        .padding(.top, heatmapTopPadding)
+        .padding(.bottom, heatmapBottomPadding)
         .frame(height: heatmapHeight)
     }
     

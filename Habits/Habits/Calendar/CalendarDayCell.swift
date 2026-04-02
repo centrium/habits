@@ -31,15 +31,15 @@ struct CalendarDayCell: View {
         static let indicatorPlateOpacity: Double = 0.24
         static let indicatorPlateDarkStrokeOpacity: Double = 0.10
 
-        static let selectedBackgroundOpacity: Double = 0.85
-        static let outOfMonthBackgroundOpacity: Double = 0.05
+        static let selectedBackgroundOpacity: Double = 0.72
+        static let outOfMonthBackgroundOpacity: Double = 0.035
         static let disabledBackgroundOpacity: Double = 0.06
         static let disabledOutOfMonthBackgroundOpacity: Double = 0.03
         static let disabledContentOpacity: Double = 0.55
 
-        static let oneLogBackgroundOpacity: Double = 0.08
-        static let twoLogsBackgroundOpacity: Double = 0.12
-        static let threePlusLogsBackgroundOpacity: Double = 0.18
+        static let oneLogBackgroundOpacity: Double = 0.07
+        static let twoLogsBackgroundOpacity: Double = 0.10
+        static let threePlusLogsBackgroundOpacity: Double = 0.14
 
         static let selectedStrokeOpacity: Double = 0.60
         static let todayStrokeOpacity: Double = 0.32
@@ -91,11 +91,11 @@ struct CalendarDayCell: View {
 
         switch count {
         case 3...:
-            return colorScheme == .light ? 0.22 : Layout.threePlusLogsBackgroundOpacity
+            return colorScheme == .light ? 0.18 : Layout.threePlusLogsBackgroundOpacity
         case 2:
-            return colorScheme == .light ? 0.15 : Layout.twoLogsBackgroundOpacity
+            return colorScheme == .light ? 0.12 : Layout.twoLogsBackgroundOpacity
         case 1:
-            return colorScheme == .light ? 0.10 : Layout.oneLogBackgroundOpacity
+            return colorScheme == .light ? 0.085 : Layout.oneLogBackgroundOpacity
         default:
             return 0
         }
@@ -122,7 +122,7 @@ struct CalendarDayCell: View {
             return .primary
         }
 
-        return Color.primary.opacity(0.5)
+        return Color.primary.opacity(0.42)
     }
 
     private var contentOpacity: Double {

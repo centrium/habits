@@ -13,24 +13,25 @@ struct HeatmapCellView: View, Equatable {
     }
 
     var body: some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(cellColor)
             .overlay(selectionOverlay)
     }
 
     private var cellColor: Color {
         if intensity <= 0 {
-            return accent.opacity(0.08)
+            return accent.opacity(0.10)
         }
 
-        return accent.opacity(min(max(intensity, 0), 1))
+        let clamped = min(max(intensity, 0), 1)
+        return accent.opacity(0.24 + (clamped * 0.76))
     }
 
     @ViewBuilder
     private var selectionOverlay: some View {
         if isSelected {
             RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.primary, lineWidth: 1.5)
+                .stroke(Color.primary.opacity(0.9), lineWidth: 1.6)
         }
     }
 }
