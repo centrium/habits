@@ -13,15 +13,13 @@ struct HabitCard: View {
     @EnvironmentObject private var habitLogService: HabitLogService
     
     @Bindable var habit: Habit
-    @State private var isDetailPresented = false
-    @State private var selectedDetent: PresentationDetent = .large
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
     @State private var showHeatmapPaywall = false
     @State private var displayedStreak: Int = 0
     private let isReordering: Bool
     private let trailingAccessory: AnyView?
-    private let onDeleted: (() -> Void)?
+    private let onTap: (() -> Void)?
 
     private let headerHeight: CGFloat = 40
     
@@ -42,12 +40,12 @@ struct HabitCard: View {
         habit: Habit,
         isReordering: Bool = false,
         trailingAccessory: AnyView? = nil,
-        onDeleted: (() -> Void)? = nil
+        onTap: (() -> Void)? = nil
     ) {
         self.habit = habit
         self.isReordering = isReordering
         self.trailingAccessory = trailingAccessory
-        self.onDeleted = onDeleted
+        self.onTap = onTap
     }
 
     var body: some View {
@@ -99,28 +97,27 @@ struct HabitCard: View {
         .habitListCardContainer()
         .contentShape(Rectangle())
         .onTapGesture {
-            isDetailPresented = true
-        }
-        .sheet(isPresented: $isDetailPresented) {
-            HabitDetailSheet(
-                habit: habit,
-                initialCalendar: calculationCalendar,
-                onDeleted: onDeleted
-            )
-                .presentationDetents([.medium, .large], selection: $selectedDetent)
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(24)
+            guard !isReordering else { return }
+            onTap?()
         }
         .sheet(isPresented: $showQuickEntry) {
                 CumulativeQuickEntrySheet(
                     goalName: habit.name,
                     unitLabel: habit.trimmedUnit,
                     initialValue: habitLogService.suggestedQuickEntryValue(for: habit),
+                    todayTotal: habitLogService.value(
+                        for: habit,
+                        on: CurrentDayResolver.currentDay(calendar: calculationCalendar)
+                    ),
+                    targetValue: habit.effectiveTargetValue,
                     formattingContext: habitLogService.valueFormattingContext(for: habit),
                     inputContext: habitLogService.valueInputContext(for: habit)
                 ) { newValue in
                     let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
                     _ = habitLogService.addLog(for: habit, on: currentDay, value: max(0, newValue))
+                } onClearDay: {
+                    let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+                    _ = habitLogService.clearEntries(for: habit, on: currentDay)
                 }
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)

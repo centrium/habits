@@ -12,15 +12,20 @@ struct GoalProgressButton: View {
     let hasGoal: Bool
     let progressFraction: Double
     let isComplete: Bool
+    let symbolName: String
+    let isSecondaryEmphasis: Bool
     let accessibilityLabel: String
     let action: () -> Void
     let longPressAction: (() -> Void)?
     @State private var pulseScale: CGFloat = 1
 
     private enum Metrics {
-        static let iconSize: CGFloat = 32
-        static let tapPadding: CGFloat = 6
-        static let ringLineWidth: CGFloat = 3.5
+        static let primaryIconSize: CGFloat = 32
+        static let secondaryIconSize: CGFloat = 28
+        static let primaryTapPadding: CGFloat = 6
+        static let secondaryTapPadding: CGFloat = 5
+        static let primaryRingLineWidth: CGFloat = 3.5
+        static let secondaryRingLineWidth: CGFloat = 2.8
     }
 
     private var clampedProgress: Double {
@@ -35,6 +40,18 @@ struct GoalProgressButton: View {
         isComplete ? 1 : 0
     }
 
+    private var iconSize: CGFloat {
+        isSecondaryEmphasis ? Metrics.secondaryIconSize : Metrics.primaryIconSize
+    }
+
+    private var tapPadding: CGFloat {
+        isSecondaryEmphasis ? Metrics.secondaryTapPadding : Metrics.primaryTapPadding
+    }
+
+    private var ringLineWidth: CGFloat {
+        isSecondaryEmphasis ? Metrics.secondaryRingLineWidth : Metrics.primaryRingLineWidth
+    }
+
     var body: some View {
         Button {
             action()
@@ -42,18 +59,24 @@ struct GoalProgressButton: View {
             ZStack {
                 ringLayer
 
-                Image(systemName: "plus.circle.fill")
+                if isSecondaryEmphasis {
+                    Circle()
+                        .fill(Color(uiColor: .secondarySystemFill).opacity(0.42))
+                        .frame(width: iconSize, height: iconSize)
+                }
+
+                Image(systemName: symbolName)
                     .opacity(incompleteOpacity)
 
-                Image(systemName: "plus.circle.fill")
+                Image(systemName: symbolName)
                     .opacity(completeOpacity)
             }
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(accent)
-            .frame(width: Metrics.iconSize, height: Metrics.iconSize)
+            .font(.system(size: isSecondaryEmphasis ? 16 : 18, weight: .semibold))
+            .foregroundStyle(isSecondaryEmphasis ? accent.opacity(0.78) : accent)
+            .frame(width: iconSize, height: iconSize)
             .scaleEffect(pulseScale)
             .contentShape(Circle())
-            .padding(Metrics.tapPadding)
+            .padding(tapPadding)
         }
         .buttonStyle(TactileButtonStyle())
         .accessibilityLabel(accessibilityLabel)
@@ -81,14 +104,14 @@ struct GoalProgressButton: View {
     private var ringLayer: some View {
         if hasGoal {
             Circle()
-                .stroke(accent.opacity(0.18), lineWidth: Metrics.ringLineWidth)
+                .stroke(accent.opacity(isSecondaryEmphasis ? 0.12 : 0.18), lineWidth: ringLineWidth)
 
             Circle()
                 .trim(from: 0, to: clampedProgress)
                 .stroke(
                     accent,
                     style: StrokeStyle(
-                        lineWidth: Metrics.ringLineWidth,
+                        lineWidth: ringLineWidth,
                         lineCap: .round
                     )
                 )
@@ -110,6 +133,8 @@ struct GoalProgressButton: View {
         hasGoal: true,
         progressFraction: 0.45,
         isComplete: false,
+        symbolName: "plus.circle.fill",
+        isSecondaryEmphasis: false,
         accessibilityLabel: "Log Read for Mar 1, 2026",
         action: {},
         longPressAction: nil
@@ -122,6 +147,8 @@ struct GoalProgressButton: View {
         hasGoal: true,
         progressFraction: 1,
         isComplete: true,
+        symbolName: "plus.circle.fill",
+        isSecondaryEmphasis: false,
         accessibilityLabel: "Log Read for Mar 1, 2026",
         action: {},
         longPressAction: nil
@@ -134,6 +161,8 @@ struct GoalProgressButton: View {
         hasGoal: false,
         progressFraction: 0,
         isComplete: false,
+        symbolName: "plus.circle.fill",
+        isSecondaryEmphasis: false,
         accessibilityLabel: "Log Read for Mar 1, 2026",
         action: {},
         longPressAction: nil

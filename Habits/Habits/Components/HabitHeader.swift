@@ -16,6 +16,7 @@ struct HabitHeader: View {
     let weekStartPreference: WeekStartPreference
     let isReordering: Bool
     let showsQuickLogButton: Bool
+    let showsQuickLogForFrequencyHabits: Bool
     let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
     let currentStreak: Int?
@@ -30,6 +31,7 @@ struct HabitHeader: View {
         weekStartPreference: WeekStartPreference = .system,
         isReordering: Bool = false,
         showsQuickLogButton: Bool,
+        showsQuickLogForFrequencyHabits: Bool = true,
         showsInlineProgressText: Bool,
         secondaryTextOverride: String?,
         currentStreak: Int? = nil,
@@ -43,6 +45,7 @@ struct HabitHeader: View {
         self.weekStartPreference = weekStartPreference
         self.isReordering = isReordering
         self.showsQuickLogButton = showsQuickLogButton
+        self.showsQuickLogForFrequencyHabits = showsQuickLogForFrequencyHabits
         self.showsInlineProgressText = showsInlineProgressText
         self.secondaryTextOverride = secondaryTextOverride
         self.currentStreak = currentStreak
@@ -112,6 +115,14 @@ struct HabitHeader: View {
         max(0, currentStreak ?? 0)
     }
 
+    private var shouldShowQuickLogButton: Bool {
+        guard showsQuickLogButton else { return false }
+        if habit.goalType == .frequency {
+            return showsQuickLogForFrequencyHabits
+        }
+        return true
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             HabitBadge(
@@ -140,12 +151,14 @@ struct HabitHeader: View {
                 if isReordering, let trailingAccessory {
                     trailingAccessory
                         .transition(.opacity.combined(with: .scale))
-                } else if showsQuickLogButton {
+                } else if shouldShowQuickLogButton {
                     GoalProgressButton(
                         accent: accent,
                         hasGoal: habit.hasGoal,
                         progressFraction: goalProgressFraction,
                         isComplete: isComplete,
+                        symbolName: habit.goalType == .cumulative ? "plusminus.circle.fill" : "plus.circle.fill",
+                        isSecondaryEmphasis: habit.goalType == .cumulative,
                         accessibilityLabel: quickLogAccessibilityLabel,
                         action: {
                             onQuickLog(selectedDate)
