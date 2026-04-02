@@ -163,14 +163,12 @@ struct HabitHeatmap: View {
         return HStack(spacing: 6) {
             weekGrid(
                 days: Array(days.prefix(7)),
-                dayMetrics: dayMetrics,
-                isRecent: false
+                dayMetrics: dayMetrics
             )
 
             weekGrid(
                 days: Array(days.suffix(7)),
-                dayMetrics: dayMetrics,
-                isRecent: true
+                dayMetrics: dayMetrics
             )
         }
         .id(revision) // 👈 ADD THIS
@@ -181,8 +179,7 @@ struct HabitHeatmap: View {
     
     private func weekGrid(
         days: [Date],
-        dayMetrics: [Date: HabitDayMetrics],
-        isRecent: Bool
+        dayMetrics: [Date: HabitDayMetrics]
     ) -> some View {
         let calendar = calendarProvider.calendar
         let columns = Array(repeating: GridItem(.flexible(), spacing: 2.5), count: 7)
@@ -190,14 +187,9 @@ struct HabitHeatmap: View {
         return LazyVGrid(columns: columns, spacing: 2.5) {
             ForEach(days, id: \.self) { day in
                 let raw = clamp(dayMetrics[day]?.intensity ?? 0)
-                let adjusted = pow(raw, 0.7)
-                let boosted = isRecent ? min(adjusted * 1.1, 1.0) : adjusted
 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(cellColor(intensity: boosted, isRecent: isRecent))
-                    .opacity(isRecent ? 1.0 : 0.25)
-                    .scaleEffect(isRecent ? 1.0 : 0.90)
-                    .offset(y: isRecent ? 0 : 1.5)
+                    .fill(cellColor(intensity: raw))
                     .frame(height: 14)
                     .overlay {
                         if calendar.isDateInToday(day) {
@@ -212,17 +204,19 @@ struct HabitHeatmap: View {
             }
         }
     }
-    
-    private func cellColor(intensity: Double, isRecent: Bool) -> Color {
-        if intensity == 0 {
-            return Color.primary.opacity(0.06)
+
+    private func cellColor(intensity: Double) -> Color {
+        let clamped = clamp(intensity)
+
+        if clamped <= 0.001 {
+            return Color(uiColor: .secondarySystemFill)
         }
 
-        let base = accent.opacity(0.25 + (0.75 * intensity))
+        if clamped >= 0.999 {
+            return accent
+        }
 
-        return isRecent
-            ? base
-            : base.opacity(0.7)
+        return accent.opacity(0.6)
     }
     
     private var cadenceMomentumBlock: some View {
