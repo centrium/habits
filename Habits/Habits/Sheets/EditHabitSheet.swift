@@ -27,8 +27,12 @@ struct EditHabitSheet: View {
         ("Violet", "#7C3AED"),
         ("Blue",   "#3B82F6"),
         ("Mint",   "#34D399"),
+        ("Green",  "#22C55E"),
+        ("Cyan",   "#06B6D4"),
         ("Amber",  "#F59E0B"),
+        ("Orange", "#F97316"),
         ("Pink",   "#EC4899"),
+        ("Rose",   "#F43F5E"),
         ("Teal",   "#14B8A6")
     ]
 

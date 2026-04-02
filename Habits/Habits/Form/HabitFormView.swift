@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HabitReminderDraft: Identifiable, Equatable {
     var id: UUID
@@ -95,6 +96,7 @@ struct HabitFormView: View {
     var onDelete: (() -> Void)? = nil
 
     @State private var showIconPicker = false
+    @State private var customColor: Color = .accentColor
     @State private var showingFrequencyTargetEditor = false
     @State private var showingCumulativeTargetEditor = false
     @State private var editingReminder: HabitReminderEditorItem?
@@ -133,30 +135,41 @@ struct HabitFormView: View {
             }
 
             Section("Colour") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(palette, id: \.1) { item in
-                            let hex = item.1
-                            let color = Color(hex: hex)
+                LazyVGrid(columns: colorSwatchColumns, spacing: 12) {
+                    ForEach(palette, id: \.1) { item in
+                        let hex = item.1
+                        let color = Color(hex: hex)
+                        let isSelected = isSameHex(selectedHex, hex)
 
-                            Button {
-                                selectedHex = hex
-                            } label: {
-                                Circle()
-                                    .fill(color)
-                                    .frame(width: 28, height: 28)
-                                    .overlay(
-                                        Circle().stroke(
-                                            Color.primary.opacity(selectedHex == hex ? 0.9 : 0.15),
-                                            lineWidth: selectedHex == hex ? 2 : 1
-                                        )
+                        Button {
+                            selectedHex = hex
+                            customColor = Color(hex: hex)
+                        } label: {
+                            Circle()
+                                .fill(color)
+                                .frame(width: colorSwatchSize, height: colorSwatchSize)
+                                .overlay(
+                                    Circle().stroke(
+                                        Color.primary.opacity(isSelected ? 0.9 : 0.15),
+                                        lineWidth: isSelected ? 2.5 : 1
                                     )
-                            }
-                            .buttonStyle(TactileButtonStyle())
+                                )
+                                .overlay {
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.white.opacity(0.95))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, minHeight: colorSwatchSize)
                         }
+                        .buttonStyle(TactileButtonStyle())
                     }
-                    .padding(.vertical, 6)
+
+                    customColorSwatch
                 }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 2)
             }
 
             Section("Icon") {
@@ -266,6 +279,7 @@ struct HabitFormView: View {
             }
         }
         .onAppear {
+            customColor = Color(hex: selectedHex)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 focusedField = .name
             }
@@ -316,7 +330,7 @@ struct HabitFormView: View {
             ) { newIcon in
                 iconName = newIcon
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingFrequencyTargetEditor) {
@@ -380,6 +394,64 @@ struct HabitFormView: View {
             Toggle("", isOn: enabledBinding(for: reminder.id))
                 .labelsHidden()
         }
+    }
+
+    private let colorSwatchColumns = [
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 12),
+    ]
+
+    private let colorSwatchSize: CGFloat = 28
+
+    private var customColorBinding: Binding<Color> {
+        Binding(
+            get: { customColor },
+            set: { newColor in
+                customColor = newColor
+                selectedHex = hexString(from: newColor)
+            }
+        )
+    }
+
+    private var customColorSwatch: some View {
+        let isSelected = usesCustomColor
+
+        return ZStack {
+            ColorPicker(
+                "",
+                selection: customColorBinding,
+                supportsOpacity: false
+            )
+            .labelsHidden()
+            .frame(width: colorSwatchSize, height: colorSwatchSize)
+            .clipShape(Circle())
+            .contentShape(Circle())
+            .accessibilityLabel("Custom Colour")
+            .accessibilityHint("Choose a custom habit colour")
+            .overlay(
+                Circle().stroke(
+                    Color.primary.opacity(isSelected ? 0.9 : 0.15),
+                    lineWidth: isSelected ? 2.5 : 1
+                )
+            )
+            .overlay {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.95))
+                }
+            }
+            .shadow(
+                color: Color.black.opacity(0.04),
+                radius: 1,
+                y: 1
+            )
+        }
+        .frame(maxWidth: .infinity, minHeight: colorSwatchSize)
     }
 
     private func enabledBinding(for reminderID: UUID) -> Binding<Bool> {
@@ -472,50 +544,62 @@ struct HabitFormView: View {
     }
 
     private var frequencyTargetRow: some View {
-        HStack(spacing: 8) {
-            Text("Target:")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Target:")
+                    .foregroundStyle(.secondary)
 
-            Text("\(streakTarget)")
-                .font(.headline)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.15))
-                )
-                .onTapGesture {
-                    showingFrequencyTargetEditor = true
+                Text("\(streakTarget)")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.15))
+                    )
+                    .onTapGesture {
+                        showingFrequencyTargetEditor = true
+                    }
+                    .layoutPriority(1)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 14) {
+                    Button {
+                        streakTarget = max(1, streakTarget - 1)
+                    } label: {
+                        Image(systemName: "minus")
+                    }
+                    .buttonStyle(TactileButtonStyle())
+
+                    Button {
+                        streakTarget += 1
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(TactileButtonStyle())
                 }
+            }
 
             Text("per \(goalPeriod.unit)")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-
-            Spacer()
-
-            HStack(spacing: 14) {
-                Button {
-                    streakTarget = max(1, streakTarget - 1)
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .buttonStyle(TactileButtonStyle())
-
-                Button {
-                    streakTarget += 1
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(TactileButtonStyle())
-            }
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 
     private var cumulativeTargetRow: some View {
         HStack(spacing: 8) {
             Text("Target:")
+                .foregroundStyle(.secondary)
 
             Text(cumulativeTargetLabel)
                 .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
@@ -525,13 +609,16 @@ struct HabitFormView: View {
                 .onTapGesture {
                     showingCumulativeTargetEditor = true
                 }
+                .layoutPriority(1)
 
             if let trimmedUnit {
                 Text(trimmedUnit)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
     }
 
@@ -558,6 +645,40 @@ struct HabitFormView: View {
         case .cumulative:
             return "Progress is the total amount logged within the period."
         }
+    }
+
+    private var usesCustomColor: Bool {
+        !palette.contains { _, hex in
+            isSameHex(hex, selectedHex)
+        }
+    }
+
+    private func isSameHex(_ lhs: String, _ rhs: String) -> Bool {
+        lhs
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ==
+        rhs
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func hexString(from color: Color) -> String {
+        let uiColor = UIColor(color)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return selectedHex
+        }
+
+        return String(
+            format: "#%02X%02X%02X",
+            Int(round(red * 255)),
+            Int(round(green * 255)),
+            Int(round(blue * 255))
+        )
     }
 }
 

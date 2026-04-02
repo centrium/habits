@@ -136,6 +136,8 @@ struct HabitHeader: View {
                     Text(habit.name)
                         .font(.headline)
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
 
                     HabitHeaderStreakIndicator(streak: resolvedCurrentStreak)
                 }
@@ -143,7 +145,11 @@ struct HabitHeader: View {
                 Text(subtitleText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer()
 
@@ -249,11 +255,18 @@ struct HabitHeaderPreview: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(name.isEmpty ? "Habit name" : name)
                     .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
 
                 Text(displaySubtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer()
         }

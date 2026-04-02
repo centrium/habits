@@ -24,38 +24,60 @@ struct IconPickerSheet: View {
         "flame.fill",
         "bolt.fill",
         "heart.fill",
+        "heart.text.square.fill",
         "brain.head.profile",
+        "lungs.fill",
         "book.fill",
+        "graduationcap.fill",
         "figure.walk",
         "figure.run",
+        "figure.cooldown",
+        "figure.strengthtraining.traditional",
         "dumbbell.fill",
+        "bicycle",
         "drop.fill",
         "leaf.fill",
+        "tree.fill",
         "moon.fill",
         "sun.max.fill",
         "bed.double.fill",
+        "alarm.fill",
         "fork.knife",
         "cup.and.saucer.fill",
+        "carrot.fill",
+        "waterbottle.fill",
         "pills.fill",
         "cross.case.fill",
+        "stethoscope",
+        "bandage.fill",
         "calendar",
         "clock.fill",
+        "hourglass",
         "target",
         "checkmark.seal.fill",
+        "list.bullet.clipboard.fill",
+        "checklist.checked",
+        "chart.bar.fill",
+        "chart.line.uptrend.xyaxis",
         "sparkles",
         "music.note",
+        "guitars.fill",
         "paintbrush.fill",
-        "camera.fill"
+        "camera.fill",
+        "house.fill",
+        "briefcase.fill",
+        "gift.fill"
     ]
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 56), spacing: 16)
-    ]
+    private let columns = Array(
+        repeating: GridItem(.flexible(minimum: 0), spacing: 12),
+        count: 5
+    )
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 20) {
+                LazyVGrid(columns: columns, spacing: 12) {
                     // None option
                     iconCell(systemName: nil)
 
@@ -63,7 +85,8 @@ struct IconPickerSheet: View {
                         iconCell(systemName: icon)
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             }
             .navigationTitle("Choose Icon")
             .toolbar {
@@ -111,7 +134,7 @@ struct IconPickerSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(height: 56)
+            .frame(height: 58)
         }
         .buttonStyle(.plain)
     }
