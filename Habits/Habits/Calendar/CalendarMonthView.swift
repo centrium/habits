@@ -29,6 +29,7 @@ struct CalendarMonthView: View {
     let premiumHistoryGate: PremiumHistoryGate.Context
     let earliestVisibleDate: Date?
     let onSelectDay: (Date) -> Void
+    let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
     @State private var slideDirection: SlideDirection?
@@ -56,6 +57,7 @@ struct CalendarMonthView: View {
         premiumHistoryGate: PremiumHistoryGate.Context,
         earliestVisibleDate: Date? = nil,
         onSelectDay: @escaping (Date) -> Void,
+        onTapDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void = { _ in }
     ) {
         self._month = month
@@ -67,6 +69,7 @@ struct CalendarMonthView: View {
         self.premiumHistoryGate = premiumHistoryGate
         self.earliestVisibleDate = earliestVisibleDate
         self.onSelectDay = onSelectDay
+        self.onTapDay = onTapDay
         self.onTapLockedDay = onTapLockedDay
     }
 
@@ -123,7 +126,7 @@ struct CalendarMonthView: View {
                                     if isLockedDay {
                                         onTapLockedDay(day)
                                     } else {
-                                        selectDay(day)
+                                        tapDay(day)
                                     }
                                 },
                                 onLongPress: {
@@ -326,6 +329,12 @@ struct CalendarMonthView: View {
     private func selectDay(_ day: Date) {
         let normalizedDate = calendar.startOfDay(for: day)
         onSelectDay(normalizedDate)
+        focusMonthIfNeeded(for: normalizedDate)
+    }
+
+    private func tapDay(_ day: Date) {
+        let normalizedDate = calendar.startOfDay(for: day)
+        onTapDay(normalizedDate)
         focusMonthIfNeeded(for: normalizedDate)
     }
 

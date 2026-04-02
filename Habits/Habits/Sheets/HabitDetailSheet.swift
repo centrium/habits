@@ -164,6 +164,9 @@ struct HabitDetailSheet: View {
                                 onSelectDay: { day in
                                     selectedDate = calendar.startOfDay(for: day)
                                 },
+                                onTapDay: { day in
+                                    quickLogFromCalendarDay(day)
+                                },
                                 onTapLockedDay: { _ in
                                     showPaywall(feature: .fullHeatmapHistory)
                                 }
@@ -360,6 +363,13 @@ struct HabitDetailSheet: View {
         activeSheet = .paywall(feature)
     }
 
+    private func quickLogFromCalendarDay(_ day: Date) {
+        let resolvedDay = calculationCalendar.startOfDay(for: day)
+        selectedDate = resolvedDay
+        selectionState.select(date: resolvedDay)
+        _ = habitLogService.quickLog(for: habit, on: resolvedDay)
+    }
+
     private func scheduleProgressSnapshotRefresh(now: Date = Date()) {
         snapshotRefreshTask?.cancel()
 
@@ -544,6 +554,7 @@ private struct CalendarSection: View, Equatable {
     let calendarProvider: CalendarProvider
     let premiumHistoryGate: PremiumHistoryGate.Context
     let onSelectDay: (Date) -> Void
+    let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
     static func == (lhs: CalendarSection, rhs: CalendarSection) -> Bool {
@@ -566,6 +577,7 @@ private struct CalendarSection: View, Equatable {
             premiumHistoryGate: premiumHistoryGate,
             earliestVisibleDate: earliestVisibleDate,
             onSelectDay: onSelectDay,
+            onTapDay: onTapDay,
             onTapLockedDay: onTapLockedDay
         )
     }
