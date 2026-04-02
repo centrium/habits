@@ -77,6 +77,8 @@ struct SettingsView: View {
                         Text(preference.title).tag(preference)
                     }
                 }
+
+                Toggle("Tap to Log", isOn: $userSettings.tapToLogEnabled)
             }
 
             Section("Evening Reflection") {

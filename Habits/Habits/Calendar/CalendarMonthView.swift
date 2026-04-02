@@ -28,6 +28,7 @@ struct CalendarMonthView: View {
     let monthSummaryText: String?
     let premiumHistoryGate: PremiumHistoryGate.Context
     let earliestVisibleDate: Date?
+    let isTapToLogEnabled: Bool
     let onSelectDay: (Date) -> Void
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
@@ -56,6 +57,7 @@ struct CalendarMonthView: View {
         monthSummaryText: String? = nil,
         premiumHistoryGate: PremiumHistoryGate.Context,
         earliestVisibleDate: Date? = nil,
+        isTapToLogEnabled: Bool = true,
         onSelectDay: @escaping (Date) -> Void,
         onTapDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void = { _ in }
@@ -68,6 +70,7 @@ struct CalendarMonthView: View {
         self.monthSummaryText = monthSummaryText
         self.premiumHistoryGate = premiumHistoryGate
         self.earliestVisibleDate = earliestVisibleDate
+        self.isTapToLogEnabled = isTapToLogEnabled
         self.onSelectDay = onSelectDay
         self.onTapDay = onTapDay
         self.onTapLockedDay = onTapLockedDay
@@ -125,8 +128,10 @@ struct CalendarMonthView: View {
                                 onTap: {
                                     if isLockedDay {
                                         onTapLockedDay(day)
-                                    } else {
+                                    } else if isTapToLogEnabled {
                                         tapDay(day)
+                                    } else {
+                                        selectDay(day)
                                     }
                                 },
                                 onLongPress: {

@@ -83,6 +83,7 @@ final class UserSettings: ObservableObject {
 
     private enum Keys {
         static let weekStart = "settings.weekStart"
+        static let tapToLogEnabled = "settings.tapToLogEnabled"
         static let greigModeEnabled = "settings.greigModeEnabled"
         static let showPremiumInsightsView = "settings.showPremiumInsightsView"
 
@@ -109,6 +110,12 @@ final class UserSettings: ObservableObject {
     }
 
     // MARK: Greig Mode
+
+    @Published var tapToLogEnabled: Bool {
+        didSet {
+            store.set(tapToLogEnabled, forKey: Keys.tapToLogEnabled)
+        }
+    }
 
     @Published var greigModeEnabled: Bool {
         didSet {
@@ -163,6 +170,9 @@ final class UserSettings: ObservableObject {
         self.weekStartPreference =
             WeekStartPreference(rawValue: store.string(forKey: Keys.weekStart) ?? "") ?? .system
 
+        self.tapToLogEnabled =
+            store.bool(forKey: Keys.tapToLogEnabled) ?? true
+
         self.greigModeEnabled =
             store.bool(forKey: Keys.greigModeEnabled) ?? true
 
@@ -194,6 +204,7 @@ final class UserSettings: ObservableObject {
         store.set(eveningReflectionEnabled, forKey: Keys.eveningReflectionEnabled)
         store.set(eveningReflectionHour, forKey: Keys.eveningReflectionHour)
         store.set(eveningReflectionMinute, forKey: Keys.eveningReflectionMinute)
+        store.set(tapToLogEnabled, forKey: Keys.tapToLogEnabled)
         store.set(showPremiumInsightsView, forKey: Keys.showPremiumInsightsView)
     }
 

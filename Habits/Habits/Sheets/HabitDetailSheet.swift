@@ -153,6 +153,7 @@ struct HabitDetailSheet: View {
                                 metricsRevision: progressRevision,
                                 monthSummaryText: calendarMonthSummaryText,
                                 earliestVisibleDate: earliestCalendarDate,
+                                isTapToLogEnabled: userSettings.tapToLogEnabled,
                                 month: Binding(
                                     get: { selectionState.visibleMonth },
                                     set: { selectionState.selectCalendarMonth($0) }
@@ -548,6 +549,7 @@ private struct CalendarSection: View, Equatable {
     let metricsRevision: Int
     let monthSummaryText: String?
     let earliestVisibleDate: Date?
+    let isTapToLogEnabled: Bool
     let month: Binding<Date>
     let habit: Habit
     let service: HabitLogService
@@ -576,6 +578,7 @@ private struct CalendarSection: View, Equatable {
             monthSummaryText: monthSummaryText,
             premiumHistoryGate: premiumHistoryGate,
             earliestVisibleDate: earliestVisibleDate,
+            isTapToLogEnabled: isTapToLogEnabled,
             onSelectDay: onSelectDay,
             onTapDay: onTapDay,
             onTapLockedDay: onTapLockedDay
