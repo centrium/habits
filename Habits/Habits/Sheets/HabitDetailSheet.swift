@@ -93,17 +93,18 @@ struct HabitDetailSheet: View {
                                 weekStartPreference: userSettings.weekStartPreference,
                                 loggingContextText: loggingContextText,
                                 currentStreak: displayedStreak,
-                                onQuickLog: { _ in
-                                    let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-                                    selectedDate = currentDay
+                                onQuickLog: { selectedDay in
+                                    let resolvedDay = calculationCalendar.startOfDay(for: selectedDay)
+                                    selectedDate = resolvedDay
+                                    selectionState.select(date: resolvedDay)
                                     if habit.goalType == .frequency {
-                                        _ = habitLogService.quickLog(for: habit, on: currentDay)
+                                        _ = habitLogService.quickLog(for: habit, on: resolvedDay)
                                     } else {
-                                        presentManualEntry()
+                                        presentManualEntry(for: resolvedDay)
                                     }
                                 },
-                                onQuickLogLongPress: habit.goalType == .cumulative ? { _ in
-                                    presentManualEntry()
+                                onQuickLogLongPress: habit.goalType == .cumulative ? { selectedDay in
+                                    presentManualEntry(for: selectedDay)
                                 } : nil
                             )
                         )
@@ -114,7 +115,7 @@ struct HabitDetailSheet: View {
                                 accentHex: habit.colorHex,
                                 isCumulativeGoal: habit.goalType == .cumulative,
                                 onTap: {
-                                    presentManualEntry()
+                                    presentManualEntry(for: selectedDate)
                                 }
                             )
                         )
@@ -290,8 +291,8 @@ struct HabitDetailSheet: View {
                     formattingContext: habitLogService.valueFormattingContext(for: habit),
                     inputContext: habitLogService.valueInputContext(for: habit)
                 ) { newValue in
-                    let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-                    _ = habitLogService.addLog(for: habit, on: currentDay, value: max(0, newValue))
+                    let resolvedDay = calculationCalendar.startOfDay(for: selectedDate)
+                    _ = habitLogService.addLog(for: habit, on: resolvedDay, value: max(0, newValue))
                     manualLogValue = newValue
                 }
                 .presentationDetents([.medium])
@@ -346,10 +347,10 @@ struct HabitDetailSheet: View {
         "Logging for \(selectedDate.formatted(date: .abbreviated, time: .omitted))"
     }
 
-    private func presentManualEntry() {
-        let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-        selectedDate = currentDay
-        selectionState.select(date: currentDay)
+    private func presentManualEntry(for date: Date) {
+        let resolvedDay = calculationCalendar.startOfDay(for: date)
+        selectedDate = resolvedDay
+        selectionState.select(date: resolvedDay)
         manualLogValue = habitLogService.suggestedQuickEntryValue(for: habit)
         activeSheet = .valueEntry
     }
