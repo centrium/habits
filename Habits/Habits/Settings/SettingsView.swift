@@ -57,6 +57,18 @@ struct SettingsView: View {
         )
     }
 
+    private var previewCardBackgroundStyle: AnyShapeStyle {
+        if colorScheme == .light {
+            AnyShapeStyle(Color.appBackground)
+        } else {
+            AnyShapeStyle(.thinMaterial)
+        }
+    }
+
+    private var previewCardBorderOpacity: Double {
+        colorScheme == .light ? 0.06 : 0.18
+    }
+
     var body: some View {
         Form {
             Section("General") {
@@ -90,6 +102,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(EveningReflection.title)
                                 .font(.headline)
+                                .foregroundStyle(.primary)
                             Text(previewMessage)
                                 .foregroundStyle(.secondary)
                         }
@@ -97,16 +110,11 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(colorScheme == .light ? Color.appBackground : Color.clear)
+                                .fill(previewCardBackgroundStyle)
                         )
                         .overlay {
-                            if colorScheme == .light {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                            } else {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(.thinMaterial)
-                            }
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.primary.opacity(previewCardBorderOpacity), lineWidth: 1)
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))

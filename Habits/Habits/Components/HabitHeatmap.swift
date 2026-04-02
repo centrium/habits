@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct HabitHeatmap: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var purchaseService: PurchaseService
     @State private var cache = HeatmapMetricsCache()
 
@@ -275,6 +276,15 @@ struct HabitHeatmap: View {
     
     private var momentumColor: Color {
         let last7 = recentCompletionCount(days: 7)
+
+        if colorScheme == .dark {
+            switch last7 {
+            case 6...7: return Color.systemAccent.opacity(0.86)
+            case 4...5: return Color.secondary
+            case 2...3: return Color(red: 0.73, green: 0.65, blue: 0.53)
+            default: return Color(red: 0.72, green: 0.58, blue: 0.60)
+            }
+        }
 
         switch last7 {
         case 6...7: return .green

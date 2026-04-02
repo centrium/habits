@@ -96,7 +96,7 @@ struct HabitCard: View {
             
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardContainer()
+        .habitListCardContainer()
         .contentShape(Rectangle())
         .onTapGesture {
             isDetailPresented = true

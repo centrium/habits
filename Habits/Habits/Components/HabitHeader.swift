@@ -163,6 +163,7 @@ struct HabitHeader: View {
 }
 
 private struct HabitHeaderStreakIndicator: View {
+    @Environment(\.colorScheme) private var colorScheme
     let streak: Int
 
     private var showsIndicator: Bool {
@@ -184,7 +185,7 @@ private struct HabitHeaderStreakIndicator: View {
                 HStack(spacing: 3) {
                     Image(systemName: "flame.fill")
                         .font(.caption2)
-                        .foregroundStyle(.orange.opacity(0.82))
+                        .foregroundStyle(flameColor)
 
                     Text(StreakIndicatorPresentation.valueText(for: streak))
                         .font(.caption.weight(.regular))
@@ -197,6 +198,12 @@ private struct HabitHeaderStreakIndicator: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(showsIndicator ? "Streak \(streak)" : "")
         .accessibilityHidden(!showsIndicator)
+    }
+
+    private var flameColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.76, green: 0.65, blue: 0.52)
+            : .orange.opacity(0.82)
     }
 }
 

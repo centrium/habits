@@ -568,6 +568,7 @@ struct HabitsListView: View {
 }
 
 private struct DraggableHabitRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     let habit: Habit
     let isDragging: Bool
     let isPressing: Bool
@@ -583,9 +584,17 @@ private struct DraggableHabitRow: View {
             .frame(maxWidth: .infinity)
             .scaleEffect(isPressing ? 0.98 : (isDragging ? 1.038 : (isReordering ? 0.995 : 1.0)))
             .shadow(
-                color: .black.opacity(isDragging ? 0.2 : 0.06),
-                radius: isDragging ? 20 : 6,
-                y: isDragging ? 10 : 2
+                color: .black.opacity(
+                    colorScheme == .dark
+                        ? (isDragging ? 0.14 : 0.03)
+                        : (isDragging ? 0.2 : 0.06)
+                ),
+                radius: colorScheme == .dark
+                    ? (isDragging ? 16 : 3)
+                    : (isDragging ? 20 : 6),
+                y: colorScheme == .dark
+                    ? (isDragging ? 7 : 1)
+                    : (isDragging ? 10 : 2)
             )
             .zIndex(isDragging ? 1 : 0)
             .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDragging)
@@ -673,7 +682,7 @@ private struct PremiumInsightsStripView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardContainer()
+        .habitListCardContainer()
     }
 
     private var primaryLine: AttributedString {
@@ -723,7 +732,7 @@ private struct EmptyState: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .cardContainer()
+        .habitListCardContainer()
     }
 }
 
@@ -753,7 +762,7 @@ private struct LockedHabitSlotCard: View {
 
             Spacer()
         }
-        .cardContainer()
+        .habitListCardContainer()
         .opacity(colorScheme == .light ? 0.82 : 0.6)
     }
 }

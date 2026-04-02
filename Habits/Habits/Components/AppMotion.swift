@@ -179,6 +179,35 @@ struct CardContainerModifier: ViewModifier {
     }
 }
 
+struct HabitListCardContainerModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(cardBackgroundColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(cardStrokeColor, lineWidth: 1)
+            )
+    }
+
+    private var cardBackgroundColor: Color {
+        colorScheme == .dark
+            ? Color(uiColor: .secondarySystemGroupedBackground)
+            : Color(uiColor: .systemBackground)
+    }
+
+    private var cardStrokeColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.06)
+            : Color.primary.opacity(0.06)
+    }
+}
+
 extension View {
     func pressableCardFeedback(
         scale: CGFloat = 0.97,
@@ -210,5 +239,9 @@ extension View {
 
     func cardContainer() -> some View {
         modifier(CardContainerModifier())
+    }
+
+    func habitListCardContainer() -> some View {
+        modifier(HabitListCardContainerModifier())
     }
 }
