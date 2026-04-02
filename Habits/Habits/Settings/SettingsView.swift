@@ -71,17 +71,17 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("General") {
+            Section {
                 Picker("Week starts on", selection: $userSettings.weekStartPreference) {
                     ForEach(WeekStartPreference.allCases) { preference in
                         Text(preference.title).tag(preference)
                     }
                 }
-
-                Toggle("Tap to Log", isOn: $userSettings.tapToLogEnabled)
+            } header: {
+                SettingsSectionHeader("General")
             }
 
-            Section("Evening Reflection") {
+            Section {
                 Text(EveningReflection.description)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -100,6 +100,7 @@ struct SettingsView: View {
                         Text("Preview")
                             .font(.subheadline)
                             .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(EveningReflection.title)
@@ -119,8 +120,11 @@ struct SettingsView: View {
                                 .stroke(Color.primary.opacity(previewCardBorderOpacity), lineWidth: 1)
                         }
                     }
+                    .padding(.vertical, 2)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+            } header: {
+                SettingsSectionHeader("Notifications")
             }
             .onReceive(previewTimer) { _ in
                 let messages = EveningReflection.previewMessages
@@ -162,21 +166,19 @@ struct SettingsView: View {
             .onChange(of: userSettings.eveningReflectionMinute) { _, _ in
                 rescheduleReminder()
             }
-            
-            #if DEBUG
-            Section("Debug") {
-                Button("Toggle Premium (Debug)") {
-                    purchaseService.premiumStatus =
-                        purchaseService.premiumStatus == .premium ? .free : .premium
-                }
+
+            Section {
+                Toggle("Tap to Log", isOn: $userSettings.tapToLogEnabled)
+            } header: {
+                SettingsSectionHeader("Behaviour")
             }
-            #endif
 
             Section {
                 ProSettingsCard(
                     premiumStatus: purchaseService.premiumStatus,
                     showProView: $userSettings.showPremiumInsightsView,
                     greigModeEnabled: $userSettings.greigModeEnabled,
+                    exportAction: handleExportDataTap,
                     unlockAction: {
                         guard purchaseService.premiumStatus == .free else { return }
                         activePaywall = .advancedInsights
@@ -184,16 +186,23 @@ struct SettingsView: View {
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+            } header: {
+                SettingsSectionHeader("Premium")
             }
 
-            Section("Data") {
-                ExportDataRow(
-                    premiumStatus: purchaseService.premiumStatus,
-                    action: handleExportDataTap
-                )
+            #if DEBUG
+            Section {
+                Button("Toggle Premium (Debug)") {
+                    purchaseService.premiumStatus =
+                        purchaseService.premiumStatus == .premium ? .free : .premium
+                }
+            } header: {
+                SettingsSectionHeader("Debug")
             }
-
+            #endif
         }
+        .listSectionSpacing(22)
+        .environment(\.defaultMinListRowHeight, 54)
         .navigationTitle("Settings")
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.urls)
@@ -243,25 +252,22 @@ private struct ProSettingsCard: View {
     let premiumStatus: PremiumStatus
     @Binding var showProView: Bool
     @Binding var greigModeEnabled: Bool
+    let exportAction: () -> Void
     let unlockAction: () -> Void
 
     private let accentColor = Color.systemAccent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             switch premiumStatus {
             case .premium:
                 proSummaryContent
-
-                divider
 
                 settingsToggle(
                     title: "Show Pro View",
                     message: "Show the Pro insights card on your Cadence home screen.",
                     isOn: $showProView
                 )
-
-                divider
 
                 settingsToggle(
                     title: "Greig Mode",
@@ -275,14 +281,17 @@ private struct ProSettingsCard: View {
             case .unknown:
                 neutralContent
             }
+
+            ExportDataRow(
+                premiumStatus: premiumStatus,
+                action: exportAction
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
         }
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .appSurface(level: .highlighted, accent: accentColor, tinted: colorScheme == .light, cornerRadius: 16)
-    }
-
-    private var divider: some View {
-        Divider()
-            .padding(.horizontal, 16)
     }
 
     private func settingsToggle(title: String, message: String, isOn: Binding<Bool>) -> some View {
@@ -297,34 +306,26 @@ private struct ProSettingsCard: View {
             }
             .padding(.trailing, 12)
         }
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
         .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.primary.opacity(colorScheme == .light ? 0.035 : 0.08))
+        )
+        .padding(.horizontal, 12)
     }
 
     private var proSummaryContent: some View {
-        HStack(alignment: .top, spacing: 12) {
-            LinearGradient(
-                colors: [
-                    accentColor.opacity(0.28),
-                    accentColor.opacity(0.12),
-                    .clear
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: 5)
-            .clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 6) {
+            CadenceProWordmark(size: .small)
 
-            VStack(alignment: .leading, spacing: 6) {
-                CadenceProWordmark(size: .small)
-
-                Text("Thank you for supporting Cadence.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Thank you for supporting Cadence.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 4)
         .padding(.horizontal, 16)
     }
 
@@ -369,6 +370,7 @@ private struct ProSettingsCard: View {
 }
 
 private struct ExportDataRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     let premiumStatus: PremiumStatus
     let action: () -> Void
 
@@ -405,7 +407,31 @@ private struct ExportDataRow: View {
                 }
             }
             .contentShape(Rectangle())
+            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.primary.opacity(colorScheme == .light ? 0.035 : 0.08))
+            )
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsSectionHeader: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(0.3)
+            .padding(.bottom, 4)
     }
 }
