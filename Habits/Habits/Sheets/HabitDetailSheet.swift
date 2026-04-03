@@ -20,11 +20,6 @@ private enum ActiveSheet: Identifiable {
     }
 }
 
-private enum DetailTab: Hashable {
-    case today
-    case history
-}
-
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var userSettings: UserSettings
@@ -38,7 +33,7 @@ struct HabitDetailSheet: View {
     @State private var cachedProgressSnapshot: ProgressAsOfSnapshot?
     @State private var snapshotRefreshTask: Task<Void, Never>?
     @State private var selectedDate: Date
-    @State private var selectedTab: DetailTab = .today
+    @State private var isHistoryPresented = false
     private let onDeleted: (() -> Void)?
 
     let habit: Habit
@@ -85,44 +80,13 @@ struct HabitDetailSheet: View {
             return progressSnapshot?.visibleMonthText
         }()
 
-        TabView(selection: $selectedTab) {
-            todayTabContent(
-                progressSnapshot: progressSnapshot,
-                displayedStreak: displayedStreak,
-                progressRevision: progressRevision,
-                earliestCalendarDate: earliestCalendarDate,
-                behaviourNudgeText: behaviourNudgeText(displayedStreak: displayedStreak)
-            )
-            .tabItem {
-                VStack(alignment: .leading, spacing: 1) {
-                    Image(systemName: "sun.max.fill")
-                    Text("Today")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 2)
-            }
-            .tag(DetailTab.today)
-
-            historyTabContent(
-                progressRevision: progressRevision,
-                calendarMonthSummaryText: calendarMonthSummaryText,
-                earliestCalendarDate: earliestCalendarDate,
-                premiumHistoryGate: premiumHistoryGate,
-                calendar: calendar
-            )
-            .tabItem {
-                VStack(alignment: .leading, spacing: 1) {
-                    Image(systemName: "calendar")
-                    Text("History")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 2)
-            }
-            .tag(DetailTab.history)
-        }
-        .toolbarBackground(.visible, for: .tabBar)
-        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-        .navigationBarTitleDisplayMode(.inline)
+        detailContent(
+            progressSnapshot: progressSnapshot,
+            displayedStreak: displayedStreak,
+            progressRevision: progressRevision,
+            earliestCalendarDate: earliestCalendarDate
+        )
+        .navigationBarTitleDisplayMode(.large)
         .navigationTitle(habit.name)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -249,18 +213,39 @@ struct HabitDetailSheet: View {
         .onReceive(uiStateStore.$progressByHabitAndDate) { _ in
             scheduleProgressSnapshotRefresh()
         }
+        .navigationDestination(isPresented: $isHistoryPresented) {
+            historyTabContent(
+                progressRevision: progressRevision,
+                calendarMonthSummaryText: calendarMonthSummaryText,
+                earliestCalendarDate: earliestCalendarDate,
+                premiumHistoryGate: premiumHistoryGate,
+                calendar: calendar
+            )
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("History")
+        }
     }
 
     @ViewBuilder
-    private func todayTabContent(
+    private func detailContent(
         progressSnapshot: ProgressAsOfSnapshot?,
         displayedStreak: Int,
         progressRevision: Int,
-        earliestCalendarDate: Date?,
-        behaviourNudgeText: String
+        earliestCalendarDate: Date?
     ) -> some View {
+        let sectionPadding: CGFloat = 16
+        let sectionSpacing: CGFloat = 14
+        let sectionCornerRadius: CGFloat = 16
+        let heroStatus = heroCenterStatusText(progressSnapshot: progressSnapshot)
+        let momentum = momentumSummary()
+        let logCount = habit.logs.count
+        let isLowDataActivityState = logCount == 0
+        let showsProgressSummary = logCount > 0 && progressSnapshot != nil
+        let isCumulativeGoal = habit.goalType == .cumulative
+        let showsInsightsSection = hasInsightsInlineAction
+
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: sectionSpacing) {
                 VStack(alignment: .leading, spacing: 10) {
                     EquatableView(
                         content: HeaderSection(
@@ -287,17 +272,39 @@ struct HabitDetailSheet: View {
                         )
                     )
 
-                    EquatableView(
-                        content: ProgressSummarySection(
-                            snapshot: progressSnapshot,
-                            accentHex: habit.colorHex,
-                            behaviourNudgeText: behaviourNudgeText,
-                            isCumulativeGoal: habit.goalType == .cumulative,
-                            onTap: {
-                                presentManualEntry(for: selectedDate)
-                            }
+                    Text(heroStatus)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.92))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.92)
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    if showsProgressSummary {
+                        EquatableView(
+                            content: ProgressSummarySection(
+                                snapshot: progressSnapshot,
+                                accentHex: habit.colorHex,
+                                isCumulativeGoal: isCumulativeGoal,
+                                onTap: {
+                                    presentManualEntry(for: selectedDate)
+                                }
+                            )
                         )
-                    )
+                    }
+                }
+                .padding(14)
+                .frame(minHeight: 206, alignment: .topLeading)
+                .cadenceSurface(cornerRadius: sectionCornerRadius)
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, 12)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    if logCount == 0 {
+                        Text("Your progress starts here")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
 
                     KeyActionsSection(
                         isCumulativeGoal: habit.goalType == .cumulative,
@@ -310,43 +317,108 @@ struct HabitDetailSheet: View {
                             presentManualEntry(for: selectedDate)
                         }
                     )
-                    .padding(.top, 8)
-
-                    Divider().opacity(0.2)
-
-                    TodaySummarySection(summaryText: loggingContextText)
-                        .padding(.top, 6)
-
-                    CompactHeatmapPreviewSection(
-                        habit: habit,
-                        service: habitLogService,
-                        calendarProvider: heatmapCalendarProvider,
-                        selectedDate: selectedDate,
-                        earliestVisibleDate: earliestCalendarDate
-                    )
-                    .padding(.top, 8)
                 }
-                .padding(12)
-                .cadenceSurface(cornerRadius: 16)
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(14)
+                .frame(minHeight: 70)
+                .cadenceSurface(cornerRadius: sectionCornerRadius)
+                .padding(.horizontal, sectionPadding)
 
-                if shouldShowInsightsInlineNudge {
-                    InsightsInlineNudgeRow(
-                        text: insightsInlineNudgeText,
-                        action: openInsightsOrPaywall
-                    )
-                    .padding(.horizontal, 28)
-                    .padding(.top, 18)
-                    .padding(.bottom, 30)
-                } else {
-                    Color.clear
-                        .frame(height: 30)
-                        .allowsHitTesting(false)
+                Button {
+                    if let earliestCalendarDate {
+                        let normalizedEarliest = calculationCalendar.startOfDay(for: earliestCalendarDate)
+                        if selectedDate < normalizedEarliest {
+                            selectedDate = normalizedEarliest
+                            selectionState.select(date: normalizedEarliest)
+                        }
+                    }
+                    isHistoryPresented = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Activity")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(
+                            isLowDataActivityState
+                                ? "Your entries will appear here"
+                                : "Recent check-ins"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                        HabitHeatmap(
+                            habit: habit,
+                            service: habitLogService,
+                            calendarProvider: heatmapCalendarProvider,
+                            selectedDate: selectedDate,
+                            earliestVisibleDate: earliestCalendarDate,
+                            isInteractive: false,
+                            onSelectDay: { _ in },
+                            onTapLockedDay: { _ in },
+                            isCompact: true,
+                            showsMomentumSummary: false
+                        )
+                        .opacity(isLowDataActivityState ? 0.7 : 1)
+
+                        HStack(spacing: 4) {
+                            Text("See all activity →")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(14)
+                .frame(minHeight: 112, alignment: .topLeading)
+                .cadenceSurface(cornerRadius: sectionCornerRadius)
+                .padding(.horizontal, sectionPadding)
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Momentum")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(momentum.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(momentum.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: momentum.symbolName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary.opacity(0.55))
+                        .padding(.top, 2)
+                }
+                .padding(14)
+                .frame(minHeight: 82, alignment: .topLeading)
+                .cadenceSurface(cornerRadius: sectionCornerRadius)
+                .padding(.horizontal, sectionPadding)
+
+                if showsInsightsSection {
+                    VStack(alignment: .leading, spacing: 4) {
+                        InsightsInlineNudgeRow(
+                            text: insightsInlineNudgeText,
+                            action: openInsightsOrPaywall
+                        )
+                    }
+                    .padding(14)
+                    .frame(minHeight: 48, alignment: .leading)
+                    .cadenceSurface(cornerRadius: sectionCornerRadius)
+                    .padding(.horizontal, sectionPadding)
                 }
 
                 Color.clear
-                    .frame(height: 22)
+                    .frame(height: 18)
                     .allowsHitTesting(false)
             }
             .padding(.bottom, 12)
@@ -440,7 +512,67 @@ struct HabitDetailSheet: View {
     }
 
     private var loggingContextText: String {
-        "Logging for \(selectedDate.formatted(date: .abbreviated, time: .omitted))"
+        let shortDate = selectedDate.formatted(
+            Date.FormatStyle()
+                .day()
+                .month(.abbreviated)
+        )
+        return "Logging for \(shortDate)"
+    }
+
+    private func heroCenterStatusText(
+        progressSnapshot: ProgressAsOfSnapshot?
+    ) -> String {
+        guard !habit.logs.isEmpty else {
+            return "Start today"
+        }
+
+        if let progressSnapshot, progressSnapshot.current > progressSnapshot.target {
+            return "Beyond target"
+        }
+
+        if isCompleteForSelectedDate {
+            return "Done for today"
+        }
+
+        _ = progressSnapshot
+        return "Ready to log"
+    }
+
+    private func momentumSummary() -> (title: String, detail: String, symbolName: String) {
+        let today = calculationCalendar.startOfDay(for: Date())
+        let range: [Date] = (0..<7).compactMap {
+            calculationCalendar.date(byAdding: .day, value: -$0, to: today)
+        }
+        let metrics = habitLogService.dayMetrics(for: habit, on: range)
+        let activeDays = range.reduce(0) { count, day in
+            let intensity = metrics[day]?.intensity ?? 0
+            return count + (intensity > 0 ? 1 : 0)
+        }
+
+        let title: String = {
+            switch activeDays {
+            case 5...7:
+                return "On track"
+            case 3...4:
+                return "Building"
+            default:
+                return "Slipping"
+            }
+        }()
+
+        let symbolName: String = {
+            switch title {
+            case "On track":
+                return "arrow.up.right"
+            case "Building":
+                return "waveform.path.ecg"
+            default:
+                return "arrow.down.right"
+            }
+        }()
+
+        return (title, "\(activeDays) of last 7 days", symbolName)
     }
 
     private func presentManualEntry(for date: Date) {
@@ -514,16 +646,13 @@ struct HabitDetailSheet: View {
         weekLayoutStrategy.calendarProviderForHeatmap()
     }
 
-    private var shouldShowInsightsInlineNudge: Bool {
-        purchaseService.premiumStatus == .free && habit.logs.count >= 3
+    private var hasInsightsInlineAction: Bool {
+        guard habit.logs.count >= 3 else { return false }
+        return purchaseService.premiumStatus != .unknown
     }
 
     private var insightsInlineNudgeText: String {
-        let trimmedUnit = habit.trimmedUnit
-        if let trimmedUnit, !trimmedUnit.isEmpty {
-            return "Spot trends in your \(trimmedUnit.lowercased())"
-        }
-        return "Understand your habits over time"
+        "See your patterns"
     }
 
     private func openInsightsOrPaywall() {
@@ -549,49 +678,6 @@ struct HabitDetailSheet: View {
         )
     }
 
-    private func behaviourNudgeText(displayedStreak: Int) -> String {
-        if displayedStreak >= 2 {
-            return "You're on a \(displayedStreak)-day streak."
-        }
-
-        let today = calculationCalendar.startOfDay(for: Date())
-        let nonTodayTimestamps = habit.logs
-            .map(\.effectiveTimestamp)
-            .filter { !calculationCalendar.isDate($0, inSameDayAs: today) }
-        let todayTimestamps = habit.logs
-            .map(\.effectiveTimestamp)
-            .filter { calculationCalendar.isDate($0, inSameDayAs: today) }
-
-        let usualHour: Double? = {
-            guard !nonTodayTimestamps.isEmpty else { return nil }
-            let total = nonTodayTimestamps.reduce(0.0) { partialResult, date in
-                let hour = Double(calculationCalendar.component(.hour, from: date))
-                let minute = Double(calculationCalendar.component(.minute, from: date))
-                return partialResult + hour + (minute / 60.0)
-            }
-            return total / Double(nonTodayTimestamps.count)
-        }()
-
-        if let usualHour, let firstTodayLog = todayTimestamps.min() {
-            let todayHour = Double(calculationCalendar.component(.hour, from: firstTodayLog))
-                + (Double(calculationCalendar.component(.minute, from: firstTodayLog)) / 60.0)
-            if todayHour + 0.25 < usualHour {
-                return "Nice - earlier than usual."
-            }
-            return "You're following your usual pace."
-        }
-
-        if let usualHour {
-            let currentHour = Double(calculationCalendar.component(.hour, from: Date()))
-                + (Double(calculationCalendar.component(.minute, from: Date())) / 60.0)
-            if currentHour < usualHour {
-                return "You're ahead of your usual pace."
-            }
-            return "You're close to your usual log time."
-        }
-
-        return "You're building consistency."
-    }
 }
 
 private struct InsightsInlineNudgeRow: View {
@@ -659,7 +745,7 @@ private struct HeaderSection: View, Equatable {
             selectedDate: selectedDate,
             calendar: calendar,
             weekStartPreference: weekStartPreference,
-            showsQuickLogButton: true,
+            showsQuickLogButton: false,
             showsQuickLogForFrequencyHabits: false,
             showsInlineProgressText: false,
             secondaryTextOverride: loggingContextText,
@@ -673,14 +759,12 @@ private struct HeaderSection: View, Equatable {
 private struct ProgressSummarySection: View, Equatable {
     let snapshot: ProgressAsOfSnapshot?
     let accentHex: String
-    let behaviourNudgeText: String
     let isCumulativeGoal: Bool
     let onTap: () -> Void
 
     static func == (lhs: ProgressSummarySection, rhs: ProgressSummarySection) -> Bool {
         lhs.snapshot == rhs.snapshot &&
         lhs.accentHex == rhs.accentHex &&
-        lhs.behaviourNudgeText == rhs.behaviourNudgeText &&
         lhs.isCumulativeGoal == rhs.isCumulativeGoal
     }
 
@@ -689,11 +773,8 @@ private struct ProgressSummarySection: View, Equatable {
             if let snapshot {
                 HabitProgressSummary(
                     headline: snapshot.headlineText,
-                    contextText: snapshot.contextText,
-                    visibleRangeText: snapshot.visibleMonthText,
-                    percentText: percentText(snapshot.progressFraction),
                     progress: snapshot.progressFraction,
-                    behaviourNudgeText: behaviourNudgeText,
+                    overflowFraction: overflowFraction(snapshot),
                     overflowText: snapshot.overflowText,
                     accent: HabitColor.from(hex: accentHex).color
                 )
@@ -709,9 +790,9 @@ private struct ProgressSummarySection: View, Equatable {
         }
     }
 
-    private func percentText(_ progress: Double) -> String {
-        let percent = Int((progress * 100).rounded())
-        return "\(percent)%"
+    private func overflowFraction(_ snapshot: ProgressAsOfSnapshot) -> Double {
+        guard snapshot.target > 0 else { return 0 }
+        return max((snapshot.current / snapshot.target) - 1, 0)
     }
 }
 
@@ -725,7 +806,8 @@ private struct KeyActionsSection: View {
     @State private var isPrimaryPressed: Bool = false
 
     private var primaryLabelText: String {
-        isCompleteToday ? "Add more" : "Log Today"
+        _ = isCompleteToday
+        return "Log today"
     }
 
     private var accent: Color {
@@ -733,7 +815,7 @@ private struct KeyActionsSection: View {
     }
 
     private var primaryBaseAccent: Color {
-        accent
+        isCompleteToday ? accent.opacity(0.88) : accent
     }
 
     private var secondaryBaseAccent: Color {
@@ -741,7 +823,7 @@ private struct KeyActionsSection: View {
     }
 
     private var secondaryTextColor: Color {
-        .white.opacity(colorScheme == .dark ? 0.92 : 0.96)
+        accent.opacity(colorScheme == .dark ? 0.9 : 0.95)
     }
 
     var body: some View {
@@ -749,7 +831,6 @@ private struct KeyActionsSection: View {
             primaryButton
             .buttonStyle(.plain)
             .scaleEffect(isPrimaryPressed ? 0.985 : 1)
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.1), radius: 4, y: 2)
 
             if isCumulativeGoal {
                 secondaryButton
@@ -776,11 +857,6 @@ private struct KeyActionsSection: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
                 .foregroundStyle(Color.white)
-                .shadow(
-                    color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.2),
-                    radius: 0.8,
-                    y: 0.6
-                )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
@@ -790,16 +866,11 @@ private struct KeyActionsSection: View {
 
     private var secondaryButton: some View {
         Button(action: onManualEntry) {
-            Label("Add Value", systemImage: "plus.circle")
+            Label("Add value", systemImage: "plus.circle")
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
                 .foregroundStyle(secondaryTextColor)
-                .shadow(
-                    color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16),
-                    radius: 0.6,
-                    y: 0.5
-                )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
@@ -818,10 +889,10 @@ private struct KeyActionsSection: View {
 
     private var secondaryButtonBackground: some View {
         Capsule()
-            .fill(secondaryBaseAccent)
+            .fill(Color.clear)
             .overlay {
                 Capsule()
-                    .stroke(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.1), lineWidth: 1)
+                    .stroke(secondaryBaseAccent.opacity(colorScheme == .dark ? 0.55 : 0.45), lineWidth: 1)
             }
     }
 }
@@ -851,7 +922,7 @@ private struct CompactHeatmapPreviewSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Recent Activity")
+            Text("Activity")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -948,31 +1019,21 @@ private struct CalendarSection: View, Equatable {
 
 private struct HabitProgressSummary: View {
     let headline: String
-    let contextText: String
-    let visibleRangeText: String?
-    let percentText: String
     let progress: Double
-    let behaviourNudgeText: String
+    let overflowFraction: Double
     let overflowText: String?
     let accent: Color
 
     var body: some View {
         let clampedProgress = min(max(progress, 0), 1)
-        let progressAccent = accent
+        let progressAccent = accent.opacity(0.82)
+        let clampedOverflow = min(max(overflowFraction, 0), 0.22)
 
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(headline)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Text(percentText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+            Text(headline)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.95)
 
             GeometryReader { proxy in
                 let width = proxy.size.width
@@ -985,40 +1046,24 @@ private struct HabitProgressSummary: View {
                     Capsule(style: .continuous)
                         .fill(progressAccent)
                         .frame(width: fillWidth)
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
-                                .frame(width: fillWidth)
-                        }
+
+                    if clampedOverflow > 0 {
+                        Capsule(style: .continuous)
+                            .fill(progressAccent.opacity(0.34))
+                            .frame(width: width * clampedOverflow)
+                            .offset(x: width - (width * clampedOverflow))
+                    }
                 }
             }
             .frame(height: 10)
             .padding(.bottom, 4)
 
-            Text(behaviourNudgeText)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .opacity(0.82)
-                .lineLimit(1)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
-
-            Text(contextText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if let visibleRangeText {
-                Text(visibleRangeText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let overflowText {
+            if let overflowText, clampedOverflow > 0 {
                 Text(overflowText)
-                    .font(.subheadline)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-
         }
         .transaction { transaction in
             transaction.animation = nil

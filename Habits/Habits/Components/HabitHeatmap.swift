@@ -22,6 +22,7 @@ struct HabitHeatmap: View {
     let onSelectDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
     let isCompact: Bool
+    let showsMomentumSummary: Bool
 
     init(
         habit: Habit,
@@ -32,7 +33,8 @@ struct HabitHeatmap: View {
         isInteractive: Bool,
         onSelectDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void = { _ in },
-        isCompact: Bool = false
+        isCompact: Bool = false,
+        showsMomentumSummary: Bool = true
     ) {
         self.habit = habit
         self.service = service
@@ -43,6 +45,7 @@ struct HabitHeatmap: View {
         self.onSelectDay = onSelectDay
         self.onTapLockedDay = onTapLockedDay
         self.isCompact = isCompact
+        self.showsMomentumSummary = showsMomentumSummary
     }
 
     private var accent: Color {
@@ -71,10 +74,14 @@ struct HabitHeatmap: View {
 
     var body: some View {
         if isCompact {
-            cadenceMomentumBlock
-           } else {
-               fullHeatmap
-           }
+            if showsMomentumSummary {
+                cadenceMomentumBlock
+            } else {
+                compactHeatmap
+            }
+        } else {
+            fullHeatmap
+        }
     }
 
     
@@ -163,7 +170,7 @@ struct HabitHeatmap: View {
     }
     
     private var compactHeatmap: some View {
-        let revision = service.metricsRevision(for: habit.id) // 👈 ADD THIS
+        let revision = service.metricsRevision(for: habit.id)
 
         let calendar = calendarProvider.calendar
         let today = calendar.startOfDay(for: Date())
@@ -185,7 +192,7 @@ struct HabitHeatmap: View {
                 dayMetrics: dayMetrics
             )
         }
-        .id(revision) // 👈 ADD THIS
+        .id(revision)
         .padding(.top, 6)
         .padding(.bottom, 4)
         .frame(height: 40)
