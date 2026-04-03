@@ -46,7 +46,8 @@ struct CalendarMonthView: View {
     private let edgePadding: CGFloat = 4
     private let navHitSize: CGFloat = 44
     private let navVisualSize: CGFloat = 34
-    private let monthAnimationDuration: Double = 0.26
+    private let monthAnimationDuration: Double = 0.28
+    private let headerFadeDuration: Double = 0.22
 
     init(
         month: Binding<Date>,
@@ -148,6 +149,7 @@ struct CalendarMonthView: View {
                 .id(monthIdentity)
                 .transition(calendarTransition)
             }
+            .animation(monthAnimation, value: monthIdentity)
             .sheet(item: $adjustingDate) { date in
                 Group {
                     if habit.goalType == .frequency {
@@ -191,13 +193,19 @@ struct CalendarMonthView: View {
 
             HStack(spacing: 8) {
                 VStack(spacing: 2) {
-                    Text(monthLabel)
-                        .font(.subheadline.weight(.semibold))
+                    headerFadingText(
+                        monthLabel,
+                        id: "month-label-\(monthIdentity)",
+                        font: .subheadline.weight(.semibold)
+                    )
 
                     if habit.goalType == .cumulative {
-                        Text(monthSummaryText ?? displayedMonthSummaryText)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        headerFadingText(
+                            monthSummaryText ?? displayedMonthSummaryText,
+                            id: "month-summary-\(monthIdentity)-\(monthSummaryText ?? displayedMonthSummaryText)",
+                            font: .caption2
+                        )
+                        .foregroundStyle(.secondary)
                     }
                 }
 
@@ -252,13 +260,13 @@ struct CalendarMonthView: View {
         switch slideDirection {
         case .left:
             return .asymmetric(
-                insertion: .move(edge: .leading).combined(with: fade),
-                removal: .move(edge: .trailing).combined(with: fade)
+                insertion: .move(edge: .trailing).combined(with: fade),
+                removal: .move(edge: .leading).combined(with: fade)
             )
         case .right:
             return .asymmetric(
-                insertion: .move(edge: .trailing).combined(with: fade),
-                removal: .move(edge: .leading).combined(with: fade)
+                insertion: .move(edge: .leading).combined(with: fade),
+                removal: .move(edge: .trailing).combined(with: fade)
             )
         case .none:
             return .identity
@@ -266,7 +274,7 @@ struct CalendarMonthView: View {
     }
 
     private var monthAnimation: Animation {
-        .easeInOut(duration: 0.2)
+        .easeInOut(duration: monthAnimationDuration)
     }
 
     private var monthIdentity: String {
@@ -356,9 +364,9 @@ struct CalendarMonthView: View {
 
         switch compareMonth(targetComponents, monthComponents) {
         case let comparison where comparison < 0:
-            slideDirection = .left
-        case let comparison where comparison > 0:
             slideDirection = .right
+        case let comparison where comparison > 0:
+            slideDirection = .left
         default:
             slideDirection = nil
         }
@@ -435,7 +443,7 @@ struct CalendarMonthView: View {
             return
         }
 
-        slideDirection = value < 0 ? .left : .right
+        slideDirection = value < 0 ? .right : .left
         let token = UUID()
         slideResetToken = token
 
@@ -464,5 +472,19 @@ struct CalendarMonthView: View {
         withAnimation(monthAnimation) {
             month = target
         }
+    }
+
+    private func headerFadingText(
+        _ text: String,
+        id: String,
+        font: Font
+    ) -> some View {
+        ZStack {
+            Text(text)
+                .id(id)
+                .font(font)
+                .transition(.opacity)
+        }
+        .animation(.easeInOut(duration: headerFadeDuration), value: id)
     }
 }

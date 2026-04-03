@@ -222,7 +222,36 @@ struct HabitDetailSheet: View {
                 calendar: calendar
             )
             .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle("History")
+            .navigationTitle("")
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        openInsightsOrPaywall()
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
+                    }
+                    .buttonStyle(TactileButtonStyle())
+                    .accessibilityLabel("Insights")
+
+                    Button {
+                        quickLogFromCalendarDay(selectedDate)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    }
+                    .buttonStyle(TactileButtonStyle())
+                    .accessibilityLabel("Quick log")
+
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
         }
     }
 
@@ -428,31 +457,64 @@ struct HabitDetailSheet: View {
     ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
-                VStack(alignment: .leading, spacing: 0) {
-                    EquatableView(
-                        content: HeatmapSection(
-                            habitID: habit.id,
-                            selectedDate: selectedDate,
-                            metricsRevision: progressRevision,
-                            earliestVisibleDate: earliestCalendarDate,
-                            habit: habit,
-                            service: habitLogService,
-                            calendarProvider: heatmapCalendarProvider,
-                            onSelectDay: { day in
-                                let normalized = calendar.startOfDay(for: day)
-                                selectedDate = normalized
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+                    Text("History")
+                        .font(CadenceTokens.Typography.sectionHeader.weight(.bold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
 
-                                if !calendar.isDate(normalized, equalTo: selectionState.visibleMonth, toGranularity: .month) {
-                                    selectionState.selectCalendarMonth(normalized)
-                                }
-                            },
-                            onTapLockedDay: { _ in
-                                showPaywall(feature: .fullHeatmapHistory)
-                            }
+                    HStack(spacing: 4) {
+                        fadingHistorySecondaryText(
+                            historyMonthLabel(for: selectionState.visibleMonth),
+                            id: "history-month-label-\(historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))"
                         )
-                    )
+
+                        Text("•")
+                            .font(CadenceTokens.Typography.supporting)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+                        fadingHistorySecondaryText(
+                            historyTotalText(for: selectionState.visibleMonth, calendar: calendar),
+                            id: "history-month-total-\(historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))-\(historyTotalText(for: selectionState.visibleMonth, calendar: calendar))"
+                        )
+                    }
+                }
+                .padding(.horizontal, CadenceTokens.Space.lg)
+                .padding(.top, CadenceTokens.Space.sm)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ZStack {
+                        EquatableView(
+                            content: HeatmapSection(
+                                habitID: habit.id,
+                                selectedDate: selectedDate,
+                                metricsRevision: progressRevision,
+                                earliestVisibleDate: earliestCalendarDate,
+                                habit: habit,
+                                service: habitLogService,
+                                calendarProvider: heatmapCalendarProvider,
+                                onSelectDay: { day in
+                                    let normalized = calendar.startOfDay(for: day)
+                                    withAnimation(.easeInOut(duration: 0.27)) {
+                                        selectedDate = normalized
+                                    }
+
+                                    if !calendar.isDate(normalized, equalTo: selectionState.visibleMonth, toGranularity: .month) {
+                                        withAnimation(.easeInOut(duration: 0.27)) {
+                                            selectionState.selectCalendarMonth(normalized)
+                                        }
+                                    }
+                                },
+                                onTapLockedDay: { _ in
+                                    showPaywall(feature: .fullHeatmapHistory)
+                                }
+                            )
+                        )
+                        .id("history-heatmap-\(historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))")
+                        .transition(.opacity)
+                    }
+                    .animation(.easeInOut(duration: 0.22), value: historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))
                     .padding(.top, CadenceTokens.Space.md + 2)
-                    .padding(.bottom, CadenceTokens.Space.lg)
+                    .padding(.bottom, CadenceTokens.Space.md + 2)
 
                     Divider().opacity(0.08)
 
@@ -467,14 +529,20 @@ struct HabitDetailSheet: View {
                             isTapToLogEnabled: userSettings.tapToLogEnabled,
                             month: Binding(
                                 get: { selectionState.visibleMonth },
-                                set: { selectionState.selectCalendarMonth($0) }
+                                set: { newValue in
+                                    withAnimation(.easeInOut(duration: 0.27)) {
+                                        selectionState.selectCalendarMonth(newValue)
+                                    }
+                                }
                             ),
                             habit: habit,
                             service: habitLogService,
                             calendarProvider: calendarViewProvider,
                             premiumHistoryGate: premiumHistoryGate,
                             onSelectDay: { day in
-                                selectedDate = calendar.startOfDay(for: day)
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedDate = calendar.startOfDay(for: day)
+                                }
                             },
                             onTapDay: { day in
                                 quickLogFromCalendarDay(day)
@@ -484,7 +552,7 @@ struct HabitDetailSheet: View {
                             }
                         )
                     )
-                    .padding(.top, CadenceTokens.Space.md)
+                    .padding(.top, CadenceTokens.Space.sm + 2)
                     .opacity(0.96)
                 }
                 .padding(CadenceTokens.Space.md)
@@ -650,7 +718,64 @@ struct HabitDetailSheet: View {
         let resolvedDay = calculationCalendar.startOfDay(for: day)
         selectedDate = resolvedDay
         selectionState.select(date: resolvedDay)
+
+        if habit.goalType == .cumulative {
+            presentManualEntry(for: resolvedDay)
+            return
+        }
+
         _ = habitLogService.quickLog(for: habit, on: resolvedDay)
+    }
+
+    private func historyMonthLabel(for visibleMonth: Date) -> String {
+        visibleMonth.formatted(
+            Date.FormatStyle()
+                .month(.wide)
+                .year()
+        )
+    }
+
+    private func historyMonthKey(for visibleMonth: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month], from: visibleMonth)
+        let year = components.year ?? 0
+        let month = components.month ?? 0
+        return "\(year)-\(month)"
+    }
+
+    private func historyTotalText(for visibleMonth: Date, calendar: Calendar) -> String {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth) else {
+            return "0"
+        }
+
+        switch habit.goalType {
+        case .frequency:
+            let totalEntries = habit.logs.reduce(into: 0) { partial, log in
+                let timestamp = log.effectiveTimestamp
+                guard timestamp >= monthInterval.start, timestamp < monthInterval.end else {
+                    return
+                }
+                partial += log.frequencyContribution
+            }
+            let label = totalEntries == 1 ? "entry" : "entries"
+            return "\(totalEntries) \(label)"
+
+        case .cumulative:
+            let totalValue = habitLogService.value(for: habit, in: monthInterval)
+            let valueText = habitLogService.formatValue(totalValue, for: habit)
+            return "\(valueText)\(habitLogService.displayUnitSuffix(for: habit))"
+        }
+    }
+
+    private func fadingHistorySecondaryText(_ text: String, id: String) -> some View {
+        ZStack {
+            Text(text)
+                .id(id)
+                .font(CadenceTokens.Typography.supporting)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                .lineLimit(1)
+                .transition(.opacity)
+        }
+        .animation(.easeInOut(duration: 0.2), value: id)
     }
 
     private func scheduleProgressSnapshotRefresh(now: Date = Date()) {

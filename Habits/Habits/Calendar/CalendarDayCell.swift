@@ -10,6 +10,7 @@ import SwiftUI
 
 struct CalendarDayCell: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isPressed: Bool = false
 
     private enum Layout {
         static let cellWidth: CGFloat = 43
@@ -172,18 +173,30 @@ struct CalendarDayCell: View {
         }
         .opacity(contentOpacity)
         .frame(width: Layout.cellWidth, height: Layout.cellHeight)
+        .scaleEffect(isPressed ? 1.025 : 1)
         .overlay(selectionOverlay)
         .contentShape(Rectangle())
         .onTapGesture {
+            if !isLocked {
+                Haptics.impactLight()
+            }
+            withAnimation(.easeInOut(duration: 0.09)) {
+                isPressed = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    isPressed = false
+                }
+            }
             onTap()
         }
         .onLongPressGesture(minimumDuration: 0.35) {
             guard !isLocked else { return }
             onLongPress()
         }
-        .transaction { transaction in
-            transaction.animation = nil
-        }
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
+        .animation(.easeInOut(duration: 0.2), value: count)
+        .animation(.easeInOut(duration: 0.2), value: indicatorText)
         .allowsHitTesting(!isDisabled)
         .accessibilityAction(named: Text("Open Day Actions")) {
             guard !isDisabled, !isLocked else { return }
@@ -246,11 +259,13 @@ struct CalendarDayCell: View {
     private var indicatorContent: some View {
         if let indicatorText {
             Text(indicatorText)
+                .id("value-\(indicatorText)")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .allowsTightening(true)
                 .minimumScaleFactor(0.5)
+                .transition(.opacity.combined(with: .offset(y: 3)))
         } else if count <= 5 {
             HStack(spacing: Layout.dotSpacing) {
                 ForEach(0..<count, id: \.self) { _ in
