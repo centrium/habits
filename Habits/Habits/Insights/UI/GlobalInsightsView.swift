@@ -2,9 +2,9 @@ import SwiftData
 import SwiftUI
 
 private enum GlobalInsightsSpacing {
-    static let section: CGFloat = 20
-    static let cardPadding: CGFloat = 20
-    static let titleToContent: CGFloat = 8
+    static let section = CadenceTokens.Space.xl
+    static let cardPadding = CadenceTokens.Space.xl
+    static let titleToContent = CadenceTokens.Space.sm
 }
 
 struct GlobalInsightsView: View {
@@ -28,17 +28,17 @@ struct GlobalInsightsView: View {
                     GlobalInsightsHabitSnapshotSection(rows: snapshot.topHabits)
                     GlobalInsightsGreigSection(greig: snapshot.greig)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 36)
+                .padding(.horizontal, CadenceTokens.Space.xl)
+                .padding(.top, CadenceTokens.Space.x2l)
+                .padding(.bottom, CadenceTokens.Space.x3l + CadenceTokens.Space.xs)
             } else {
                 GlobalInsightsEmptyState()
-                    .padding(.horizontal, 20)
-                    .padding(.top, 24)
-                    .padding(.bottom, 36)
+                    .padding(.horizontal, CadenceTokens.Space.xl)
+                    .padding(.top, CadenceTokens.Space.x2l)
+                    .padding(.bottom, CadenceTokens.Space.x3l + CadenceTokens.Space.xs)
             }
         }
-        .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
+        .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
         .navigationTitle("Global Insights")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -53,17 +53,17 @@ private struct GlobalInsightsHeroSection: View {
 
     var body: some View {
         GlobalInsightsSurface(padding: GlobalInsightsSpacing.cardPadding) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                 ProSwoosh(size: .small)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
                     metricLine(label: "Momentum", value: hero.momentum)
                     metricLine(label: "Consistency", value: hero.consistency)
                 }
 
                 Text(hero.statusText)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.sectionHeader)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -73,12 +73,12 @@ private struct GlobalInsightsHeroSection: View {
     private func metricLine(label: String, value: Int) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary.opacity(0.65))
+                .font(CadenceTokens.Typography.sectionHeader)
+                .foregroundStyle(CadenceTokens.Color.Text.tertiary)
 
             Text("\(value)%")
                 .font(.system(size: 38, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.systemAccent)
+                .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
         }
     }
 }
@@ -87,8 +87,8 @@ private struct GlobalInsightsMetricsSection: View {
     let metrics: GlobalInsightsMetrics
 
     var body: some View {
-        GlobalInsightsSurface(padding: 18) {
-            HStack(alignment: .top, spacing: 12) {
+        GlobalInsightsSurface(padding: CadenceTokens.Space.lg + 2) {
+            HStack(alignment: .top, spacing: CadenceTokens.Space.md) {
                 metricColumn(
                     title: "Current streak",
                     value: metrics.bestCurrentStreak == 0 ? "0" : "\(metrics.bestCurrentStreak)d"
@@ -100,16 +100,16 @@ private struct GlobalInsightsMetricsSection: View {
     }
 
     private func metricColumn(title: String, value: String) -> some View {
-        VStack(spacing: 7) {
+        VStack(spacing: CadenceTokens.Space.sm - 1) {
             Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
+                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
             Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary.opacity(0.65))
+                .font(CadenceTokens.Typography.supporting.weight(.medium))
+                .foregroundStyle(CadenceTokens.Color.Text.tertiary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -120,23 +120,23 @@ private struct GlobalInsightsHabitSnapshotSection: View {
     let rows: [GlobalInsightHabitRow]
 
     var body: some View {
-        GlobalInsightsSurface(padding: 18) {
+        GlobalInsightsSurface(padding: CadenceTokens.Space.lg + 2) {
             VStack(alignment: .leading, spacing: GlobalInsightsSpacing.titleToContent) {
                 Text("Habit Snapshot")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.md + 2) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text(row.name)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
+                                .font(CadenceTokens.Typography.body.weight(.medium))
+                                .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                             Spacer(minLength: 0)
 
                             Text(row.statusLabel)
-                                .font(.caption.weight(.regular))
+                                .font(CadenceTokens.Typography.supporting.weight(.regular))
                                 .foregroundStyle(statusColor(for: row.statusLabel))
                         }
                         .opacity(rowOpacity(for: index))
@@ -149,11 +149,11 @@ private struct GlobalInsightsHabitSnapshotSection: View {
     private func statusColor(for label: String) -> Color {
         switch label {
         case "Needs attention":
-            return Color.orange.opacity(0.72)
+            return CadenceTokens.Color.State.warning
         case "Strong":
-            return Color.systemAccent
+            return CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
         default:
-            return .primary
+            return CadenceTokens.Color.Text.primary
         }
     }
 
@@ -176,18 +176,18 @@ private struct GlobalInsightsGreigSection: View {
         GlobalInsightsSurface(padding: GlobalInsightsSpacing.cardPadding) {
             VStack(alignment: .leading, spacing: GlobalInsightsSpacing.titleToContent) {
                 Text("Greig Mode")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                 Text(primaryLine)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(secondaryLine)
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.body)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineSpacing(1.5)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -215,7 +215,7 @@ private struct GlobalInsightsGreigSection: View {
                       let attributedRange = Range(range, in: attributed) else {
                     continue
                 }
-                attributed[attributedRange].foregroundColor = Color.systemAccent
+                attributed[attributedRange].foregroundColor = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
             }
         }
 
@@ -228,12 +228,12 @@ private struct GlobalInsightsEmptyState: View {
         GlobalInsightsSurface(padding: 22) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Global Insights")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                 Text("Add a little more habit history to unlock a fuller overview.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.body)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
             }
         }
     }
@@ -257,6 +257,6 @@ private struct GlobalInsightsSurface<Content: View>: View {
         }
         .padding(padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceSurface(cornerRadius: 18)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.elevatedCornerRadius)
     }
 }

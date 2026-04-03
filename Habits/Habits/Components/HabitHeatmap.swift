@@ -253,18 +253,17 @@ struct HabitHeatmap: View {
             compactHeatmap
 
             VStack(alignment: .leading, spacing: 2) {
-
                 HStack {
-                    Text(momentumLabel)
+                    Text(momentumInsight)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(momentumColor)
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                     Spacer()
                 }
 
-                Text(momentumInsight)
+                Text(momentumLabel)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(momentumStatusColor)
             }
         }
     }
@@ -301,23 +300,7 @@ struct HabitHeatmap: View {
         }
     }
     
-    private var momentumColor: Color {
-        let last7 = recentCompletionCount(days: 7)
-
-        if colorScheme == .dark {
-            switch last7 {
-            case 6...7: return Color.systemAccent.opacity(0.86)
-            case 4...5: return Color.secondary
-            case 2...3: return Color(red: 0.73, green: 0.65, blue: 0.53)
-            default: return Color(red: 0.72, green: 0.58, blue: 0.60)
-            }
-        }
-
-        switch last7 {
-        case 6...7: return .green
-        case 4...5: return accent
-        case 2...3: return .orange
-        default: return .red
-        }
+    private var momentumStatusColor: Color {
+        CadenceTokens.Color.Text.secondary
     }
 }

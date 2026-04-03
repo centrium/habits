@@ -158,14 +158,14 @@ struct OnboardingFlowController {
 }
 
 extension Color {
-    static let systemAccent = Color.accentColor.opacity(0.9)
-    static let appBackground = Color(uiColor: .systemBackground)
-    static let appSecondaryBackground = Color(uiColor: .secondarySystemBackground)
+    static let systemAccent = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
+    static let appBackground = CadenceTokens.Color.Background.primary
+    static let appSecondaryBackground = CadenceTokens.Color.Background.secondary
     static let appGroupedBackground = Color(uiColor: .systemGroupedBackground)
     static let appSecondaryGroupedBackground = Color(uiColor: .secondarySystemGroupedBackground)
     static let appTertiaryGroupedBackground = Color(uiColor: .tertiarySystemGroupedBackground)
     static let appSeparator = Color(uiColor: .separator)
     static let onboardingBackground = appBackground
     static let onboardingAccent = Color.systemAccent
-    static let onboardingSecondary = Color.secondary.opacity(0.8)
+    static let onboardingSecondary = CadenceTokens.Color.Text.secondary
 }

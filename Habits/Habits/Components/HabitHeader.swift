@@ -124,17 +124,18 @@ struct HabitHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: CadenceTokens.Space.md) {
             HabitBadge(
                 iconName: iconName,
                 accent: accent,
                 habitName: habit.name
             )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs / 2) {
                 HStack(spacing: 6) {
                     Text(habit.name)
-                        .font(.headline)
+                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .layoutPriority(1)
@@ -143,8 +144,8 @@ struct HabitHeader: View {
                 }
 
                 Text(subtitleText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -193,9 +194,9 @@ private struct HabitHeaderStreakIndicator: View {
         ZStack(alignment: .leading) {
             HStack(spacing: 3) {
                 Image(systemName: "flame.fill")
-                    .font(.caption2)
+                    .font(CadenceTokens.Typography.supporting)
                 Text("888")
-                    .font(.caption.weight(.regular))
+                    .font(CadenceTokens.Typography.supporting.weight(.regular))
             }
             .monospacedDigit()
             .opacity(0)
@@ -203,12 +204,12 @@ private struct HabitHeaderStreakIndicator: View {
             if showsIndicator {
                 HStack(spacing: 3) {
                     Image(systemName: "flame.fill")
-                        .font(.caption2)
+                        .font(CadenceTokens.Typography.supporting)
                         .foregroundStyle(flameColor)
 
                     Text(StreakIndicatorPresentation.valueText(for: streak))
-                        .font(.caption.weight(.regular))
-                        .foregroundStyle(.secondary)
+                        .font(CadenceTokens.Typography.supporting.weight(.regular))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
                 }
                 .monospacedDigit()
             }
@@ -221,8 +222,8 @@ private struct HabitHeaderStreakIndicator: View {
 
     private var flameColor: Color {
         colorScheme == .dark
-            ? Color(red: 0.76, green: 0.65, blue: 0.52)
-            : .orange.opacity(0.82)
+            ? CadenceTokens.Color.State.warning.opacity(0.78)
+            : CadenceTokens.Color.State.warning
     }
 }
 
@@ -252,16 +253,17 @@ struct HabitHeaderPreview: View {
                 habitName: name.isEmpty ? "Habit name" : name
             )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs / 2) {
                 Text(name.isEmpty ? "Habit name" : name)
-                    .font(.headline)
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
                 Text(displaySubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

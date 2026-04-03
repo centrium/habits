@@ -84,13 +84,17 @@ struct HabitsListView: View {
                         }
                     } label: {
                         Image(systemName: isReordering ? "checkmark" : "arrow.up.arrow.down")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(isReordering ? Color.systemAccent : Color.secondary)
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .foregroundStyle(
+                                isReordering
+                                    ? CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
+                                    : CadenceTokens.Color.Text.secondary
+                            )
                             .frame(width: 36, height: 36)
                             .background {
                                 if isReordering {
                                     Circle()
-                                        .fill(Color.systemAccent.opacity(0.12))
+                                        .fill(CadenceTokens.Color.accent(from: HabitColor.default.hex).tertiary)
                                 }
                             }
                     }
@@ -102,13 +106,13 @@ struct HabitsListView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Color.systemAccent)
+                                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                                .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
 
                             if purchaseService.premiumStatus == .free {
                                 Image(systemName: "lock.fill")
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             }
                         }
                     }
@@ -127,18 +131,18 @@ struct HabitsListView: View {
                     Button {
                         addHabit()
                     } label: {
-                        let accent = Color.systemAccent
+                        let accent = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
 
                         Label("Add", systemImage: "plus")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(Color.white)
+                            .font(CadenceTokens.Typography.body.weight(.semibold))
+                            .foregroundStyle(CadenceTokens.Color.Background.primary)
                             .shadow(
                                 color: Color.black.opacity(0.25),
                                 radius: 0.8,
                                 y: 0.6
                             )
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, CadenceTokens.Space.md)
+                            .padding(.vertical, CadenceTokens.Space.sm)
                             .background {
                                 Capsule()
                                     .fill(accent)
@@ -221,9 +225,9 @@ struct HabitsListView: View {
             LazyVStack(spacing: isReordering ? 20 : 16) {
                 CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, CadenceTokens.Space.xl)
+                    .padding(.top, CadenceTokens.Space.sm)
+                    .padding(.bottom, CadenceTokens.Space.sm)
 
                 if let premiumInsightsSummary {
                     Button {
@@ -256,8 +260,8 @@ struct HabitsListView: View {
                     EmptyState()
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.horizontal, CadenceTokens.Space.lg)
+            .padding(.top, CadenceTokens.Space.sm)
             .padding(.bottom, 4)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
@@ -449,11 +453,15 @@ struct HabitsListView: View {
         let isDraggingThisItem = activeItem?.id == habit.id
 
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color(uiColor: .tertiarySystemFill).opacity(0.7))
+            .fill(CadenceTokens.Color.Background.tertiary)
             .overlay {
                 Image(systemName: "line.3.horizontal")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(isDraggingThisItem ? accent : accent.opacity(0.6))
+                    .foregroundStyle(
+                        isDraggingThisItem
+                            ? CadenceTokens.Color.accent(for: habit).primary
+                            : CadenceTokens.Color.accent(for: habit).secondary
+                    )
             }
             .frame(width: 40, height: 40)
             .frame(width: 44, height: 44)
@@ -642,7 +650,7 @@ private struct CustomHomeHeader: View {
     let showsPremiumAccent: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
             CadenceProWordmark(
                 size: .large,
                 animateSwoosh: showsPremiumAccent,
@@ -651,7 +659,7 @@ private struct CustomHomeHeader: View {
             .accessibilityAddTraits(.isHeader)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
+        .padding(.top, CadenceTokens.Space.xs)
     }
 }
 
@@ -674,24 +682,24 @@ enum HabitDeletionConfirmationState {
 
 private struct UpgradeHintRow: View {
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: CadenceTokens.Space.sm) {
             Image(systemName: "sparkles")
                 .font(.footnote)
 
             Text("Free accounts can track up to 3 habits. Upgrade to add unlimited habits.")
                 .font(.footnote)
         }
-        .foregroundStyle(.secondary)
-        .padding(.vertical, 4)
+        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+        .padding(.vertical, CadenceTokens.Space.xs)
     }
 }
 
 private struct PremiumInsightsStripView: View {
     let summary: PremiumInsightsStripSummary
-    private let accentColor = Color.systemAccent
+    private let accentColor = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: CadenceTokens.Space.md) {
             LinearGradient(
                 colors: [
                     accentColor.opacity(0.28),
@@ -704,28 +712,28 @@ private struct PremiumInsightsStripView: View {
             .frame(width: 5)
             .clipShape(Capsule())
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs + 1) {
                 ProSwoosh(size: .small)
 
                 Text(primaryLine)
-                    .font(.headline)
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                     .lineLimit(1)
 
                 secondaryLine
-                    .font(.subheadline)
+                    .font(CadenceTokens.Typography.body)
                     .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .padding(.horizontal, CadenceTokens.Space.lg)
+        .padding(.vertical, CadenceTokens.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceSurface(cornerRadius: 16)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
     }
 
     private var primaryLine: AttributedString {
         var label = AttributedString(summary.primaryLabel)
-        label.foregroundColor = .primary
+        label.foregroundColor = CadenceTokens.Color.Text.primary
 
         var value = AttributedString(summary.primaryValue)
         value.foregroundColor = accentColor
@@ -739,7 +747,7 @@ private struct PremiumInsightsStripView: View {
 
     private var secondaryAttributedLine: AttributedString {
         var line = AttributedString(summary.secondaryLabel)
-        line.foregroundColor = .secondary
+        line.foregroundColor = CadenceTokens.Color.Text.secondary
 
         var value = AttributedString(summary.secondaryValue)
         value.foregroundColor = accentColor
@@ -747,11 +755,11 @@ private struct PremiumInsightsStripView: View {
 
         if let secondarySuffix = summary.secondarySuffix {
             var separator = AttributedString(" · ")
-            separator.foregroundColor = .secondary
+            separator.foregroundColor = CadenceTokens.Color.Text.secondary
             line += separator
 
             var suffix = AttributedString(secondarySuffix)
-            suffix.foregroundColor = .secondary
+            suffix.foregroundColor = CadenceTokens.Color.Text.secondary
             line += suffix
         }
 
@@ -761,50 +769,50 @@ private struct PremiumInsightsStripView: View {
 
 private struct EmptyState: View {
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: CadenceTokens.Space.sm + 2) {
             Text("No habits yet")
-                .font(.headline)
+                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
             Text("Tap the plus button below to create one. Then tap today’s square to log.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .padding(.horizontal, CadenceTokens.Space.lg)
+        .padding(.vertical, CadenceTokens.Space.lg)
         .frame(maxWidth: .infinity)
-        .cadenceSurface(cornerRadius: 16)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
     }
 }
 
 private struct LockedHabitSlotCard: View {
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: CadenceTokens.Space.md + 2) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.tertiarySystemFill))
+                RoundedRectangle(cornerRadius: CadenceTokens.Space.md)
+                    .fill(CadenceTokens.Color.Background.tertiary)
                     .frame(width: 44, height: 44)
 
                 Image(systemName: "lock.fill")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
                 Text("Unlock unlimited habits")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                 Text("Unlock more space for the routines you want to keep.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(CadenceTokens.Typography.body)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        .cadenceSurface(cornerRadius: 16)
+        .padding(.horizontal, CadenceTokens.Space.lg)
+        .padding(.vertical, CadenceTokens.Space.lg)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
         .opacity(colorScheme == .light ? 0.82 : 0.6)
     }
 }

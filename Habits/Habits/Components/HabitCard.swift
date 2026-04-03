@@ -50,7 +50,7 @@ struct HabitCard: View {
 
     var body: some View {
         
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
             HabitHeader(
                 habit: habit,
                 selectedDate: selectedDate,
@@ -93,10 +93,10 @@ struct HabitCard: View {
                 )
             
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .padding(.horizontal, CadenceTokens.Space.lg)
+        .padding(.vertical, CadenceTokens.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceSurface(cornerRadius: 16)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isReordering else { return }

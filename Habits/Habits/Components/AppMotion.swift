@@ -66,35 +66,23 @@ private struct CadenceSurfaceModifier: ViewModifier {
     }
 
     private var backgroundColor: Color {
-        if colorScheme == .dark {
-            return Color.white.opacity(0.04)
-        } else {
-            return Color(uiColor: .systemBackground)
-        }
+        CadenceTokens.Color.Background.secondary
     }
 
     private var borderColor: Color {
-        if colorScheme == .dark {
-            return Color.white.opacity(0.12)
-        } else {
-            return Color.black.opacity(0.08)
-        }
+        CadenceTokens.Surface.strokeColor(for: colorScheme)
     }
 
     private var shadowColor: Color {
-        if colorScheme == .dark {
-            return Color.black.opacity(0.25)
-        } else {
-            return Color.black.opacity(0.08)
-        }
+        CadenceTokens.Surface.shadowColor(for: colorScheme)
     }
 
     private var shadowRadius: CGFloat {
-        colorScheme == .dark ? 8 : 6
+        CadenceTokens.Surface.shadowRadius
     }
 
     private var shadowYOffset: CGFloat {
-        colorScheme == .dark ? 4 : 2
+        CadenceTokens.Surface.shadowYOffset
     }
 }
 
@@ -111,7 +99,7 @@ extension View {
         )
     }
 
-    func cadenceSurface(cornerRadius: CGFloat = 20) -> some View {
+    func cadenceSurface(cornerRadius: CGFloat = CadenceTokens.Surface.elevatedCornerRadius) -> some View {
         modifier(
             CadenceSurfaceModifier(
                 cornerRadius: cornerRadius

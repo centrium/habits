@@ -103,13 +103,13 @@ struct HabitDetailSheet: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.systemAccent)
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
 
                         if purchaseService.premiumStatus == .free {
                             Image(systemName: "lock.fill")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(CadenceTokens.Color.Text.secondary)
                         }
                     }
                 }
@@ -119,7 +119,7 @@ struct HabitDetailSheet: View {
                     activeSheet = .edit
                 } label: {
                     Image(systemName: "pencil")
-                        .font(.subheadline.weight(.semibold))
+                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                 }
                 .buttonStyle(TactileButtonStyle())
 
@@ -145,7 +145,7 @@ struct HabitDetailSheet: View {
                     )
                 }
                 .presentationDetents([.medium, .large], selection: $insightsDetent)
-                .presentationBackground(Color(.systemGroupedBackground))
+                .presentationBackground(CadenceTokens.Color.Background.primary)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)
 
@@ -233,9 +233,10 @@ struct HabitDetailSheet: View {
         progressRevision: Int,
         earliestCalendarDate: Date?
     ) -> some View {
-        let sectionPadding: CGFloat = 16
-        let sectionSpacing: CGFloat = 13
-        let sectionCornerRadius: CGFloat = 16
+        let sectionPadding = CadenceTokens.Space.lg
+        let sectionSpacing = CadenceTokens.Space.md
+        let sectionCornerRadius = CadenceTokens.Surface.cardCornerRadius
+        let accent = CadenceTokens.Color.accent(for: habit)
         let heroStatus = heroCenterStatusText(progressSnapshot: progressSnapshot)
         let momentum = momentumSummary()
         let logCount = habit.logs.count
@@ -243,42 +244,24 @@ struct HabitDetailSheet: View {
         let showsProgressSummary = logCount > 0 && progressSnapshot != nil
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
+        let heroSupportingText = heroSupportingInsightText(momentum: momentum)
 
         ScrollView {
             VStack(alignment: .leading, spacing: sectionSpacing) {
-                VStack(alignment: .leading, spacing: 10) {
-                    EquatableView(
-                        content: HeaderSection(
-                            habit: habit,
-                            selectedDate: selectedDate,
-                            metricsRevision: progressRevision,
-                            calendar: calculationCalendar,
-                            weekStartPreference: userSettings.weekStartPreference,
-                            loggingContextText: loggingContextText,
-                            currentStreak: displayedStreak,
-                            onQuickLog: { selectedDay in
-                                let resolvedDay = calculationCalendar.startOfDay(for: selectedDay)
-                                selectedDate = resolvedDay
-                                selectionState.select(date: resolvedDay)
-                                if habit.goalType == .frequency {
-                                    _ = habitLogService.quickLog(for: habit, on: resolvedDay)
-                                } else {
-                                    presentManualEntry(for: resolvedDay)
-                                }
-                            },
-                            onQuickLogLongPress: habit.goalType == .cumulative ? { selectedDay in
-                                presentManualEntry(for: selectedDay)
-                            } : nil
-                        )
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.lg) {
+                    HeroTopRow(
+                        habitName: habit.name,
+                        loggingContextText: loggingContextText,
+                        accent: accent.tertiary
                     )
 
                     Text(heroStatus)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .font(CadenceTokens.Typography.title)
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.92)
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 4)
+                        .padding(.bottom, CadenceTokens.Space.xs)
 
                     if showsProgressSummary {
                         EquatableView(
@@ -292,18 +275,25 @@ struct HabitDetailSheet: View {
                             )
                         )
                     }
+
+                    if let heroSupportingText {
+                        Text(heroSupportingText)
+                            .font(CadenceTokens.Typography.supporting)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 }
-                .padding(14)
+                .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 206, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
-                .padding(.top, 12)
+                .padding(.top, CadenceTokens.Space.md)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                     if logCount == 0 {
                         Text("Your progress starts here")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(CadenceTokens.Typography.supporting)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             .lineLimit(1)
                     }
 
@@ -319,7 +309,7 @@ struct HabitDetailSheet: View {
                         }
                     )
                 }
-                .padding(14)
+                .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 70)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
@@ -334,18 +324,18 @@ struct HabitDetailSheet: View {
                     }
                     isHistoryPresented = true
                 } label: {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                         Text("Activity")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                         Text(
                             isLowDataActivityState
                                 ? "Your entries will appear here"
                                 : "Recent check-ins"
                         )
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(CadenceTokens.Typography.supporting)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
                         .lineLimit(1)
 
                         HabitHeatmap(
@@ -364,68 +354,68 @@ struct HabitDetailSheet: View {
 
                         HStack(spacing: 4) {
                             Text("See all activity →")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(CadenceTokens.Typography.supporting)
+                                .foregroundStyle(CadenceTokens.Color.Text.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(14)
+                .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 112, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
 
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: CadenceTokens.Space.md) {
+                    VStack(alignment: .leading, spacing: CadenceTokens.Space.sm - 2) {
                         Text("Momentum")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary.opacity(0.85))
+                            .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                         Text(momentum.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .foregroundStyle(momentumTitleColor(for: momentum.state))
 
                         Text(momentum.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary.opacity(0.86))
+                            .font(CadenceTokens.Typography.supporting)
+                            .foregroundStyle(momentumDetailColor(for: momentum.state))
                             .lineLimit(1)
                     }
 
-                    Spacer(minLength: 8)
+                    Spacer(minLength: CadenceTokens.Space.sm)
 
                     Image(systemName: momentum.symbolName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary.opacity(0.55))
-                        .padding(.top, 2)
+                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .foregroundStyle(momentumIconColor(for: momentum.state))
+                        .padding(.top, CadenceTokens.Space.xs / 2)
                 }
-                .padding(14)
+                .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 82, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
 
                 if showsInsightsSection {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
                         InsightsInlineNudgeRow(
                             text: insightsInlineNudgeText,
                             action: openInsightsOrPaywall
                         )
                     }
-                    .padding(14)
+                    .padding(CadenceTokens.Space.lg)
                     .frame(minHeight: 48, alignment: .leading)
                     .cadenceSurface(cornerRadius: sectionCornerRadius)
                     .padding(.horizontal, sectionPadding)
                 }
 
                 Color.clear
-                    .frame(height: 18)
+                    .frame(height: CadenceTokens.Space.lg + 2)
                     .allowsHitTesting(false)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, CadenceTokens.Space.md)
         }
         .scrollContentBackground(.hidden)
-        .background(Color.appBackground)
+        .background(CadenceTokens.Color.Background.primary)
     }
 
     @ViewBuilder
@@ -437,7 +427,7 @@ struct HabitDetailSheet: View {
         calendar: Calendar
     ) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                 VStack(alignment: .leading, spacing: 0) {
                     EquatableView(
                         content: HeatmapSection(
@@ -461,8 +451,8 @@ struct HabitDetailSheet: View {
                             }
                         )
                     )
-                    .padding(.top, 14)
-                    .padding(.bottom, 16)
+                    .padding(.top, CadenceTokens.Space.md + 2)
+                    .padding(.bottom, CadenceTokens.Space.lg)
 
                     Divider().opacity(0.08)
 
@@ -494,22 +484,22 @@ struct HabitDetailSheet: View {
                             }
                         )
                     )
-                    .padding(.top, 12)
+                    .padding(.top, CadenceTokens.Space.md)
                     .opacity(0.96)
                 }
-                .padding(12)
-                .cadenceSurface(cornerRadius: 16)
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(CadenceTokens.Space.md)
+                .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+                .padding(.horizontal, CadenceTokens.Space.lg)
+                .padding(.top, CadenceTokens.Space.sm + 2)
 
                 Color.clear
                     .frame(height: 72)
                     .allowsHitTesting(false)
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, CadenceTokens.Space.lg)
         }
         .scrollContentBackground(.hidden)
-        .background(Color.appBackground)
+        .background(CadenceTokens.Color.Background.primary)
     }
 
     private var loggingContextText: String {
@@ -524,31 +514,43 @@ struct HabitDetailSheet: View {
     private func heroCenterStatusText(
         progressSnapshot: ProgressAsOfSnapshot?
     ) -> String {
-        guard !habit.logs.isEmpty else {
-            return "Start today"
-        }
-
         if let progressSnapshot, progressSnapshot.current > progressSnapshot.target {
             return "Beyond target"
         }
 
         if isCompleteForSelectedDate {
-            return "Done for today"
+            return "On track"
         }
 
-        _ = progressSnapshot
+        let activeDays = momentumSummary().activeDays
+        if activeDays >= 3 {
+            return "Building momentum"
+        }
+
         return "Ready to log"
     }
 
-    private func momentumSummary() -> (title: String, detail: String, symbolName: String) {
+    private func momentumSummary() -> (title: String, detail: String, symbolName: String, activeDays: Int, state: MomentumState) {
         let today = calculationCalendar.startOfDay(for: Date())
         let range: [Date] = (0..<7).compactMap {
             calculationCalendar.date(byAdding: .day, value: -$0, to: today)
         }
+        let rangeSet = Set(range.map { calculationCalendar.startOfDay(for: $0) })
         let metrics = habitLogService.dayMetrics(for: habit, on: range)
         let activeDays = range.reduce(0) { count, day in
             let intensity = metrics[day]?.intensity ?? 0
             return count + (intensity > 0 ? 1 : 0)
+        }
+        let totalLogsInPeriod = habit.logs.reduce(0) { count, log in
+            guard rangeSet.contains(calculationCalendar.startOfDay(for: log.day)),
+                  log.frequencyContribution > 0 else {
+                return count
+            }
+            return count + 1
+        }
+
+        if totalLogsInPeriod == 0 {
+            return ("Not started", "Log today to get started", "minus", activeDays, .noData)
         }
 
         let title: String = {
@@ -573,7 +575,62 @@ struct HabitDetailSheet: View {
             }
         }()
 
-        return (title, "\(activeDays) of last 7 days", symbolName)
+        let state: MomentumState = {
+            switch title {
+            case "On track":
+                return .onTrack
+            case "Building":
+                return .building
+            default:
+                return .slipping
+            }
+        }()
+
+        return (title, "\(activeDays) of last 7 days", symbolName, activeDays, state)
+    }
+
+    private func heroSupportingInsightText(
+        momentum: (title: String, detail: String, symbolName: String, activeDays: Int, state: MomentumState)
+    ) -> String? {
+        guard !habit.logs.isEmpty else {
+            return "You’re just getting started"
+        }
+
+        if momentum.activeDays == 0 {
+            return "0 of 7 days"
+        }
+
+        return momentum.detail
+    }
+
+    private enum MomentumState {
+        case noData
+        case onTrack
+        case building
+        case slipping
+    }
+
+    private func momentumTitleColor(for state: MomentumState) -> Color {
+        switch state {
+        case .noData:
+            return CadenceTokens.Color.Text.secondary
+        case .onTrack:
+            return CadenceTokens.Color.Text.secondary
+        case .building:
+            return CadenceTokens.Color.State.success.opacity(0.76)
+        case .slipping:
+            return CadenceTokens.Color.State.warning.opacity(0.72)
+        }
+    }
+
+    private func momentumDetailColor(for state: MomentumState) -> Color {
+        _ = state
+        return CadenceTokens.Color.Text.secondary
+    }
+
+    private func momentumIconColor(for state: MomentumState) -> Color {
+        _ = state
+        return CadenceTokens.Color.Text.tertiary
     }
 
     private func presentManualEntry(for date: Date) {
@@ -701,7 +758,7 @@ private struct InsightsInlineNudgeRow: View {
                     .font(.caption2.weight(.semibold))
                     .opacity(0.46)
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(CadenceTokens.Color.Text.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -711,49 +768,31 @@ private struct InsightsInlineNudgeRow: View {
     }
 }
 
-private struct HeaderSection: View, Equatable {
-    let habit: Habit
-    let selectedDate: Date
-    let metricsRevision: Int
-    let calendar: Calendar
-    let weekStartPreference: WeekStartPreference
+private struct HeroTopRow: View {
+    let habitName: String
     let loggingContextText: String
-    let currentStreak: Int
-    let onQuickLog: (Date) -> Void
-    let onQuickLogLongPress: ((Date) -> Void)?
-
-    static func == (lhs: HeaderSection, rhs: HeaderSection) -> Bool {
-        lhs.habit.id == rhs.habit.id &&
-        lhs.habit.name == rhs.habit.name &&
-        lhs.habit.subtitle == rhs.habit.subtitle &&
-        lhs.habit.iconName == rhs.habit.iconName &&
-        lhs.habit.colorHex == rhs.habit.colorHex &&
-        lhs.habit.goalTypeRaw == rhs.habit.goalTypeRaw &&
-        lhs.habit.streakGoalTypeRaw == rhs.habit.streakGoalTypeRaw &&
-        lhs.habit.targetValue == rhs.habit.targetValue &&
-        lhs.habit.unit == rhs.habit.unit &&
-        lhs.habit.allowsDecimals == rhs.habit.allowsDecimals &&
-        lhs.selectedDate == rhs.selectedDate &&
-        lhs.metricsRevision == rhs.metricsRevision &&
-        lhs.weekStartPreference == rhs.weekStartPreference &&
-        lhs.loggingContextText == rhs.loggingContextText &&
-        lhs.currentStreak == rhs.currentStreak
-    }
+    let accent: Color
 
     var body: some View {
-        HabitHeader(
-            habit: habit,
-            selectedDate: selectedDate,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference,
-            showsQuickLogButton: false,
-            showsQuickLogForFrequencyHabits: false,
-            showsInlineProgressText: false,
-            secondaryTextOverride: loggingContextText,
-            currentStreak: currentStreak,
-            onQuickLog: onQuickLog,
-            onQuickLogLongPress: onQuickLogLongPress
-        )
+        HStack(spacing: CadenceTokens.Space.md) {
+            Circle()
+                .fill(accent)
+                .frame(width: CadenceTokens.Space.md, height: CadenceTokens.Space.md)
+
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+                Text(habitName)
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .lineLimit(1)
+
+                Text(loggingContextText)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: CadenceTokens.Space.sm)
+        }
     }
 }
 
@@ -777,7 +816,7 @@ private struct ProgressSummarySection: View, Equatable {
                     progress: snapshot.progressFraction,
                     overflowFraction: overflowFraction(snapshot),
                     overflowText: snapshot.overflowText,
-                    accent: HabitColor.from(hex: accentHex).variants.accent
+                    accent: CadenceTokens.Color.accent(from: accentHex)
                 )
                 .pressableCardFeedback(scale: 0.985, opacity: 0.98)
                 .contentShape(Rectangle())
@@ -810,17 +849,16 @@ private struct KeyActionsSection: View {
         isCompleteToday ? "Add more" : "Log today"
     }
 
-    private var variants: HabitColorVariants {
-        HabitColor.from(hex: accentHex).variants
+    private var accent: CadenceAccentTokens {
+        CadenceTokens.Color.accent(from: accentHex)
     }
 
     private var primaryBaseAccent: Color {
-        let accent = variants.accent
-        return isCompleteToday ? accent.opacity(0.84) : accent.opacity(0.9)
+        isCompleteToday ? accent.primary.opacity(0.84) : accent.primary
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: CadenceTokens.Space.sm + 2) {
             primaryButton
             .buttonStyle(.plain)
             .scaleEffect(isPrimaryPressed ? 0.985 : 1)
@@ -846,13 +884,13 @@ private struct KeyActionsSection: View {
             onQuickLog()
         } label: {
             Label(primaryLabelText, systemImage: "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold))
+                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(CadenceTokens.Color.Background.primary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 4)
+                .padding(.vertical, CadenceTokens.Space.sm)
+                .padding(.horizontal, CadenceTokens.Space.xs)
                 .background(primaryButtonBackground)
         }
     }
@@ -860,13 +898,13 @@ private struct KeyActionsSection: View {
     private var secondaryButton: some View {
         Button(action: onManualEntry) {
             Label("Add value", systemImage: "plus.circle")
-                .font(.subheadline.weight(.semibold))
+                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 4)
+                .padding(.vertical, CadenceTokens.Space.sm)
+                .padding(.horizontal, CadenceTokens.Space.xs)
                 .background(secondaryButtonBackground)
         }
     }
@@ -876,7 +914,7 @@ private struct KeyActionsSection: View {
             .fill(primaryBaseAccent)
             .overlay {
                 Capsule()
-                    .stroke(Color.white.opacity(colorScheme == .dark ? 0.1 : 0.08), lineWidth: 1)
+                    .stroke(CadenceTokens.Color.Background.primary.opacity(colorScheme == .dark ? 0.1 : 0.08), lineWidth: CadenceTokens.Surface.strokeLineWidth)
             }
     }
 
@@ -885,7 +923,7 @@ private struct KeyActionsSection: View {
             .fill(Color.clear)
             .overlay {
                 Capsule()
-                    .stroke(Color(uiColor: .separator).opacity(colorScheme == .dark ? 0.7 : 1), lineWidth: 1)
+                    .stroke(CadenceTokens.Color.Text.tertiary.opacity(colorScheme == .dark ? 0.9 : 0.75), lineWidth: CadenceTokens.Surface.strokeLineWidth)
             }
     }
 }
@@ -894,14 +932,14 @@ private struct TodaySummarySection: View {
     let summaryText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
             Text("Today")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
             Text(summaryText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
         }
     }
 }
@@ -914,10 +952,10 @@ private struct CompactHeatmapPreviewSection: View {
     let earliestVisibleDate: Date?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
             Text("Activity")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
             HabitHeatmap(
                 habit: habit,
@@ -1015,19 +1053,19 @@ private struct HabitProgressSummary: View {
     let progress: Double
     let overflowFraction: Double
     let overflowText: String?
-    let accent: Color
+    let accent: CadenceAccentTokens
 
     var body: some View {
         let clampedProgress = min(max(progress, 0), 1)
-        let progressAccent = accent.opacity(0.72)
+        let progressAccent = accent.secondary
         let clampedOverflow = min(max(overflowFraction, 0), 0.22)
 
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
             Text(headline)
-                .font(.subheadline.weight(.regular))
+                .font(CadenceTokens.Typography.body)
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
-                .foregroundStyle(.secondary.opacity(0.92))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
             GeometryReader { proxy in
                 let width = proxy.size.width
@@ -1035,7 +1073,7 @@ private struct HabitProgressSummary: View {
 
                 ZStack(alignment: .leading) {
                     Capsule(style: .continuous)
-                        .fill(Color(uiColor: .secondarySystemFill))
+                        .fill(CadenceTokens.Color.Background.tertiary)
 
                     Capsule(style: .continuous)
                         .fill(progressAccent)
@@ -1043,7 +1081,7 @@ private struct HabitProgressSummary: View {
 
                     if clampedOverflow > 0 {
                         Capsule(style: .continuous)
-                            .fill(progressAccent.opacity(0.26))
+                            .fill(accent.tertiary)
                             .frame(width: width * clampedOverflow)
                             .offset(x: width - (width * clampedOverflow))
                     }
@@ -1054,8 +1092,8 @@ private struct HabitProgressSummary: View {
 
             if let overflowText, clampedOverflow > 0 {
                 Text(overflowText)
-                .font(.caption2)
-                    .foregroundStyle(.secondary.opacity(0.86))
+                .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
             }
         }
