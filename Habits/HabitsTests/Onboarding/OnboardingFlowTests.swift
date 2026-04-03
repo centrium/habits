@@ -41,6 +41,8 @@ final class OnboardingFlowTests: XCTestCase {
 
         XCTAssertEqual(updatedHabits.count, initialHabits.count + 1)
         XCTAssertEqual(createdHabit.name, "Walk")
+        XCTAssertNil(createdHabit.identity)
+        XCTAssertEqual(createdHabit.category, .general)
         XCTAssertTrue(createdHabit.reminders.isEmpty)
         XCTAssertTrue(settings.hasCompletedOnboarding)
     }

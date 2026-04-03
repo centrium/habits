@@ -6,9 +6,11 @@ struct AddHabitSheet: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var name: String = ""
+    @State private var identity: String = ""
     @State private var subtitle: String = ""
     @State private var selectedHex: String = HabitColor.default.hex
     @State private var iconName: String? = nil
+    @State private var category: HabitCategory = .general
     @State private var hasStreakGoal: Bool = false
     @State private var goalType: GoalType = .frequency
     @State private var goalPeriod: GoalPeriod = .daily
@@ -30,9 +32,11 @@ struct AddHabitSheet: View {
         NavigationStack {
             HabitFormView(
                 name: $name,
+                identity: $identity,
                 subtitle: $subtitle,
                 selectedHex: $selectedHex,
                 iconName: $iconName,
+                category: $category,
                 hasStreakGoal: $hasStreakGoal,
                 goalType: $goalType,
                 goalPeriod: $goalPeriod,
@@ -42,7 +46,7 @@ struct AddHabitSheet: View {
                 allowsDecimals: $allowsDecimals,
                 reminders: $reminders,
             )
-            .navigationTitle("New")
+            .navigationTitle("Add Habit")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     DismissButton()
@@ -53,6 +57,7 @@ struct AddHabitSheet: View {
                         addHabit()
                     }
                     .disabled(!canSave)
+                    .opacity(canSave ? 1 : 0.45)
                 }
             }
         }
@@ -86,6 +91,9 @@ struct AddHabitSheet: View {
         let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
 
+        let trimmedIdentity = identity.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalIdentity = trimmedIdentity.isEmpty ? nil : trimmedIdentity
+
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
 
@@ -95,6 +103,8 @@ struct AddHabitSheet: View {
         let habit = Habit(
             name: trimmedName,
             colorHex: HabitColor.from(hex: selectedHex).hex,
+            identity: finalIdentity,
+            category: category,
             subtitle: finalSubtitle,
             iconName: finalIcon,
             hasStreakGoal: hasStreakGoal,

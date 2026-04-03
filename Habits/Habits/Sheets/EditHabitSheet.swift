@@ -9,9 +9,11 @@ struct EditHabitSheet: View {
     private let onDeleted: (() -> Void)?
 
     @State private var name: String
+    @State private var identity: String
     @State private var subtitle: String
     @State private var selectedHex: String
     @State private var iconName: String?
+    @State private var category: HabitCategory
     @State private var hasStreakGoal: Bool
     @State private var goalType: GoalType
     @State private var goalPeriod: GoalPeriod
@@ -28,9 +30,11 @@ struct EditHabitSheet: View {
         self.onDeleted = onDeleted
 
         _name = State(initialValue: habit.name)
+        _identity = State(initialValue: habit.identity ?? "")
         _subtitle = State(initialValue: habit.subtitle ?? "")
         _selectedHex = State(initialValue: HabitColor.from(hex: habit.colorHex).hex)
         _iconName = State(initialValue: habit.iconName)
+        _category = State(initialValue: habit.category)
 
         _hasStreakGoal = State(initialValue: habit.hasStreakGoal)
         _goalType = State(initialValue: habit.goalType)
@@ -46,9 +50,11 @@ struct EditHabitSheet: View {
         NavigationStack {
             HabitFormView(
                 name: $name,
+                identity: $identity,
                 subtitle: $subtitle,
                 selectedHex: $selectedHex,
                 iconName: $iconName,
+                category: $category,
                 hasStreakGoal: $hasStreakGoal,
                 goalType: $goalType,
                 goalPeriod: $goalPeriod,
@@ -62,7 +68,7 @@ struct EditHabitSheet: View {
                     showDeleteConfirmation = true
                 }
             )
-            .navigationTitle("Edit")
+            .navigationTitle("Edit Habit")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     DismissButton()
@@ -73,6 +79,7 @@ struct EditHabitSheet: View {
                         saveChanges()
                     }
                     .disabled(isUnchanged || !canSave)
+                    .opacity((isUnchanged || !canSave) ? 0.45 : 1)
                 }
             }
         }
@@ -101,12 +108,15 @@ struct EditHabitSheet: View {
 
     private var isUnchanged: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedIdentity = identity.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return trimmedName == habit.name &&
+               (trimmedIdentity.isEmpty ? nil : trimmedIdentity) == habit.identity &&
                (trimmedSubtitle.isEmpty ? nil : trimmedSubtitle) == habit.subtitle &&
                HabitColor.from(hex: selectedHex).hex == HabitColor.from(hex: habit.colorHex).hex &&
                iconName == habit.iconName &&
+               category == habit.category &&
                hasStreakGoal == habit.hasStreakGoal &&
                goalType == habit.goalType &&
                goalPeriod == habit.goalPeriod &&
@@ -139,6 +149,9 @@ struct EditHabitSheet: View {
         let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
 
+        let trimmedIdentity = identity.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalIdentity = trimmedIdentity.isEmpty ? nil : trimmedIdentity
+
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
 
@@ -146,9 +159,11 @@ struct EditHabitSheet: View {
         let finalUnit = trimmedUnit.isEmpty ? nil : trimmedUnit
 
         habit.name = trimmedName
+        habit.identity = finalIdentity
         habit.subtitle = finalSubtitle
         habit.iconName = finalIcon
         habit.colorHex = HabitColor.from(hex: selectedHex).hex
+        habit.category = category
 
         habit.hasStreakGoal = hasStreakGoal
         habit.goalType = goalType

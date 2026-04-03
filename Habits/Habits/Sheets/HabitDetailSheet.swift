@@ -34,6 +34,8 @@ struct HabitDetailSheet: View {
     @State private var snapshotRefreshTask: Task<Void, Never>?
     @State private var selectedDate: Date
     @State private var isHistoryPresented = false
+    @State private var displayedIdentityNarrative: HabitIdentityOutput?
+    @State private var identityNarrativeUpdateWorkItem: DispatchWorkItem?
     private let onDeleted: (() -> Void)?
 
     let habit: Habit
@@ -181,6 +183,7 @@ struct HabitDetailSheet: View {
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
+            syncIdentityNarrative(animated: false)
 
             guard purchaseService.premiumStatus == .free else { return }
 
@@ -209,9 +212,13 @@ struct HabitDetailSheet: View {
         }
         .onChange(of: progressRevision) { _, _ in
             scheduleProgressSnapshotRefresh()
+            syncIdentityNarrative(animated: true, delay: 0.3)
         }
         .onReceive(uiStateStore.$progressByHabitAndDate) { _ in
             scheduleProgressSnapshotRefresh()
+        }
+        .onDisappear {
+            identityNarrativeUpdateWorkItem?.cancel()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
             historyTabContent(
@@ -263,7 +270,7 @@ struct HabitDetailSheet: View {
         earliestCalendarDate: Date?
     ) -> some View {
         let sectionPadding = CadenceTokens.Space.lg
-        let sectionSpacing = CadenceTokens.Space.md
+        let sectionSpacing = CadenceTokens.Space.lg
         let sectionCornerRadius = CadenceTokens.Surface.cardCornerRadius
         let accent = CadenceTokens.Color.accent(for: habit)
         let heroStatus = heroCenterStatusText(progressSnapshot: progressSnapshot)
@@ -274,12 +281,22 @@ struct HabitDetailSheet: View {
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
         let heroSupportingText = heroSupportingInsightText(momentum: momentum)
+        let computedIdentityNarrative = identityNarrative(
+            logCount: logCount,
+            activeDays: momentum.activeDays
+        )
+        let identityNarrative = displayedIdentityNarrative ?? computedIdentityNarrative
+        let identityStrength = identityStrength(
+            logCount: logCount,
+            activeDays: momentum.activeDays
+        )
 
         ScrollView {
             VStack(alignment: .leading, spacing: sectionSpacing) {
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.lg) {
                     HeroTopRow(
                         habitName: habit.name,
+                        categoryLabel: habit.category.rawValue,
                         loggingContextText: loggingContextText,
                         accent: accent.tertiary
                     )
@@ -317,6 +334,15 @@ struct HabitDetailSheet: View {
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
+
+                if let identityNarrative {
+                    HabitIdentityCard(
+                        output: identityNarrative,
+                        strength: identityStrength,
+                        accent: CadenceTokens.Color.accent(for: habit)
+                    )
+                    .padding(.horizontal, sectionPadding)
+                }
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                     if logCount == 0 {
@@ -849,6 +875,62 @@ struct HabitDetailSheet: View {
         }
     }
 
+    private func identityNarrative(
+        logCount: Int,
+        activeDays: Int
+    ) -> HabitIdentityOutput? {
+        HabitIdentityEngine.narrative(
+            identity: habit.identity,
+            completionRate: logCount > 0 ? Double(activeDays) / 7.0 : nil,
+            recentCompletions: logCount > 0 ? activeDays : nil,
+            window: logCount > 0 ? 7 : nil
+        )
+    }
+
+    private func identityStrength(
+        logCount: Int,
+        activeDays: Int
+    ) -> HabitIdentityCard.Strength {
+        guard logCount > 0 else { return .neutral }
+
+        let rate = Double(activeDays) / 7.0
+        if rate >= 0.7 {
+            return .strong
+        }
+        if rate >= 0.4 {
+            return .neutral
+        }
+        return .weak
+    }
+
+    private func syncIdentityNarrative(animated: Bool, delay: TimeInterval = 0) {
+        identityNarrativeUpdateWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem {
+            let momentum = momentumSummary()
+            let output = identityNarrative(
+                logCount: habit.logs.count,
+                activeDays: momentum.activeDays
+            )
+
+            if animated {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    displayedIdentityNarrative = output
+                }
+            } else {
+                displayedIdentityNarrative = output
+            }
+        }
+
+        identityNarrativeUpdateWorkItem = workItem
+
+        if delay <= 0 {
+            DispatchQueue.main.async(execute: workItem)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        }
+    }
+
     private var isCompleteForSelectedDate: Bool {
         if let optimistic = uiStateStore.isComplete(habitId: habit.id, date: selectedDate) {
             return optimistic
@@ -895,6 +977,7 @@ private struct InsightsInlineNudgeRow: View {
 
 private struct HeroTopRow: View {
     let habitName: String
+    let categoryLabel: String
     let loggingContextText: String
     let accent: Color
 
@@ -905,10 +988,22 @@ private struct HeroTopRow: View {
                 .frame(width: CadenceTokens.Space.md, height: CadenceTokens.Space.md)
 
             VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
-                Text(habitName)
-                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-                    .lineLimit(1)
+                HStack(spacing: CadenceTokens.Space.sm) {
+                    Text(habitName)
+                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
+                        .lineLimit(1)
+
+                    Text(categoryLabel)
+                        .font(.caption)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(CadenceTokens.Color.Background.tertiary.opacity(0.75))
+                        )
+                }
 
                 Text(loggingContextText)
                     .font(CadenceTokens.Typography.supporting)
@@ -917,6 +1012,74 @@ private struct HeroTopRow: View {
             }
 
             Spacer(minLength: CadenceTokens.Space.sm)
+        }
+    }
+}
+
+private struct HabitIdentityCard: View {
+    enum Strength {
+        case strong
+        case neutral
+        case weak
+    }
+
+    let output: HabitIdentityOutput
+    let strength: Strength
+    let accent: CadenceAccentTokens
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(accent.primary.opacity(0.6))
+                .frame(width: 3)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Identity")
+                    .font(.caption)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+                Text(output.identityLine)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .lineLimit(2)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(output.behaviourLine)
+                        .font(.subheadline)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .lineLimit(2)
+
+                    if let emotionalLine = output.emotionalLine {
+                        Text(emotionalLine)
+                            .font(.footnote)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.8))
+                            .lineLimit(2)
+                    }
+                }
+                .id(narrativeKey)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(CadenceTokens.Space.lg)
+        .background(
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .fill(tintColor.opacity(0.06))
+        )
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+    }
+
+    private var narrativeKey: String {
+        "\(output.behaviourLine)|\(output.emotionalLine ?? "")"
+    }
+
+    private var tintColor: Color {
+        switch strength {
+        case .strong:
+            return accent.primary
+        case .neutral:
+            return CadenceTokens.Color.Background.secondary
+        case .weak:
+            return CadenceTokens.Color.Text.secondary
         }
     }
 }

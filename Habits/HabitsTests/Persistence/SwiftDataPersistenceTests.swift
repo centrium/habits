@@ -3,6 +3,29 @@ import XCTest
 @testable import Habits
 
 final class SwiftDataPersistenceTests: XCTestCase {
+    func testHabitDefaultsToGeneralCategoryAndNilIdentity() {
+        let habit = TestHabitFactory.frequency(name: "Read")
+
+        XCTAssertNil(habit.identity)
+        XCTAssertEqual(habit.category, .general)
+        XCTAssertEqual(habit.categoryRaw, HabitCategory.general.rawValue)
+    }
+
+    func testHabitCategoryGetterFallsBackToGeneralForUnknownRawValue() {
+        let habit = TestHabitFactory.frequency(name: "Read")
+        habit.categoryRaw = "Unknown"
+
+        XCTAssertEqual(habit.category, .general)
+    }
+
+    func testHabitCategorySetterKeepsRawValueInSync() {
+        let habit = TestHabitFactory.frequency(name: "Read")
+
+        habit.category = .learning
+
+        XCTAssertEqual(habit.categoryRaw, HabitCategory.learning.rawValue)
+    }
+
     func testInMemoryContainerPersistsDataWithinItsOwnContext() throws {
         // Given
         let persistence = try TestPersistence()
@@ -16,6 +39,22 @@ final class SwiftDataPersistenceTests: XCTestCase {
         // Then
         XCTAssertEqual(fetched.count, 1)
         XCTAssertEqual(fetched.first?.name, "Read")
+    }
+
+    func testSavingHabitPersistsIdentityAndCategory() throws {
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(name: "Read")
+        habit.identity = "Someone who keeps learning"
+        habit.category = .learning
+        persistence.insert(habit)
+
+        try persistence.save()
+
+        let fetched = try persistence.context.fetch(FetchDescriptor<Habit>())
+        let stored = try XCTUnwrap(fetched.first)
+        XCTAssertEqual(stored.identity, "Someone who keeps learning")
+        XCTAssertEqual(stored.category, .learning)
+        XCTAssertEqual(stored.categoryRaw, HabitCategory.learning.rawValue)
     }
 
     func testSeparateInMemoryContainersAreFullyIsolated() throws {

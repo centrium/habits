@@ -168,6 +168,17 @@ enum GoalPeriod: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum HabitCategory: String, CaseIterable, Codable, Identifiable {
+    case health = "Health"
+    case wellbeing = "Wellbeing"
+    case focus = "Focus"
+    case learning = "Learning"
+    case lifestyle = "Lifestyle"
+    case general = "General"
+
+    var id: String { rawValue }
+}
+
 enum HabitLogKind: String, Codable {
     case legacyDailyTotal
     case entry
@@ -197,9 +208,11 @@ final class Habit: Identifiable {
 
     // Core identity
     var name: String
+    var identity: String?
     var subtitle: String?
     var iconName: String?
     var colorHex: String
+    var categoryRaw: String = HabitCategory.general.rawValue
 
     // Goal configuration (optional)
     var hasStreakGoal: Bool               // NEW
@@ -237,11 +250,18 @@ final class Habit: Identifiable {
         set { goalTypeRaw = newValue.rawValue }
     }
 
+    var category: HabitCategory {
+        get { HabitCategory(rawValue: categoryRaw) ?? .general }
+        set { categoryRaw = newValue.rawValue }
+    }
+
     // MARK: - Init
 
     init(
         name: String,
         colorHex: String,
+        identity: String? = nil,
+        category: HabitCategory = .general,
         subtitle: String? = nil,
         iconName: String? = nil,
         hasStreakGoal: Bool = false,
@@ -256,9 +276,11 @@ final class Habit: Identifiable {
     ) {
         self.id = UUID()
         self.name = name
+        self.identity = identity
         self.subtitle = subtitle
         self.iconName = iconName
         self.colorHex = colorHex
+        self.categoryRaw = category.rawValue
 
         self.hasStreakGoal = hasStreakGoal
         self.streakGoalTypeRaw = goalPeriod.rawValue

@@ -79,9 +79,11 @@ struct HabitFormView: View {
     @EnvironmentObject private var purchaseService: PurchaseService
 
     @Binding var name: String
+    @Binding var identity: String
     @Binding var subtitle: String
     @Binding var selectedHex: String
     @Binding var iconName: String?
+    @Binding var category: HabitCategory
     @Binding var hasStreakGoal: Bool
     @Binding var goalType: GoalType
     @Binding var goalPeriod: GoalPeriod
@@ -102,6 +104,7 @@ struct HabitFormView: View {
 
     private enum Field {
         case name
+        case identity
     }
 
     private static let reminderTimeFormatter: DateFormatter = {
@@ -110,83 +113,144 @@ struct HabitFormView: View {
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
+    private static let identityCharacterLimit = 80
 
     var body: some View {
         Form {
             Section {
-                HabitHeaderPreview(
-                    name: name,
-                    subtitle: subtitle,
-                    iconName: iconName,
-                    colorHex: selectedHex
-                )
-                .padding(.vertical, 4)
-            }
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Habit")
+                            .font(.headline)
 
-            Section("Habit") {
-                TextField("Name", text: $name)
-                    .textInputAutocapitalization(.words)
-                    .focused($focusedField, equals: .name)
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("Habit title", text: $name)
+                                .font(.title3.weight(.semibold))
+                                .textInputAutocapitalization(.words)
+                                .focused($focusedField, equals: .name)
 
-                TextField("Subtitle (optional)", text: $subtitle)
-            }
+                            TextField("Subtitle (optional)", text: $subtitle)
+                                .font(.subheadline)
 
-            Section("Colour") {
-                LazyVGrid(columns: colorSwatchColumns, spacing: 12) {
-                    ForEach(HabitColor.allCases) { paletteColor in
-                        let isSelected = isSameHex(selectedHex, paletteColor.hex)
+                            HStack(spacing: 12) {
+                                Text("Category")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
 
-                        Button {
-                            selectedHex = paletteColor.hex
-                        } label: {
-                            Circle()
-                                .fill(paletteColor.color)
-                                .frame(width: colorSwatchSize, height: colorSwatchSize)
-                                .frame(width: 40, height: 40)
-                                .overlay {
-                                    Circle()
-                                        .stroke(
-                                            isSelected
-                                            ? (colorScheme == .dark ? Color.white.opacity(0.95) : Color.black.opacity(0.8))
-                                            : Color.primary.opacity(0.16),
-                                            lineWidth: isSelected ? 2.5 : 1
-                                        )
-                                        .frame(width: 34, height: 34)
+                                Spacer()
+
+                                Picker("Category", selection: $category) {
+                                    ForEach(HabitCategory.allCases) { option in
+                                        Text(option.rawValue).tag(option)
+                                    }
                                 }
-                                .scaleEffect(isSelected ? 1.05 : 1)
-                                .shadow(
-                                    color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08),
-                                    radius: isSelected ? 2.6 : 1.6,
-                                    y: isSelected ? 1.4 : 0.8
-                                )
+                                .labelsHidden()
+                                .tint(.secondary)
+                                .font(.caption)
+                            }
                         }
-                        .buttonStyle(TactileButtonStyle())
-                        .accessibilityLabel(paletteColor.name)
+                        .padding(16)
+                        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
                     }
-                }
-                .padding(.vertical, 4)
-                .padding(.horizontal, 2)
-            }
 
-            Section("Icon") {
-                Button {
-                    showIconPicker = true
-                } label: {
-                    HStack {
-                        Text("Icon")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Identity")
+                            .font(.headline)
 
-                        Spacer()
-
-                        if let iconName, !iconName.isEmpty {
-                            Image(systemName: iconName)
-                                .foregroundStyle(HabitColor.from(hex: selectedHex).color)
-                        } else {
-                            Text("None")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Who does this habit help you become?")
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
+
+                            ZStack(alignment: .leading) {
+                                if identity.isEmpty {
+                                    Text("Someone who builds long-term wealth")
+                                        .font(.body)
+                                        .foregroundStyle(.tertiary)
+                                        .transition(.opacity)
+                                }
+
+                                TextField("", text: $identity)
+                                    .font(.body)
+                                    .textInputAutocapitalization(.sentences)
+                                    .focused($focusedField, equals: .identity)
+                                    .lineLimit(1)
+                            }
+                            .animation(.easeOut(duration: 0.18), value: identity.isEmpty)
+
+                            Divider()
+                                .opacity(0.25)
                         }
+                        .padding(16)
+                        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Appearance")
+                            .font(.headline)
+
+                        VStack(alignment: .leading, spacing: 16) {
+                            LazyVGrid(columns: colorSwatchColumns, spacing: 12) {
+                                ForEach(HabitColor.allCases) { paletteColor in
+                                    let isSelected = isSameHex(selectedHex, paletteColor.hex)
+
+                                    Button {
+                                        selectedHex = paletteColor.hex
+                                    } label: {
+                                        Circle()
+                                            .fill(paletteColor.color)
+                                            .frame(width: colorSwatchSize, height: colorSwatchSize)
+                                            .frame(width: 40, height: 40)
+                                            .overlay {
+                                                Circle()
+                                                    .stroke(
+                                                        isSelected
+                                                        ? (colorScheme == .dark ? Color.white.opacity(1) : Color.black.opacity(0.92))
+                                                        : Color.primary.opacity(0.16),
+                                                        lineWidth: isSelected ? 2.8 : 1
+                                                    )
+                                                    .frame(width: 34, height: 34)
+                                            }
+                                            .scaleEffect(isSelected ? 1.05 : 1)
+                                            .shadow(
+                                                color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08),
+                                                radius: isSelected ? 2.6 : 1.6,
+                                                y: isSelected ? 1.4 : 0.8
+                                            )
+                                    }
+                                    .buttonStyle(TactileButtonStyle())
+                                    .accessibilityLabel(paletteColor.name)
+                                }
+                            }
+                            .padding(4)
+
+                            Button {
+                                showIconPicker = true
+                            } label: {
+                                HStack {
+                                    Text("Icon")
+
+                                    Spacer()
+
+                                    if let iconName, !iconName.isEmpty {
+                                        Image(systemName: iconName)
+                                            .foregroundStyle(HabitColor.from(hex: selectedHex).color)
+                                    } else {
+                                        Text("None")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .buttonStyle(TactileButtonStyle())
+                        }
+                        .padding(16)
+                        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
                     }
                 }
-                .buttonStyle(TactileButtonStyle())
+                .padding(.top, 14)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
 
             Section("Goal") {
@@ -280,9 +344,14 @@ struct HabitFormView: View {
                 focusedField = .name
             }
         }
+        .onChange(of: identity) { _, newValue in
+            guard newValue.count > Self.identityCharacterLimit else { return }
+            identity = String(newValue.prefix(Self.identityCharacterLimit))
+        }
         .transaction { transaction in
             transaction.animation = nil
         }
+        .scrollDismissesKeyboard(.interactively)
         .sheet(item: $editingReminder) { item in
             if let reminder = binding(for: item.id) {
                 HabitReminderEditorSheet(
