@@ -48,8 +48,16 @@ struct HabitHeatmap: View {
         self.showsMomentumSummary = showsMomentumSummary
     }
 
+    private var baseAccent: Color {
+        habit.curatedColorVariants.base
+    }
+
     private var accent: Color {
-        habit.curatedAccentColor
+        habit.curatedColorVariants.accent
+    }
+
+    private var softAccent: Color {
+        habit.curatedColorVariants.soft
     }
 
     private var gridHeight: CGFloat {
@@ -126,7 +134,7 @@ struct HabitHeatmap: View {
         let lockedDates = Set(entry.days.filter { lockGate.isLocked(date: $0) })
 
         return GitHubHeatmapGrid(
-            accent: accent,
+            accent: softAccent,
             style: style,
             calendarProvider: calendarProvider,
             weeks: timeline.weeks,
@@ -215,7 +223,7 @@ struct HabitHeatmap: View {
                     .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(accent.opacity(0.9), lineWidth: 1.5)
+                                .stroke(baseAccent.opacity(0.78), lineWidth: 1.5)
                         }
                     }
             }
@@ -233,10 +241,10 @@ struct HabitHeatmap: View {
         }
 
         if clamped >= 0.999 {
-            return accent
+            return softAccent.opacity(colorScheme == .dark ? 0.86 : 0.8)
         }
 
-        return accent.opacity(colorScheme == .dark ? 0.72 : 0.6)
+        return softAccent.opacity(colorScheme == .dark ? 0.68 : 0.58)
     }
     
     private var cadenceMomentumBlock: some View {

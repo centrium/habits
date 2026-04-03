@@ -234,7 +234,7 @@ struct HabitDetailSheet: View {
         earliestCalendarDate: Date?
     ) -> some View {
         let sectionPadding: CGFloat = 16
-        let sectionSpacing: CGFloat = 14
+        let sectionSpacing: CGFloat = 13
         let sectionCornerRadius: CGFloat = 16
         let heroStatus = heroCenterStatusText(progressSnapshot: progressSnapshot)
         let momentum = momentumSummary()
@@ -273,11 +273,12 @@ struct HabitDetailSheet: View {
                     )
 
                     Text(heroStatus)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.92))
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.92)
                         .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.bottom, 4)
 
                     if showsProgressSummary {
                         EquatableView(
@@ -380,7 +381,7 @@ struct HabitDetailSheet: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Momentum")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.secondary.opacity(0.85))
 
                         Text(momentum.title)
                             .font(.subheadline.weight(.semibold))
@@ -388,7 +389,7 @@ struct HabitDetailSheet: View {
 
                         Text(momentum.detail)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.secondary.opacity(0.86))
                             .lineLimit(1)
                     }
 
@@ -776,7 +777,7 @@ private struct ProgressSummarySection: View, Equatable {
                     progress: snapshot.progressFraction,
                     overflowFraction: overflowFraction(snapshot),
                     overflowText: snapshot.overflowText,
-                    accent: HabitColor.from(hex: accentHex).color
+                    accent: HabitColor.from(hex: accentHex).variants.accent
                 )
                 .pressableCardFeedback(scale: 0.985, opacity: 0.98)
                 .contentShape(Rectangle())
@@ -806,24 +807,16 @@ private struct KeyActionsSection: View {
     @State private var isPrimaryPressed: Bool = false
 
     private var primaryLabelText: String {
-        _ = isCompleteToday
-        return "Log today"
+        isCompleteToday ? "Add more" : "Log today"
     }
 
-    private var accent: Color {
-        HabitColor.from(hex: accentHex).color
+    private var variants: HabitColorVariants {
+        HabitColor.from(hex: accentHex).variants
     }
 
     private var primaryBaseAccent: Color {
-        isCompleteToday ? accent.opacity(0.88) : accent
-    }
-
-    private var secondaryBaseAccent: Color {
-        accent
-    }
-
-    private var secondaryTextColor: Color {
-        accent.opacity(colorScheme == .dark ? 0.9 : 0.95)
+        let accent = variants.accent
+        return isCompleteToday ? accent.opacity(0.84) : accent.opacity(0.9)
     }
 
     var body: some View {
@@ -870,7 +863,7 @@ private struct KeyActionsSection: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
-                .foregroundStyle(secondaryTextColor)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
@@ -892,7 +885,7 @@ private struct KeyActionsSection: View {
             .fill(Color.clear)
             .overlay {
                 Capsule()
-                    .stroke(secondaryBaseAccent.opacity(colorScheme == .dark ? 0.55 : 0.45), lineWidth: 1)
+                    .stroke(Color(uiColor: .separator).opacity(colorScheme == .dark ? 0.7 : 1), lineWidth: 1)
             }
     }
 }
@@ -1026,14 +1019,15 @@ private struct HabitProgressSummary: View {
 
     var body: some View {
         let clampedProgress = min(max(progress, 0), 1)
-        let progressAccent = accent.opacity(0.82)
+        let progressAccent = accent.opacity(0.72)
         let clampedOverflow = min(max(overflowFraction, 0), 0.22)
 
         return VStack(alignment: .leading, spacing: 8) {
             Text(headline)
-                .font(.headline.weight(.semibold))
+                .font(.subheadline.weight(.regular))
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
+                .foregroundStyle(.secondary.opacity(0.92))
 
             GeometryReader { proxy in
                 let width = proxy.size.width
@@ -1049,7 +1043,7 @@ private struct HabitProgressSummary: View {
 
                     if clampedOverflow > 0 {
                         Capsule(style: .continuous)
-                            .fill(progressAccent.opacity(0.34))
+                            .fill(progressAccent.opacity(0.26))
                             .frame(width: width * clampedOverflow)
                             .offset(x: width - (width * clampedOverflow))
                     }
@@ -1060,8 +1054,8 @@ private struct HabitProgressSummary: View {
 
             if let overflowText, clampedOverflow > 0 {
                 Text(overflowText)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                .font(.caption2)
+                    .foregroundStyle(.secondary.opacity(0.86))
                     .lineLimit(1)
             }
         }
