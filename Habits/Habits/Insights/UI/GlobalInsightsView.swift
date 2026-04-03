@@ -49,28 +49,10 @@ struct GlobalInsightsView: View {
 }
 
 private struct GlobalInsightsHeroSection: View {
-    @Environment(\.colorScheme) private var colorScheme
     let hero: GlobalInsightsHero
 
     var body: some View {
-        GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(
-                LinearGradient(
-                    colors: [
-                        Color.systemAccent.opacity(colorScheme == .light ? 0.07 : 0.1),
-                        colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            ),
-            padding: GlobalInsightsSpacing.cardPadding,
-            shadowOpacity: 0.1,
-            shadowRadius: 15,
-            shadowYOffset: 3,
-            accent: Color.systemAccent,
-            isHighlighted: true
-        ) {
+        GlobalInsightsSurface(padding: GlobalInsightsSpacing.cardPadding) {
             VStack(alignment: .leading, spacing: 12) {
                 ProSwoosh(size: .small)
 
@@ -102,17 +84,10 @@ private struct GlobalInsightsHeroSection: View {
 }
 
 private struct GlobalInsightsMetricsSection: View {
-    @Environment(\.colorScheme) private var colorScheme
     let metrics: GlobalInsightsMetrics
 
     var body: some View {
-        GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground),
-            padding: 18,
-            shadowOpacity: 0.03,
-            shadowRadius: 5,
-            shadowYOffset: 1
-        ) {
+        GlobalInsightsSurface(padding: 18) {
             HStack(alignment: .top, spacing: 12) {
                 metricColumn(
                     title: "Current streak",
@@ -142,14 +117,10 @@ private struct GlobalInsightsMetricsSection: View {
 }
 
 private struct GlobalInsightsHabitSnapshotSection: View {
-    @Environment(\.colorScheme) private var colorScheme
     let rows: [GlobalInsightHabitRow]
 
     var body: some View {
-        GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground),
-            padding: 18
-        ) {
+        GlobalInsightsSurface(padding: 18) {
             VStack(alignment: .leading, spacing: GlobalInsightsSpacing.titleToContent) {
                 Text("Habit Snapshot")
                     .font(.footnote.weight(.semibold))
@@ -199,28 +170,10 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 }
 
 private struct GlobalInsightsGreigSection: View {
-    @Environment(\.colorScheme) private var colorScheme
     let greig: GlobalInsightsGreig
 
     var body: some View {
-        GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(
-                LinearGradient(
-                    colors: [
-                        Color.systemAccent.opacity(colorScheme == .light ? 0.08 : 0.12),
-                        colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            ),
-            padding: GlobalInsightsSpacing.cardPadding,
-            shadowOpacity: 0.08,
-            shadowRadius: 11,
-            shadowYOffset: 3,
-            accent: Color.systemAccent,
-            isHighlighted: true
-        ) {
+        GlobalInsightsSurface(padding: GlobalInsightsSpacing.cardPadding) {
             VStack(alignment: .leading, spacing: GlobalInsightsSpacing.titleToContent) {
                 Text("Greig Mode")
                     .font(.footnote.weight(.semibold))
@@ -271,12 +224,8 @@ private struct GlobalInsightsGreigSection: View {
 }
 
 private struct GlobalInsightsEmptyState: View {
-    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
-        GlobalInsightsSurface(
-            backgroundStyle: AnyShapeStyle(colorScheme == .light ? Color.appBackground : Color.appSecondaryGroupedBackground),
-            padding: 22
-        ) {
+        GlobalInsightsSurface(padding: 22) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Global Insights")
                     .font(.headline)
@@ -291,33 +240,14 @@ private struct GlobalInsightsEmptyState: View {
 }
 
 private struct GlobalInsightsSurface<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let backgroundStyle: AnyShapeStyle
     let padding: CGFloat
-    let shadowOpacity: Double
-    let shadowRadius: CGFloat
-    let shadowYOffset: CGFloat
     let content: Content
-    let accent: Color?
-    let isHighlighted: Bool
 
     init(
-        backgroundStyle: AnyShapeStyle,
         padding: CGFloat,
-        shadowOpacity: Double = 0.05,
-        shadowRadius: CGFloat = 8,
-        shadowYOffset: CGFloat = 2,
-        accent: Color? = nil,
-        isHighlighted: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
-        self.backgroundStyle = backgroundStyle
         self.padding = padding
-        self.shadowOpacity = shadowOpacity
-        self.shadowRadius = shadowRadius
-        self.shadowYOffset = shadowYOffset
-        self.accent = accent
-        self.isHighlighted = isHighlighted
         self.content = content()
     }
 
@@ -327,20 +257,6 @@ private struct GlobalInsightsSurface<Content: View>: View {
         }
         .padding(padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(backgroundStyle)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(
-                    (isHighlighted ? (accent ?? .primary).opacity(0.15) : (colorScheme == .light ? Color.primary.opacity(0.08) : Color.white.opacity(0.06)))
-                )
-        )
-        .shadow(
-            color: colorScheme == .light
-                ? Color.black.opacity(isHighlighted ? 0.045 : 0.03)
-                : .clear,
-            radius: colorScheme == .light ? (isHighlighted ? 8 : 6) : 0,
-            y: shadowYOffset
-        )
+        .cadenceSurface(cornerRadius: 18)
     }
 }

@@ -26,7 +26,6 @@ private enum DetailTab: Hashable {
 }
 
 struct HabitDetailSheet: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
@@ -328,15 +327,7 @@ struct HabitDetailSheet: View {
                     .padding(.top, 8)
                 }
                 .padding(12)
-                .appSurface(level: .standard, cornerRadius: 16)
-                .overlay {
-                    cardOverlay
-                }
-                .shadow(
-                    color: colorScheme == .dark ? Color.black.opacity(0.18) : .clear,
-                    radius: colorScheme == .dark ? 18 : 0,
-                    y: colorScheme == .dark ? 10 : 0
-                )
+                .cadenceSurface(cornerRadius: 16)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
 
@@ -361,7 +352,7 @@ struct HabitDetailSheet: View {
             .padding(.bottom, 12)
         }
         .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
+        .background(Color.appBackground)
     }
 
     @ViewBuilder
@@ -434,15 +425,7 @@ struct HabitDetailSheet: View {
                     .opacity(0.96)
                 }
                 .padding(12)
-                .appSurface(level: .standard, cornerRadius: 16)
-                .overlay {
-                    cardOverlay
-                }
-                .shadow(
-                    color: colorScheme == .dark ? Color.black.opacity(0.18) : .clear,
-                    radius: colorScheme == .dark ? 18 : 0,
-                    y: colorScheme == .dark ? 10 : 0
-                )
+                .cadenceSurface(cornerRadius: 16)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
 
@@ -453,27 +436,7 @@ struct HabitDetailSheet: View {
             .padding(.bottom, 16)
         }
         .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
-    }
-
-    @ViewBuilder
-    private var cardOverlay: some View {
-        if colorScheme == .dark {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06))
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.05),
-                            .clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .center
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .allowsHitTesting(false)
-        }
+        .background(Color.appBackground)
     }
 
     private var loggingContextText: String {

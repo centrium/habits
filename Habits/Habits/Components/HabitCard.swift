@@ -93,8 +93,10 @@ struct HabitCard: View {
                 )
             
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .habitListCardContainer()
+        .cadenceSurface(cornerRadius: 16)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isReordering else { return }

@@ -85,7 +85,7 @@ private struct HabitInsightsCardsRenderer: View {
                 }
 
                 if !viewModel.notes.isEmpty {
-                    HabitInsightsPanel(background: Color.appTertiaryGroupedBackground) {
+                    HabitInsightsPanel {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(viewModel.notes, id: \.self) { note in
                                 Text(note)
@@ -544,15 +544,7 @@ private struct MotivationCardView: View {
     }
 
     var body: some View {
-        HabitInsightsPanel(
-            backgroundStyle: AnyShapeStyle(
-                LinearGradient(
-                    colors: [toneColor.opacity(0.18), toneColor.opacity(0.10)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-        ) {
+        HabitInsightsPanel {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: block.iconName)
                     .font(.system(size: 16, weight: .regular))
@@ -1096,7 +1088,7 @@ private struct DebugCardView: View {
     let block: HabitInsightsDebugBlock
 
     var body: some View {
-        HabitInsightsPanel(background: Color.appTertiaryGroupedBackground) {
+        HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 8) {
                 Text(block.heading)
                     .font(.headline)

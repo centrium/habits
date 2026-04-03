@@ -340,7 +340,7 @@ private extension PaywallView {
                 }
             }
             .padding(20)
-            .appSurface(level: .standard, cornerRadius: 18)
+            .cadenceSurface(cornerRadius: 18)
             .opacity(previewVisible ? 1 : (colorScheme == .light ? 0.94 : 0.88))
             .scaleEffect(previewVisible ? 1 : 0.97)
             .onAppear {
@@ -369,7 +369,7 @@ private extension PaywallView {
 
         }
         .padding(20)
-        .appSurface(level: .standard, cornerRadius: 18)
+        .cadenceSurface(cornerRadius: 18)
         .onAppear {
             guard highlightedFeature != nil else { return }
             highlightedBenefitVisible = false

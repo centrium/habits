@@ -291,7 +291,7 @@ private struct ProSettingsCard: View {
         }
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .appSurface(level: .highlighted, accent: accentColor, tinted: colorScheme == .light, cornerRadius: 16)
+        .cadenceSurface(cornerRadius: 16)
     }
 
     private func settingsToggle(title: String, message: String, isOn: Binding<Bool>) -> some View {

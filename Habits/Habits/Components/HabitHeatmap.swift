@@ -208,11 +208,7 @@ struct HabitHeatmap: View {
                     .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(accent, lineWidth: 1.5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(accent.opacity(0.15))
-                                )
+                                .stroke(accent.opacity(0.9), lineWidth: 1.5)
                         }
                     }
             }
@@ -223,6 +219,9 @@ struct HabitHeatmap: View {
         let clamped = clamp(intensity)
 
         if clamped <= 0.001 {
+            if colorScheme == .dark {
+                return Color.white.opacity(0.10)
+            }
             return Color(uiColor: .secondarySystemFill)
         }
 
@@ -230,7 +229,7 @@ struct HabitHeatmap: View {
             return accent
         }
 
-        return accent.opacity(0.6)
+        return accent.opacity(colorScheme == .dark ? 0.72 : 0.6)
     }
     
     private var cadenceMomentumBlock: some View {

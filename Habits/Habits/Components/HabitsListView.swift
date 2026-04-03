@@ -218,7 +218,7 @@ struct HabitsListView: View {
 
     private var listContent: some View {
         ScrollView {
-            LazyVStack(spacing: isReordering ? 18 : 12) {
+            LazyVStack(spacing: isReordering ? 20 : 16) {
                 CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
@@ -717,8 +717,10 @@ private struct PremiumInsightsStripView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .habitListCardContainer()
+        .cadenceSurface(cornerRadius: 16)
     }
 
     private var primaryLine: AttributedString {
@@ -767,8 +769,10 @@ private struct EmptyState: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
-        .habitListCardContainer()
+        .cadenceSurface(cornerRadius: 16)
     }
 }
 
@@ -798,7 +802,9 @@ private struct LockedHabitSlotCard: View {
 
             Spacer()
         }
-        .habitListCardContainer()
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .cadenceSurface(cornerRadius: 16)
         .opacity(colorScheme == .light ? 0.82 : 0.6)
     }
 }
