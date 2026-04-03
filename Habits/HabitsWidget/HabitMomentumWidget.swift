@@ -1,5 +1,5 @@
 //
-//  HabitMomentumWidget.swift
+//  HabitIdentityStateWidget.swift
 //  HabitsWidget
 //
 //  Created by Codex on 25/03/2026.
@@ -10,24 +10,24 @@ import WidgetKit
 import SwiftUI
 import Foundation
 
-struct HabitMomentumProvider: AppIntentTimelineProvider {
+struct HabitIdentityStateProvider: AppIntentTimelineProvider {
     typealias Intent = HabitSelectionIntent
 
-    func placeholder(in context: Context) -> HabitMomentumEntry {
-        HabitMomentumEntry(date: Date(), habit: .momentumPreview)
+    func placeholder(in context: Context) -> HabitIdentityStateEntry {
+        HabitIdentityStateEntry(date: Date(), habit: .identityStatePreview)
     }
 
-    func snapshot(for configuration: HabitSelectionIntent, in context: Context) async -> HabitMomentumEntry {
+    func snapshot(for configuration: HabitSelectionIntent, in context: Context) async -> HabitIdentityStateEntry {
         let habits = WidgetDataStore.shared.load()
-        return HabitMomentumEntry(
+        return HabitIdentityStateEntry(
             date: Date(),
             habit: resolveHabit(from: habits, configuration: configuration)
         )
     }
 
-    func timeline(for configuration: HabitSelectionIntent, in context: Context) async -> Timeline<HabitMomentumEntry> {
+    func timeline(for configuration: HabitSelectionIntent, in context: Context) async -> Timeline<HabitIdentityStateEntry> {
         let habits = WidgetDataStore.shared.load()
-        let entry = HabitMomentumEntry(
+        let entry = HabitIdentityStateEntry(
             date: Date(),
             habit: resolveHabit(from: habits, configuration: configuration)
         )
@@ -51,77 +51,73 @@ struct HabitMomentumProvider: AppIntentTimelineProvider {
     }
 }
 
-struct HabitMomentumEntry: TimelineEntry {
+struct HabitIdentityStateEntry: TimelineEntry {
     let date: Date
     let habit: WidgetHabit?
 }
 
-struct HabitMomentumWidgetEntryView: View {
-    let entry: HabitMomentumEntry
+struct HabitIdentityStateWidgetEntryView: View {
+    let entry: HabitIdentityStateEntry
 
     var body: some View {
         Group {
             if let habit = entry.habit {
-                HabitMomentumCard(habit: habit)
-                    .widgetURL(momentumDeepLinkURL(for: habit))
+                HabitIdentityStateCard(habit: habit)
+                    .widgetURL(identityStateDeepLinkURL(for: habit))
             } else {
-                EmptyHabitMomentumCard()
+                EmptyHabitIdentityStateCard()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-private struct HabitMomentumCard: View {
+private struct HabitIdentityStateCard: View {
     let habit: WidgetHabit
 
-    private var momentum: WidgetMomentumSummary {
-        habit.momentumSummary
+    private var summary: WidgetIdentityStateSummary {
+        habit.identityStateSummary
     }
 
     var body: some View {
-        VStack(spacing: WidgetSpacing.momentumClusterSpacing) {
+        VStack(spacing: WidgetSpacing.identityClusterSpacing) {
             Text(habit.name)
                 .font(WidgetTypography.tertiary)
                 .foregroundStyle(WidgetColors.habitName)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
 
-            VStack(spacing: WidgetSpacing.momentumTextSpacing) {
-                WidgetScoreText(score: momentum.score)
+            VStack(spacing: WidgetSpacing.identityTextSpacing) {
+                Text(summary.shortLabel)
+                    .font(WidgetTypography.identityState)
+                    .foregroundStyle(WidgetColors.identityStateText(summary.state))
+                    .lineLimit(1)
 
-                VStack(spacing: WidgetSpacing.momentumTextSpacing) {
-                    Text(momentum.state.rawValue)
-                        .font(WidgetTypography.momentumState)
-                        .foregroundStyle(WidgetColors.momentumStateText(momentum.state))
-                        .lineLimit(1)
-
-                    Text(momentum.direction.summaryText)
-                        .font(WidgetTypography.momentumTrend)
-                        .foregroundStyle(WidgetColors.momentumDirectionText(momentum.direction))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .contentTransition(.opacity)
+                Text(summary.recentCompletionText)
+                    .font(WidgetTypography.identitySupport)
+                    .foregroundStyle(WidgetColors.identitySupportText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .contentTransition(.opacity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(WidgetSpacing.containerPadding)
         .multilineTextAlignment(.center)
-        .animation(.easeInOut(duration: WidgetMetrics.momentumAnimationDuration), value: momentum.score)
+        .animation(.easeInOut(duration: WidgetMetrics.identityAnimationDuration), value: summary.shortLabel)
     }
 }
 
-private struct EmptyHabitMomentumCard: View {
+private struct EmptyHabitIdentityStateCard: View {
     var body: some View {
         VStack(spacing: WidgetSpacing.verticalStack) {
             Text("Choose a habit")
-                .font(WidgetTypography.momentumEmptyTitle)
+                .font(WidgetTypography.identityEmptyTitle)
                 .foregroundStyle(WidgetColors.emptyPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text("Pick one in Edit Widget")
-                .font(WidgetTypography.momentumEmptySubtitle)
+                .font(WidgetTypography.identityEmptySubtitle)
                 .foregroundStyle(WidgetColors.secondaryText)
                 .lineLimit(2)
         }
@@ -131,26 +127,26 @@ private struct EmptyHabitMomentumCard: View {
     }
 }
 
-struct HabitMomentumWidget: Widget {
-    let kind: String = WidgetDataStore.momentumWidgetKind
+struct HabitIdentityStateWidget: Widget {
+    let kind: String = WidgetDataStore.identityStateWidgetKind
 
     var body: some WidgetConfiguration {
         AppIntentConfiguration(
             kind: kind,
             intent: HabitSelectionIntent.self,
-            provider: HabitMomentumProvider()
+            provider: HabitIdentityStateProvider()
         ) { entry in
-            HabitMomentumWidgetEntryView(entry: entry)
+            HabitIdentityStateWidgetEntryView(entry: entry)
                 .widgetSurface()
         }
-        .configurationDisplayName("Cadence: Momentum")
-        .description("Track your current momentum.")
+        .configurationDisplayName("Cadence: Identity State")
+        .description("Track your current identity state.")
         .supportedFamilies([.systemSmall])
     }
 }
 
 private extension WidgetHabit {
-    static let momentumPreview = WidgetHabit(
+    static let identityStatePreview = WidgetHabit(
         id: UUID(),
         name: "Read",
         isCompleteToday: false,
@@ -160,11 +156,11 @@ private extension WidgetHabit {
         hasActivityToday: true,
         iconName: "book.closed.fill",
         colorHex: "#1F7A8C",
-        momentumScore: 72,
-        recentActivity: momentumPreviewActivity
+        identityState: .building,
+        recentActivity: identityStatePreviewActivity
     )
 
-    static var momentumPreviewActivity: [WidgetActivitySample] {
+    static var identityStatePreviewActivity: [WidgetActivitySample] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let values = [0.2, 0.3, 0.2, 0.4, 0.3, 0.4, 0.3, 0.3, 0.4, 0.4, 0.5, 0.4, 0.4, 0.4]
@@ -179,6 +175,6 @@ private extension WidgetHabit {
     }
 }
 
-private func momentumDeepLinkURL(for habit: WidgetHabit) -> URL {
+private func identityStateDeepLinkURL(for habit: WidgetHabit) -> URL {
     URL(string: "habits://habit/\(habit.id.uuidString)")!
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 enum PerformanceSignalsCalculator {
-    private static let momentumLabels = ["Low", "Building", "Strong", "High"]
+    private static let momentumLabels = ["Starting", "Building", "Holding", "Holding"]
     private static let riskLabels = ["Low", "Moderate", "High", "Critical"]
     private static let strengthLabels = ["Weak", "Developing", "Strong", "Automatic"]
 
@@ -27,7 +27,7 @@ enum PerformanceSignalsCalculator {
         return [
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
-                    title: "Momentum Score",
+                    title: "Identity Signal",
                     value: normalizeMomentum(momentum),
                     labels: momentumLabels,
                     explanation: momentumExplanation(for: momentum)
@@ -162,13 +162,13 @@ enum PerformanceSignalsCalculator {
     static func momentumExplanation(for score: Double) -> String {
         switch Int(score.rounded()) {
         case ...30:
-            return "Momentum is low right now. A small action today can restart consistency."
+            return "You are in a starting phase right now. A small action today can restart consistency."
         case ...60:
-            return "Momentum is building. Keep showing up to lock in the routine."
+            return "You are in a building phase. Keep showing up to lock in the routine."
         case ...80:
-            return "Momentum is strong and your recent consistency is holding."
+            return "Your routine is holding and recent consistency is stable."
         default:
-            return "Momentum is high with strong streak and completion signals."
+            return "Your routine is holding strong with consistent completion signals."
         }
     }
 
@@ -181,7 +181,7 @@ enum PerformanceSignalsCalculator {
         case ..<0.75:
             return "Your activity has declined recently. Logging today would help stabilise the routine."
         default:
-            return "This habit is at risk of fading. A small action today can rebuild momentum."
+            return "This habit is at risk of fading. A small action today can support a return."
         }
     }
 

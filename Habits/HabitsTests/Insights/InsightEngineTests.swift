@@ -732,7 +732,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(motivation.headline.contains("3 days in a row"))
     }
 
-    func testMomentumUsesSameStreakAsStreakService() {
+    func testInsightsIncludeIdentityStateLine() {
         // Given
         let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
@@ -744,14 +744,6 @@ final class InsightEngineTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let expected = StreakService(
-            calendar: calendar,
-            weekStartPreference: .monday
-        ).currentStreak(
-            for: habit,
-            referenceDate: now
-        )
-
         // When
         let viewModel = HabitInsightsEngine.insights(
             for: habit,
@@ -761,10 +753,10 @@ final class InsightEngineTests: XCTestCase {
         )
 
         // Then
-        guard let momentum = momentumBlock(from: viewModel) else {
-            return XCTFail("Expected momentum card")
+        guard let identityState = identityStateBlock(from: viewModel) else {
+            return XCTFail("Expected identity state card")
         }
-        XCTAssertTrue(momentum.currentStreakText.contains("\(expected)-day streak"))
+        XCTAssertFalse(identityState.line.isEmpty)
     }
 
     private func trendBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsTrendBlock? {
@@ -830,9 +822,9 @@ final class InsightEngineTests: XCTestCase {
         return nil
     }
 
-    private func momentumBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsMomentumBlock? {
+    private func identityStateBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsIdentityStateBlock? {
         for card in viewModel.cards {
-            if case .momentum(let block) = card {
+            if case .identityState(let block) = card {
                 return block
             }
         }
@@ -846,11 +838,8 @@ final class InsightEngineTests: XCTestCase {
             case .motivation(let block):
                 values.append(block.headline)
                 values.append(block.supportingText)
-            case .momentum(let block):
-                values.append(block.currentStreakText)
-                values.append(block.longestStreakText)
-                values.append(block.paceText)
-                values.append(block.supportingText)
+            case .identityState(let block):
+                values.append(block.line)
             case .greigMode(let block):
                 values.append(block.headline)
                 values.append(block.supportText)

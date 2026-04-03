@@ -18,7 +18,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         XCTAssertNil(result)
     }
 
-    func testNoDataReturnsEarlyStageBehaviourAndNoEmotion() throws {
+    func testNoDataReturnsStartingStateLines() throws {
         // GIVEN
         let identity = "Someone who trains daily"
 
@@ -33,8 +33,8 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // THEN
         XCTAssertEqual(output.identityLine, "Someone who trains daily")
-        XCTAssertEqual(output.behaviourLine, "This is where the habit begins to take shape")
-        XCTAssertNil(output.emotionalLine)
+        XCTAssertEqual(output.behaviourLine, "You’ve shown up 0 of the last 7 days")
+        XCTAssertEqual(output.emotionalLine, "This is where the habit begins to take shape")
     }
 
     func testStrongRateReturnsStrongEmotionalLine() throws {
@@ -70,7 +70,7 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // THEN
         XCTAssertEqual(output.behaviourLine, "You’ve shown up 4 of the last 7 days")
-        XCTAssertEqual(output.emotionalLine, "You’re building this identity — keep going")
+        XCTAssertEqual(output.emotionalLine, "You’re building this identity")
     }
 
     func testLowRateReturnsLowEmotionalLine() throws {
@@ -88,7 +88,7 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // THEN
         XCTAssertEqual(output.behaviourLine, "You’ve shown up 1 of the last 7 days")
-        XCTAssertEqual(output.emotionalLine, "This habit supports the person you want to be")
+        XCTAssertEqual(output.emotionalLine, "Getting back to this keeps the identity intact")
     }
 
     func testCompletionRateExactlyPointSevenMapsToStrong() throws {
@@ -122,7 +122,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.emotionalLine, "You’re building this identity — keep going")
+        XCTAssertEqual(output.emotionalLine, "You’re building this identity")
     }
 
     func testNarrativeIsDeterministicForSameInputs() throws {

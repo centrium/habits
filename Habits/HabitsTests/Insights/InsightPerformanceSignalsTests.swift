@@ -20,7 +20,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertGreaterThan(score, 80)
         XCTAssertEqual(
             PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Momentum is high with strong streak and completion signals."
+            "Your routine is holding strong with consistent completion signals."
         )
     }
 
@@ -40,7 +40,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertLessThan(score, 30)
         XCTAssertEqual(
             PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Momentum is low right now. A small action today can restart consistency."
+            "You are in a starting phase right now. A small action today can restart consistency."
         )
     }
 
@@ -61,7 +61,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertLessThanOrEqual(score, 60)
         XCTAssertEqual(
             PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Momentum is building. Keep showing up to lock in the routine."
+            "You are in a building phase. Keep showing up to lock in the routine."
         )
     }
 
@@ -101,7 +101,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertGreaterThan(score, 0.75)
         XCTAssertEqual(
             PerformanceSignalsCalculator.riskExplanation(for: score),
-            "This habit is at risk of fading. A small action today can rebuild momentum."
+            "This habit is at risk of fading. A small action today can support a return."
         )
     }
 
@@ -215,7 +215,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         }.first
 
         XCTAssertEqual(block?.heading, "Performance Signals")
-        XCTAssertEqual(block?.signals.map(\.gauge.title), ["Momentum Score", "Habit Risk", "Habit Strength"])
+        XCTAssertEqual(block?.signals.map(\.gauge.title), ["Identity Signal", "Habit Risk", "Habit Strength"])
     }
 
     private func makeHabit(

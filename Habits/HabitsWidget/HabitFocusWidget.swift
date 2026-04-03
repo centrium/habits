@@ -155,6 +155,6 @@ private extension WidgetHabit {
         hasActivityToday: false,
         iconName: "book.closed.fill",
         colorHex: "#1F7A8C",
-        momentumScore: 28
+        identityState: .returning
     )
 }

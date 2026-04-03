@@ -9,9 +9,9 @@ struct GlobalInsightsSnapshot: Equatable {
 }
 
 struct GlobalInsightsHero: Equatable {
-    let momentum: Int
+    let dominantState: HabitIdentityState
     let consistency: Int
-    let statusText: String
+    let summaryText: String
 }
 
 struct GlobalInsightsMetrics: Equatable {
@@ -62,15 +62,15 @@ struct GlobalInsightsService {
             habitMetrics(for: habit, now: now)
         }
 
-        let momentum = roundedAverage(metricsByHabit.map(\.momentum))
         let consistency = roundedAverage(metricsByHabit.map(\.consistency))
         let atRiskCount = metricsByHabit.filter { $0.riskScore >= 0.5 }.count
+        let dominantState = dominantIdentityState(from: metricsByHabit)
 
         let hero = GlobalInsightsHero(
-            momentum: momentum,
+            dominantState: dominantState,
             consistency: consistency,
-            statusText: statusText(
-                momentum: momentum,
+            summaryText: summaryText(
+                dominantState: dominantState,
                 consistency: consistency,
                 atRiskCount: atRiskCount
             )
@@ -85,8 +85,8 @@ struct GlobalInsightsService {
         let rankedHabits = rankedHabitRows(from: metricsByHabit)
         let greig = greigSummary(from: metricsByHabit, now: now)
         let stripSummary = PremiumInsightsStripSummary(
-            primaryLabel: "Momentum ",
-            primaryValue: "\(momentum)%",
+            primaryLabel: "Identity ",
+            primaryValue: HabitIdentityStateFormatter.shortLabel(dominantState),
             secondaryLabel: "Consistency ",
             secondaryValue: "\(consistency)%",
             secondarySuffix: stripSuffix(for: atRiskCount)
@@ -105,7 +105,7 @@ struct GlobalInsightsService {
 private extension GlobalInsightsService {
     struct HabitMetrics {
         let habit: Habit
-        let momentum: Int
+        let identityState: HabitIdentityState
         let consistency: Int
         let riskScore: Double
         let progressRatio: Double?
@@ -124,32 +124,33 @@ private extension GlobalInsightsService {
         for habit: Habit,
         now: Date
     ) -> HabitMetrics {
-        let momentumService = MomentumScoreService(
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
         let insightsService = HabitInsightsService(calendar: calendar)
         let streakService = StreakService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
         )
+        let progressRatio = habit.progress(
+            for: now,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        let completedDays = completedDays(for: habit, now: now)
 
         return HabitMetrics(
             habit: habit,
-            momentum: momentumService.score(for: habit, now: now),
+            identityState: HabitIdentityStateResolver.state(
+                from: progressRatio,
+                hasRecentData: hasRecentData(completedDays: completedDays, now: now)
+            ),
             consistency: insightsService.snapshot(for: habit, now: now).consistency,
             riskScore: PerformanceSignalsCalculator.habitRiskScore(
                 for: habit,
                 calendar: calendar,
                 now: now
             ),
-            progressRatio: habit.progress(
-                for: now,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            ),
+            progressRatio: progressRatio,
             currentStreak: streakService.currentStreak(for: habit, referenceDate: now),
-            completedDays: completedDays(for: habit, now: now)
+            completedDays: completedDays
         )
     }
 
@@ -159,21 +160,33 @@ private extension GlobalInsightsService {
         return Int((Double(total) / Double(values.count)).rounded())
     }
 
-    func statusText(
-        momentum: Int,
+    func summaryText(
+        dominantState: HabitIdentityState,
         consistency: Int,
         atRiskCount: Int
     ) -> String {
-        switch atRiskCount {
-        case 0 where momentum >= 75 && consistency >= 75:
-            return "Your routine looks steady right now."
-        case 0:
-            return "You're keeping a solid baseline."
-        case 1:
-            return "Most habits are steady; 1 needs attention."
-        default:
-            return "Most habits are steady, with \(atRiskCount) needing attention."
+        let base: String
+        switch dominantState {
+        case .starting:
+            base = "Most of your habits are just getting started"
+        case .building:
+            base = "Most of your habits are building consistency"
+        case .holding:
+            base = "Most of your habits are holding strong"
+        case .returning:
+            base = "Most of your habits are in the process of returning"
         }
+
+        if atRiskCount == 0 && consistency >= 75 {
+            return "\(base)."
+        }
+        if atRiskCount == 1 {
+            return "\(base), with 1 needing attention."
+        }
+        if atRiskCount > 1 {
+            return "\(base), with \(atRiskCount) needing attention."
+        }
+        return "\(base)."
     }
 
     func bestDayOfWeek(
@@ -225,8 +238,8 @@ private extension GlobalInsightsService {
             if lhs.consistency != rhs.consistency {
                 return lhs.consistency > rhs.consistency
             }
-            if lhs.momentum != rhs.momentum {
-                return lhs.momentum > rhs.momentum
+            if stateRank(lhs.identityState) != stateRank(rhs.identityState) {
+                return stateRank(lhs.identityState) > stateRank(rhs.identityState)
             }
             if lhs.habit.orderIndex != rhs.habit.orderIndex {
                 return lhs.habit.orderIndex < rhs.habit.orderIndex
@@ -244,13 +257,7 @@ private extension GlobalInsightsService {
     }
 
     func statusLabel(for metric: HabitMetrics) -> String {
-        if metric.riskScore >= 0.5 {
-            return "Needs attention"
-        }
-        if metric.consistency >= 80 {
-            return "Strong"
-        }
-        return "On track"
+        HabitIdentityStateFormatter.shortLabel(metric.identityState)
     }
 
     func riskBucket(for metric: HabitMetrics) -> Int {
@@ -347,6 +354,43 @@ private extension GlobalInsightsService {
             return "1 needs attention"
         default:
             return "\(atRiskCount) need attention"
+        }
+    }
+
+    func dominantIdentityState(from metrics: [HabitMetrics]) -> HabitIdentityState {
+        guard !metrics.isEmpty else { return .starting }
+
+        let grouped = Dictionary(grouping: metrics, by: \.identityState)
+        let ranked = grouped.sorted { lhs, rhs in
+            if lhs.value.count != rhs.value.count {
+                return lhs.value.count > rhs.value.count
+            }
+            return stateRank(lhs.key) > stateRank(rhs.key)
+        }
+        return ranked.first?.key ?? .starting
+    }
+
+    func hasRecentData(
+        completedDays: Set<Date>,
+        now: Date
+    ) -> Bool {
+        let today = calendar.startOfDay(for: now)
+        let earliest = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        return completedDays.contains { day in
+            day >= earliest && day <= today
+        }
+    }
+
+    func stateRank(_ state: HabitIdentityState) -> Int {
+        switch state {
+        case .holding:
+            return 4
+        case .building:
+            return 3
+        case .returning:
+            return 2
+        case .starting:
+            return 1
         }
     }
 

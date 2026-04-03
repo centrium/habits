@@ -27,11 +27,11 @@ struct WidgetTypography {
     static let focusTitle = Font.system(size: 16, weight: .semibold)
     static let consistencyLabel = Font.system(size: 11, weight: .regular)
     static let consistencySummary = Font.system(size: 13, weight: .semibold)
-    static let momentumState = Font.system(size: 15, weight: .semibold)
-    static let momentumTrend = Font.system(size: 11, weight: .regular)
+    static let identityState = Font.system(size: 15, weight: .semibold)
+    static let identitySupport = Font.system(size: 11, weight: .regular)
 
-    static let momentumEmptyTitle = Font.system(size: 16, weight: .semibold, design: .rounded)
-    static let momentumEmptySubtitle = Font.system(size: 12, weight: .regular)
+    static let identityEmptyTitle = Font.system(size: 16, weight: .semibold, design: .rounded)
+    static let identityEmptySubtitle = Font.system(size: 12, weight: .regular)
 }
 
 struct WidgetSpacing {
@@ -39,8 +39,8 @@ struct WidgetSpacing {
     static let containerPadding: CGFloat = 16
     static let pillHorizontal: CGFloat = 10
     static let pillVertical: CGFloat = 4
-    static let momentumClusterSpacing: CGFloat = 4
-    static let momentumTextSpacing: CGFloat = 2
+    static let identityClusterSpacing: CGFloat = 4
+    static let identityTextSpacing: CGFloat = 2
     static let opticalIconLift: CGFloat = -1
 
     static let mediumListSpacing: CGFloat = 11
@@ -56,7 +56,7 @@ struct WidgetSpacing {
 }
 
 struct WidgetMetrics {
-    static let momentumAnimationDuration = 0.2
+    static let identityAnimationDuration = 0.2
     static let consistencyStripHeight: CGFloat = 28
     static let widgetCornerRadius: CGFloat = 24
 }
@@ -193,29 +193,20 @@ struct WidgetColors {
         }
     }
 
-    static func momentumStateText(_ state: WidgetMomentumState) -> Color {
+    static func identityStateText(_ state: WidgetHabitIdentityState) -> Color {
         switch state {
-        case .slipping:
-            return stateNegative
-        case .steady:
-            return stateNeutral
+        case .starting:
+            return textTertiary
         case .building:
+            return stateNeutral
+        case .holding:
             return statePositive
+        case .returning:
+            return lightlyTintedText(using: stateNegative)
         }
     }
 
-    static func momentumDirectionText(_ direction: WidgetMomentumDirection) -> Color {
-        switch direction {
-        case .improving:
-            return lightlyTintedText(using: statePositive)
-        case .stable:
-            return textSecondary
-        case .declining:
-            return lightlyTintedText(using: stateNegative)
-        case .unavailable:
-            return textTertiary
-        }
-    }
+    static let identitySupportText = textSecondary
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> Color {
         Color(
@@ -337,7 +328,7 @@ struct WidgetStatusPillStyle {
         )
     }
 
-    static func momentumZero(accent: Color) -> WidgetStatusPillStyle {
+    static func identityState(accent: Color) -> WidgetStatusPillStyle {
         WidgetStatusPillStyle(
             foregroundColor: WidgetColors.statusText(accent: accent),
             backgroundColor: WidgetColors.statusBackground(accent: accent)

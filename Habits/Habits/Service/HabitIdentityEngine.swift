@@ -22,35 +22,27 @@ struct HabitIdentityEngine {
               let recentCompletions,
               let window,
               window > 0 else {
+            let state = HabitIdentityStateResolver.state(
+                from: nil,
+                hasRecentData: false
+            )
             return HabitIdentityOutput(
                 identityLine: rawIdentity,
-                behaviourLine: "This is where the habit begins to take shape",
-                emotionalLine: nil
+                behaviourLine: "You’ve shown up 0 of the last 7 days",
+                emotionalLine: HabitIdentityStateFormatter.detailLine(state)
             )
         }
 
+        let state = HabitIdentityStateResolver.state(
+            from: completionRate,
+            hasRecentData: recentCompletions > 0
+        )
         let behaviourLine = "You’ve shown up \(recentCompletions) of the last \(window) days"
-
-        if completionRate >= 0.7 {
-            return HabitIdentityOutput(
-                identityLine: rawIdentity,
-                behaviourLine: behaviourLine,
-                emotionalLine: "This is becoming part of who you are"
-            )
-        }
-
-        if completionRate >= 0.4 {
-            return HabitIdentityOutput(
-                identityLine: rawIdentity,
-                behaviourLine: behaviourLine,
-                emotionalLine: "You’re building this identity — keep going"
-            )
-        }
 
         return HabitIdentityOutput(
             identityLine: rawIdentity,
             behaviourLine: behaviourLine,
-            emotionalLine: "This habit supports the person you want to be"
+            emotionalLine: HabitIdentityStateFormatter.detailLine(state)
         )
     }
 }

@@ -13,7 +13,7 @@ final class WidgetDataStore {
     static let suiteName = "group.ma.cadence.shared"
     static let key = "widget_habits"
     static let widgetKind = "HabitsWidget"
-    static let momentumWidgetKind = "HabitMomentumWidget"
+    static let identityStateWidgetKind = "HabitIdentityStateWidget"
     static let focusWidgetKind = "HabitFocusWidget"
     static let consistencyWidgetKind = "HabitConsistencyWidget"
 
@@ -74,7 +74,7 @@ final class WidgetDataStore {
                 hasActivityToday: habit.hasActivityToday,
                 iconName: habit.iconName,
                 colorHex: habit.colorHex,
-                momentumScore: habit.momentumScore,
+                identityState: habit.identityState,
                 heatmapAggregationKind: habit.heatmapAggregationKind,
                 recentActivity: habit.recentActivity
             )

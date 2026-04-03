@@ -158,7 +158,7 @@ enum HabitInsightsCard: Identifiable {
     case overview(HabitInsightsOverviewBlock)
     case achievement(HabitInsightsAchievementBlock)
     case goalPace(HabitInsightsGoalPaceBlock)
-    case momentum(HabitInsightsMomentumBlock)
+    case identityState(HabitInsightsIdentityStateBlock)
     case performanceSignals(HabitInsightsPerformanceSignalsBlock)
     case consistency(HabitInsightsConsistencyBlock)
     case hero(HabitInsightsHeroBlock)
@@ -179,8 +179,8 @@ enum HabitInsightsCard: Identifiable {
             return "achievement"
         case .goalPace:
             return "goal-pace"
-        case .momentum:
-            return "momentum"
+        case .identityState:
+            return "identity-state"
         case .performanceSignals:
             return "performance-signals"
         case .consistency:
@@ -221,13 +221,9 @@ struct HabitInsightsAchievementBlock {
     let progressRatio: Double
 }
 
-struct HabitInsightsMomentumBlock {
-    let score: Int
-    let momentumLabel: String
-    let currentStreakText: String
-    let longestStreakText: String
-    let paceText: String
-    let supportingText: String
+struct HabitInsightsIdentityStateBlock {
+    let state: HabitIdentityState
+    let line: String
 }
 
 struct HabitInsightsConsistencyBlock {

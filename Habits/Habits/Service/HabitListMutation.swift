@@ -11,10 +11,12 @@ func mapToWidgetHabits(
     habits.map { habit in
         let widgetGoalType = habit.widgetGoalTypeForWidget
         let hasActivityToday = !habit.logs(on: referenceDate, calendar: calendar).isEmpty
-        let momentumScore = MomentumScoreService(
+        let identitySnapshot = HabitIdentityStateResolver.recentSnapshot(
+            for: habit,
             calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ).score(for: habit, now: referenceDate)
+            now: referenceDate,
+            windowDays: 7
+        )
         let mappedProgress = habit.widgetProgressForWidget(
             referenceDate: referenceDate,
             calendar: calendar,
@@ -39,7 +41,7 @@ func mapToWidgetHabits(
             hasActivityToday: hasActivityToday,
             iconName: habit.iconName,
             colorHex: habit.colorHex,
-            momentumScore: momentumScore,
+            identityState: widgetIdentityState(from: identitySnapshot.state),
             heatmapAggregationKind: habit.widgetHeatmapAggregationKind,
             recentActivity: habit.widgetRecentActivity(
                 referenceDate: referenceDate,
@@ -62,7 +64,7 @@ func mapToWidgetHabits(
                 hasActivityToday: hasActivityToday,
                 iconName: widgetHabit.iconName,
                 colorHex: widgetHabit.colorHex,
-                momentumScore: widgetHabit.momentumScore,
+                identityState: widgetHabit.identityState,
                 heatmapAggregationKind: widgetHabit.heatmapAggregationKind,
                 recentActivity: widgetHabit.recentActivity
             )
@@ -171,7 +173,7 @@ enum WidgetDataSync {
         if didWrite {
             let widgetKinds = [
                 WidgetDataStore.widgetKind,
-                WidgetDataStore.momentumWidgetKind,
+                WidgetDataStore.identityStateWidgetKind,
                 WidgetDataStore.focusWidgetKind,
                 WidgetDataStore.consistencyWidgetKind,
             ]
@@ -187,6 +189,19 @@ enum WidgetDataSync {
         }
 
         return didWrite
+    }
+}
+
+private func widgetIdentityState(from state: HabitIdentityState) -> WidgetHabitIdentityState {
+    switch state {
+    case .starting:
+        return .starting
+    case .building:
+        return .building
+    case .holding:
+        return .holding
+    case .returning:
+        return .returning
     }
 }
 

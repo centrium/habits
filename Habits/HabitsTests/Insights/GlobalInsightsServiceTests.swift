@@ -121,7 +121,7 @@ final class GlobalInsightsServiceTests: XCTestCase {
         let snapshot = makeService().snapshot(for: [strong, atRisk, filler, nearGoal], now: now)
 
         XCTAssertEqual(snapshot?.topHabits.map(\.name), ["At Risk", "Filler", "Strong"])
-        XCTAssertEqual(snapshot?.topHabits.map(\.statusLabel), ["Needs attention", "Needs attention", "Strong"])
+        XCTAssertEqual(snapshot?.topHabits.map(\.statusLabel), ["Starting", "Starting", "Holding"])
     }
 
     func testGreigProjectionUsesMonthlyCompletedSessionsAndWeeklyLift() {

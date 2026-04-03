@@ -58,13 +58,6 @@ struct HabitInsightsEngine {
             weekStartPreference: weekStartPreference,
             now: now
         ).streak
-        let momentumBreakdown = MomentumScoreService(
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ).breakdown(
-            for: habit,
-            now: now
-        )
         let streakService = StreakService(
             calendar: calendar,
             weekStartPreference: weekStartPreference
@@ -141,6 +134,12 @@ struct HabitInsightsEngine {
             statusText: statusText,
             now: now
         )
+        let recentCompletionRate = foundation.achievement.completionRatio
+            ?? foundation.consistency.activeDayRatio
+        let identityState = HabitIdentityStateResolver.state(
+            from: recentCompletionRate,
+            hasRecentData: (foundation.activitySummary?.entriesThisWeek ?? 0) > 0
+        )
         let weeklyRhythmBlock = weeklyRhythmBlock(
             for: habit,
             calendar: calendar,
@@ -149,7 +148,6 @@ struct HabitInsightsEngine {
         let greigModeBlock = greigModeBlock(
             for: habit,
             foundation: foundation,
-            momentum: momentumBreakdown,
             calendar: calendar,
             weekStartPreference: weekStartPreference,
             now: now
@@ -219,20 +217,10 @@ struct HabitInsightsEngine {
         }
 
         cards.append(
-            .momentum(
-                HabitInsightsMomentumBlock(
-                    score: momentumBreakdown.score,
-                    momentumLabel: momentumBreakdown.momentumLabel,
-                    currentStreakText: momentumPrimaryText(
-                        current: streakSnapshot.current,
-                        loggedToday: loggedToday
-                    ),
-                    longestStreakText: momentumBestText(
-                        current: streakSnapshot.current,
-                        longest: streakSnapshot.longest
-                    ),
-                    paceText: momentumTrendText(momentumBreakdown.score),
-                    supportingText: momentumSupportingSentence(momentumBreakdown)
+            .identityState(
+                HabitInsightsIdentityStateBlock(
+                    state: identityState,
+                    line: HabitIdentityStateFormatter.insightLine(identityState)
                 )
             )
         )
@@ -393,7 +381,7 @@ struct HabitInsightsEngine {
                 }
                 return "\(remainingText) remaining this \(habit.goalPeriod.unit)"
             }
-            return "A small check-in this \(habit.goalPeriod.unit) can rebuild momentum"
+            return "A small check-in this \(habit.goalPeriod.unit) can help you return to this routine"
         }()
 
         return CoachingTemplate(
@@ -644,54 +632,6 @@ struct HabitInsightsEngine {
         return "No entries this week yet"
     }
 
-    private static func momentumPrimaryText(
-        current: Int,
-        loggedToday: Bool
-    ) -> String {
-        if current >= 2 {
-            return "🔥 \(current)-day streak"
-        }
-        if loggedToday {
-            return "Logged today"
-        }
-        return "No active streak"
-    }
-
-    private static func momentumBestText(
-        current: Int,
-        longest: Int
-    ) -> String {
-        guard longest > 0 else { return "" }
-        if current == longest, current >= 2 {
-            return "You're matching your best streak"
-        }
-        return "Best: \(longest)-day streak"
-    }
-
-    private static func momentumTrendText(
-        _ score: Int
-    ) -> String {
-        PerformanceSignalsCalculator.momentumExplanation(for: Double(score))
-    }
-
-    private static func momentumSupportingSentence(
-        _ breakdown: MomentumBreakdown
-    ) -> String {
-        let completionLine = "You've completed \(breakdown.completedDays) of the last \(breakdown.totalDays) days"
-        guard breakdown.streak > 0 else {
-            return "\(completionLine)."
-        }
-
-        return "\(completionLine), with a \(breakdown.streak)-\(pluralized(unit: "day", count: breakdown.streak)) streak."
-    }
-
-    private static func pluralized(
-        unit: String,
-        count: Int
-    ) -> String {
-        count == 1 ? unit : "\(unit)s"
-    }
-
     private static func shouldUseCompletionRatios(
         mode: HabitInsightMode
     ) -> Bool {
@@ -751,12 +691,12 @@ struct HabitInsightsEngine {
             return "You're building consistency"
         }
         if last > previous + epsilon {
-            return isOpenEnded ? "A quick check-in can keep this routine growing" : "You're gaining momentum each month"
+            return isOpenEnded ? "A quick check-in can keep this routine growing" : "You're strengthening this routine each month"
         }
         if abs(last - previous) <= epsilon {
             return "Keep this steady rhythm going"
         }
-        return "A quick check-in could rebuild momentum"
+        return "A quick check-in could support your return to this routine"
     }
 
     private static func goalPaceBlock(
@@ -894,7 +834,6 @@ struct HabitInsightsEngine {
     private static func greigModeBlock(
         for habit: Habit,
         foundation: HabitInsightSnapshot,
-        momentum _: MomentumBreakdown,
         calendar: Calendar,
         weekStartPreference _: WeekStartPreference,
         now: Date
@@ -1007,7 +946,7 @@ struct HabitInsightsEngine {
         )
 
         if isOpenEnded || !habit.hasGoal {
-            return "A quick entry \(when) would keep your momentum going."
+            return "A quick entry \(when) would keep this routine steady."
         }
 
         if habit.goalType == .cumulative, CurrencyDetection.detect(unit: habit.trimmedUnit).isCurrency {

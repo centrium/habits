@@ -38,12 +38,12 @@ struct HabitEntityQuery: EntityQuery {
 
 struct HabitSelectionIntent: AppIntent, WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "Habit Selection"
-    static let description = IntentDescription("Choose which habit the momentum widget should display.")
+    static let description = IntentDescription("Choose which habit the identity state widget should display.")
 
     @Parameter(title: "Habit")
     var habit: HabitEntity?
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Show momentum for \(\.$habit)")
+        Summary("Show identity state for \(\.$habit)")
     }
 }

@@ -12,7 +12,7 @@ import SwiftUI
 struct HabitsWidgetBundle: WidgetBundle {
     var body: some Widget {
         HabitsWidget()
-        HabitMomentumWidget()
+        HabitIdentityStateWidget()
         HabitFocusWidget()
         HabitConsistencyWidget()
         HabitsWidgetControl()

@@ -112,7 +112,7 @@ final class GreigInsightServiceTests: XCTestCase {
         XCTAssertEqual(insight?.title, "You've been consistent recently")
         XCTAssertTrue(insight?.body?.contains("7 of the last 8 days") ?? false)
         XCTAssertTrue(insight?.body?.contains("7-day streak") ?? false)
-        XCTAssertTrue(insight?.body?.contains("Log today to keep that momentum going.") ?? false)
+        XCTAssertTrue(insight?.body?.contains("Log today to keep this routine steady.") ?? false)
     }
 
     func testHighCompletionRateIsStrongConsistency() {

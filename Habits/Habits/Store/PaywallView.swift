@@ -143,7 +143,7 @@ struct PaywallView: View {
                 feature: .advancedInsights,
                 icon: "sparkles",
                 title: "Advanced Insights",
-                description: "Understand momentum, risk, and pattern strength."
+                description: "Understand identity state, risk, and pattern strength."
             ),
             BenefitContent(
                 feature: .fullHeatmapHistory,
@@ -197,7 +197,7 @@ struct PaywallView: View {
             return PreviewContent(
                 kind: .advancedInsights,
                 title: "Insights Preview",
-                rows: ["Momentum Score", "Habit Strength", "Risk Indicator"]
+                rows: ["Identity Signal", "Habit Strength", "Risk Indicator"]
             )
         case .unlimitedHabits:
             return PreviewContent(

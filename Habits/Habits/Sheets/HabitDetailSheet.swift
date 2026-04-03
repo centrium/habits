@@ -273,22 +273,22 @@ struct HabitDetailSheet: View {
         let sectionSpacing = CadenceTokens.Space.lg
         let sectionCornerRadius = CadenceTokens.Surface.cardCornerRadius
         let accent = CadenceTokens.Color.accent(for: habit)
-        let heroStatus = heroCenterStatusText(progressSnapshot: progressSnapshot)
-        let momentum = momentumSummary()
+        let identityState = identityStateSummary()
+        let heroStatus = heroCenterStatusText(identityState: identityState.state)
         let logCount = habit.logs.count
         let isLowDataActivityState = logCount == 0
         let showsProgressSummary = logCount > 0 && progressSnapshot != nil
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
-        let heroSupportingText = heroSupportingInsightText(momentum: momentum)
+        let heroSupportingText = heroSupportingInsightText(identityState: identityState)
         let computedIdentityNarrative = identityNarrative(
             logCount: logCount,
-            activeDays: momentum.activeDays
+            activeDays: identityState.activeDays
         )
         let identityNarrative = displayedIdentityNarrative ?? computedIdentityNarrative
         let identityStrength = identityStrength(
             logCount: logCount,
-            activeDays: momentum.activeDays
+            activeDays: identityState.activeDays
         )
 
         ScrollView {
@@ -403,7 +403,7 @@ struct HabitDetailSheet: View {
                             onSelectDay: { _ in },
                             onTapLockedDay: { _ in },
                             isCompact: true,
-                            showsMomentumSummary: false
+                            showsIdentityStateSummary: false
                         )
                         .opacity(isLowDataActivityState ? 0.7 : 1)
 
@@ -419,34 +419,6 @@ struct HabitDetailSheet: View {
                 .buttonStyle(.plain)
                 .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 112, alignment: .topLeading)
-                .cadenceSurface(cornerRadius: sectionCornerRadius)
-                .padding(.horizontal, sectionPadding)
-
-                HStack(alignment: .top, spacing: CadenceTokens.Space.md) {
-                    VStack(alignment: .leading, spacing: CadenceTokens.Space.sm - 2) {
-                        Text("Momentum")
-                            .font(CadenceTokens.Typography.supporting.weight(.semibold))
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-                        Text(momentum.title)
-                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                            .foregroundStyle(momentumTitleColor(for: momentum.state))
-
-                        Text(momentum.detail)
-                            .font(CadenceTokens.Typography.supporting)
-                            .foregroundStyle(momentumDetailColor(for: momentum.state))
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: CadenceTokens.Space.sm)
-
-                    Image(systemName: momentum.symbolName)
-                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                        .foregroundStyle(momentumIconColor(for: momentum.state))
-                        .padding(.top, CadenceTokens.Space.xs / 2)
-                }
-                .padding(CadenceTokens.Space.lg)
-                .frame(minHeight: 82, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
 
@@ -605,126 +577,27 @@ struct HabitDetailSheet: View {
         return "Logging for \(shortDate)"
     }
 
-    private func heroCenterStatusText(
-        progressSnapshot: ProgressAsOfSnapshot?
-    ) -> String {
-        if let progressSnapshot, progressSnapshot.current > progressSnapshot.target {
-            return "Beyond target"
-        }
-
-        if isCompleteForSelectedDate {
-            return "On track"
-        }
-
-        let activeDays = momentumSummary().activeDays
-        if activeDays >= 3 {
-            return "Building momentum"
-        }
-
-        return "Ready to log"
+    private func heroCenterStatusText(identityState: HabitIdentityState) -> String {
+        HabitIdentityStateFormatter.shortLabel(identityState)
     }
 
-    private func momentumSummary() -> (title: String, detail: String, symbolName: String, activeDays: Int, state: MomentumState) {
-        let today = calculationCalendar.startOfDay(for: Date())
-        let range: [Date] = (0..<7).compactMap {
-            calculationCalendar.date(byAdding: .day, value: -$0, to: today)
-        }
-        let rangeSet = Set(range.map { calculationCalendar.startOfDay(for: $0) })
-        let metrics = habitLogService.dayMetrics(for: habit, on: range)
-        let activeDays = range.reduce(0) { count, day in
-            let intensity = metrics[day]?.intensity ?? 0
-            return count + (intensity > 0 ? 1 : 0)
-        }
-        let totalLogsInPeriod = habit.logs.reduce(0) { count, log in
-            guard rangeSet.contains(calculationCalendar.startOfDay(for: log.day)),
-                  log.frequencyContribution > 0 else {
-                return count
-            }
-            return count + 1
-        }
-
-        if totalLogsInPeriod == 0 {
-            return ("Not started", "Log today to get started", "minus", activeDays, .noData)
-        }
-
-        let title: String = {
-            switch activeDays {
-            case 5...7:
-                return "On track"
-            case 3...4:
-                return "Building"
-            default:
-                return "Slipping"
-            }
-        }()
-
-        let symbolName: String = {
-            switch title {
-            case "On track":
-                return "arrow.up.right"
-            case "Building":
-                return "waveform.path.ecg"
-            default:
-                return "arrow.down.right"
-            }
-        }()
-
-        let state: MomentumState = {
-            switch title {
-            case "On track":
-                return .onTrack
-            case "Building":
-                return .building
-            default:
-                return .slipping
-            }
-        }()
-
-        return (title, "\(activeDays) of last 7 days", symbolName, activeDays, state)
+    private func identityStateSummary() -> HabitIdentityStateSnapshot {
+        HabitIdentityStateResolver.recentSnapshot(
+            for: habit,
+            calendar: calculationCalendar,
+            now: Date(),
+            windowDays: 7
+        )
     }
 
     private func heroSupportingInsightText(
-        momentum: (title: String, detail: String, symbolName: String, activeDays: Int, state: MomentumState)
+        identityState: HabitIdentityStateSnapshot
     ) -> String? {
-        guard !habit.logs.isEmpty else {
-            return "You’re just getting started"
+        if habit.logs.isEmpty {
+            return HabitIdentityStateFormatter.insightLine(.starting)
         }
 
-        if momentum.activeDays == 0 {
-            return "0 of 7 days"
-        }
-
-        return momentum.detail
-    }
-
-    private enum MomentumState {
-        case noData
-        case onTrack
-        case building
-        case slipping
-    }
-
-    private func momentumTitleColor(for state: MomentumState) -> Color {
-        switch state {
-        case .noData:
-            return CadenceTokens.Color.Text.secondary
-        case .onTrack:
-            return CadenceTokens.Color.Text.secondary
-        case .building:
-            return CadenceTokens.Color.State.success.opacity(0.76)
-        case .slipping:
-            return CadenceTokens.Color.State.warning.opacity(0.72)
-        }
-    }
-
-    private func momentumDetailColor(for state: MomentumState) -> Color {
-        _ = state
-        return CadenceTokens.Color.Text.secondary
-    }
-
-    private func momentumIconColor(for state: MomentumState) -> Color {
-        _ = state
-        return CadenceTokens.Color.Text.tertiary
+        return "\(identityState.activeDays) of last \(identityState.windowDays) days"
     }
 
     private func presentManualEntry(for date: Date) {
@@ -893,24 +766,28 @@ struct HabitDetailSheet: View {
     ) -> HabitIdentityCard.Strength {
         guard logCount > 0 else { return .neutral }
 
-        let rate = Double(activeDays) / 7.0
-        if rate >= 0.7 {
+        let state = HabitIdentityStateResolver.state(
+            from: Double(activeDays) / 7.0,
+            hasRecentData: activeDays > 0
+        )
+        switch state {
+        case .holding:
             return .strong
-        }
-        if rate >= 0.4 {
+        case .building:
             return .neutral
+        case .returning, .starting:
+            return .weak
         }
-        return .weak
     }
 
     private func syncIdentityNarrative(animated: Bool, delay: TimeInterval = 0) {
         identityNarrativeUpdateWorkItem?.cancel()
 
         let workItem = DispatchWorkItem {
-            let momentum = momentumSummary()
+            let identityState = identityStateSummary()
             let output = identityNarrative(
                 logCount: habit.logs.count,
-                activeDays: momentum.activeDays
+                activeDays: identityState.activeDays
             )
 
             if animated {

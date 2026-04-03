@@ -489,7 +489,7 @@ private extension GreigInsightService {
 
     func genericNudge(loggedToday: Bool) -> String? {
         guard !loggedToday else { return nil }
-        return "Log today to keep that momentum going."
+        return "Log today to keep this routine steady."
     }
 
     func openConsistencyNudge(
@@ -499,7 +499,7 @@ private extension GreigInsightService {
         guard !loggedToday else { return nil }
         switch state {
         case .strongConsistency:
-            return "Log today to keep that momentum going."
+            return "Log today to keep this routine steady."
         case .buildingConsistency:
             return "Log today to reinforce this routine."
         case .inconsistent:

@@ -57,11 +57,11 @@ private struct GlobalInsightsHeroSection: View {
                 ProSwoosh(size: .small)
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
-                    metricLine(label: "Momentum", value: hero.momentum)
+                    metricLine(label: "Identity", value: HabitIdentityStateFormatter.shortLabel(hero.dominantState))
                     metricLine(label: "Consistency", value: hero.consistency)
                 }
 
-                Text(hero.statusText)
+                Text(hero.summaryText)
                     .font(CadenceTokens.Typography.sectionHeader)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineSpacing(2)
@@ -70,16 +70,20 @@ private struct GlobalInsightsHeroSection: View {
         }
     }
 
-    private func metricLine(label: String, value: Int) -> some View {
+    private func metricLine(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
                 .font(CadenceTokens.Typography.sectionHeader)
                 .foregroundStyle(CadenceTokens.Color.Text.tertiary)
 
-            Text("\(value)%")
+            Text(value)
                 .font(.system(size: 38, weight: .bold, design: .rounded))
                 .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
         }
+    }
+
+    private func metricLine(label: String, value: Int) -> some View {
+        metricLine(label: label, value: "\(value)%")
     }
 }
 
@@ -148,10 +152,12 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 
     private func statusColor(for label: String) -> Color {
         switch label {
-        case "Needs attention":
-            return CadenceTokens.Color.State.warning
-        case "Strong":
+        case "Holding":
             return CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
+        case "Returning":
+            return CadenceTokens.Color.Text.secondary.opacity(0.72)
+        case "Starting":
+            return CadenceTokens.Color.Text.tertiary
         default:
             return CadenceTokens.Color.Text.primary
         }

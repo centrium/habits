@@ -35,7 +35,7 @@ struct WidgetHabit: Codable, Identifiable {
     let hasActivityToday: Bool
     let iconName: String?
     let colorHex: String?
-    let momentumScore: Int
+    let identityState: WidgetHabitIdentityState
     let heatmapAggregationKind: WidgetHeatmapAggregationKind
     let recentActivity: [WidgetActivitySample]
 
@@ -54,13 +54,14 @@ struct WidgetHabit: Codable, Identifiable {
         case hasActivityToday
         case iconName
         case colorHex
-        case momentumScore
+        case identityState
         case heatmapAggregationKind
         case recentActivity
 
         // Legacy payload support
         case progressFraction
         case usesActivityIndicator
+        case momentumScore
     }
 
     init(
@@ -73,7 +74,7 @@ struct WidgetHabit: Codable, Identifiable {
         hasActivityToday: Bool,
         iconName: String?,
         colorHex: String?,
-        momentumScore: Int = 0,
+        identityState: WidgetHabitIdentityState = .starting,
         heatmapAggregationKind: WidgetHeatmapAggregationKind = .completion,
         recentActivity: [WidgetActivitySample] = []
     ) {
@@ -86,7 +87,7 @@ struct WidgetHabit: Codable, Identifiable {
         self.hasActivityToday = hasActivityToday
         self.iconName = iconName
         self.colorHex = colorHex
-        self.momentumScore = max(momentumScore, 0)
+        self.identityState = identityState
         self.heatmapAggregationKind = heatmapAggregationKind
         self.recentActivity = recentActivity
 
@@ -118,7 +119,12 @@ struct WidgetHabit: Codable, Identifiable {
                 progress: progress,
                 isCompleteToday: isCompleteToday
             )
-            momentumScore = try container.decodeIfPresent(Int.self, forKey: .momentumScore) ?? 0
+            if let decodedIdentityState = try container.decodeIfPresent(WidgetHabitIdentityState.self, forKey: .identityState) {
+                identityState = decodedIdentityState
+            } else {
+                let legacyMomentumScore = try container.decodeIfPresent(Int.self, forKey: .momentumScore) ?? 0
+                identityState = WidgetHabitIdentityState.legacyMapping(fromMomentumScore: legacyMomentumScore)
+            }
             heatmapAggregationKind = try container.decodeIfPresent(
                 WidgetHeatmapAggregationKind.self,
                 forKey: .heatmapAggregationKind
@@ -152,7 +158,7 @@ struct WidgetHabit: Codable, Identifiable {
             progress = nil
             hasActivityToday = isCompleteToday
         }
-        momentumScore = 0
+        identityState = .starting
         heatmapAggregationKind = .completion
         recentActivity = []
 
@@ -180,7 +186,7 @@ struct WidgetHabit: Codable, Identifiable {
         try container.encode(hasActivityToday, forKey: .hasActivityToday)
         try container.encodeIfPresent(iconName, forKey: .iconName)
         try container.encodeIfPresent(colorHex, forKey: .colorHex)
-        try container.encode(momentumScore, forKey: .momentumScore)
+        try container.encode(identityState, forKey: .identityState)
         try container.encode(heatmapAggregationKind, forKey: .heatmapAggregationKind)
         try container.encode(recentActivity, forKey: .recentActivity)
     }
@@ -220,36 +226,33 @@ struct WidgetHabit: Codable, Identifiable {
     }
 }
 
-enum WidgetMomentumState: String, Equatable {
-    case slipping = "Slipping"
-    case steady = "Steady"
+enum WidgetHabitIdentityState: String, Codable, Equatable {
+    case starting = "Starting"
     case building = "Building"
+    case holding = "Holding"
+    case returning = "Returning"
 }
 
-enum WidgetMomentumDirection: Equatable {
-    case improving(deltaPercent: Int)
-    case stable
-    case declining(deltaPercent: Int)
-    case unavailable
-
-    var summaryText: String {
-        switch self {
-        case .improving(let deltaPercent):
-            return "↑ \(deltaPercent)% vs last 7 days"
-        case .stable:
-            return "No change vs last 7 days"
-        case .declining(let deltaPercent):
-            return "↓ \(deltaPercent)% vs last 7 days"
-        case .unavailable:
-            return "Need 14 days"
+private extension WidgetHabitIdentityState {
+    static func legacyMapping(fromMomentumScore score: Int) -> WidgetHabitIdentityState {
+        switch max(score, 0) {
+        case 70...:
+            return .holding
+        case 40..<70:
+            return .building
+        case 1..<40:
+            return .returning
+        default:
+            return .starting
         }
     }
 }
 
-struct WidgetMomentumSummary: Equatable {
-    let score: Int
-    let state: WidgetMomentumState
-    let direction: WidgetMomentumDirection
+struct WidgetIdentityStateSummary: Equatable {
+    let state: WidgetHabitIdentityState
+    let shortLabel: String
+    let insightLine: String
+    let recentCompletionText: String
 }
 
 struct WidgetHeatmapDay: Equatable {
@@ -455,74 +458,35 @@ private extension WidgetHabit {
 }
 
 extension WidgetHabit {
-    var momentumSummary: WidgetMomentumSummary {
-        let score = max(momentumScore, 0)
-        let direction = momentumDirection
-        return WidgetMomentumSummary(
-            score: score,
-            state: momentumState(for: score, direction: direction),
-            direction: direction
+    var identityStateSummary: WidgetIdentityStateSummary {
+        WidgetIdentityStateSummary(
+            state: identityState,
+            shortLabel: identityState.rawValue,
+            insightLine: WidgetHabitIdentityStateCopy.insightLine(identityState),
+            recentCompletionText: "\(recentCompletionCount(days: 7)) of last 7 days"
         )
+    }
+
+    func recentCompletionCount(days: Int) -> Int {
+        let sorted = recentActivity.sorted { $0.date > $1.date }
+        return Array(sorted.prefix(max(days, 0))).reduce(0) { count, sample in
+            count + (sample.value > 0 ? 1 : 0)
+        }
     }
 }
 
-private extension WidgetHabit {
-    func momentumState(for score: Int, direction: WidgetMomentumDirection) -> WidgetMomentumState {
-        switch direction {
-        case .improving:
-            return .building
-        case .stable:
-            return .steady
-        case .declining:
-            return .slipping
-        case .unavailable:
-            switch score {
-            case 75...:
-                return .building
-            case 40...:
-                return .steady
-            default:
-                return .slipping
-            }
+enum WidgetHabitIdentityStateCopy {
+    static func insightLine(_ state: WidgetHabitIdentityState) -> String {
+        switch state {
+        case .starting:
+            return "This habit is just getting started"
+        case .building:
+            return "You’re building consistency with this habit"
+        case .holding:
+            return "This habit is holding strong"
+        case .returning:
+            return "You’re in the process of returning to this habit"
         }
-    }
-
-    var momentumDirection: WidgetMomentumDirection {
-        let comparisonSamples = Array(recentActivity.sorted { $0.date < $1.date }.suffix(14))
-        guard comparisonSamples.count >= 14 else { return .unavailable }
-
-        let previousWeek = Array(comparisonSamples.prefix(7))
-        let latestWeek = Array(comparisonSamples.suffix(7))
-
-        let peakActivity = comparisonSamples.map { max(0, $0.value) }.max() ?? 0
-        guard peakActivity > 0 else { return .stable }
-
-        let previousAverage = normalizedAverageActivity(for: previousWeek, peakActivity: peakActivity)
-        let latestAverage = normalizedAverageActivity(for: latestWeek, peakActivity: peakActivity)
-        let deltaPercent = Int(((latestAverage - previousAverage) * 100).rounded())
-
-        if deltaPercent >= 3 {
-            return .improving(deltaPercent: deltaPercent)
-        }
-
-        if deltaPercent <= -3 {
-            return .declining(deltaPercent: abs(deltaPercent))
-        }
-
-        return .stable
-    }
-
-    func normalizedAverageActivity(
-        for samples: [WidgetActivitySample],
-        peakActivity: Double
-    ) -> Double {
-        guard !samples.isEmpty, peakActivity > 0 else { return 0 }
-
-        let total = samples.reduce(0.0) { partialResult, sample in
-            partialResult + min(max(sample.value, 0), peakActivity)
-        }
-
-        return total / (Double(samples.count) * peakActivity)
     }
 }
 

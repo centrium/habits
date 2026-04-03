@@ -110,8 +110,8 @@ private struct HabitInsightsCardsRenderer: View {
             let card = viewModel.cards[index]
             if case .achievement(let achievement) = card,
                index + 1 < viewModel.cards.count,
-               case .momentum(let momentum) = viewModel.cards[index + 1] {
-                rows.append(.paired(achievement, momentum))
+               case .identityState(let identityState) = viewModel.cards[index + 1] {
+                rows.append(.paired(achievement, identityState))
                 index += 2
                 continue
             }
@@ -128,11 +128,11 @@ private struct HabitInsightsCardsRenderer: View {
         switch row {
         case .single(let card):
             cardView(card)
-        case .paired(let achievement, let momentum):
+        case .paired(let achievement, let identityState):
             HStack(alignment: .top, spacing: 16) {
                 AchievementCardView(block: achievement, accent: accent, minHeight: 210)
                     .frame(maxWidth: .infinity)
-                MomentumCardView(block: momentum, minHeight: 210)
+                IdentityStateCardView(block: identityState, minHeight: 210)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -147,8 +147,8 @@ private struct HabitInsightsCardsRenderer: View {
             AchievementCardView(block: block, accent: accent)
         case .goalPace(let block):
             GoalPaceCardView(block: block, accent: accent, hasAnimatedIn: hasAnimatedIn)
-        case .momentum(let block):
-            MomentumCardView(block: block)
+        case .identityState(let block):
+            IdentityStateCardView(block: block)
         case .performanceSignals(let block):
             PerformanceSignalsCardView(block: block)
         case .consistency(let block):
@@ -177,7 +177,7 @@ private struct HabitInsightsCardsRenderer: View {
 
 private enum HabitInsightsRenderRow {
     case single(HabitInsightsCard)
-    case paired(HabitInsightsAchievementBlock, HabitInsightsMomentumBlock)
+    case paired(HabitInsightsAchievementBlock, HabitInsightsIdentityStateBlock)
 }
 
 private struct AchievementCardView: View {
@@ -303,48 +303,37 @@ private struct AchievementCardView: View {
     }
 }
 
-private struct MomentumCardView: View {
-    let block: HabitInsightsMomentumBlock
+private struct IdentityStateCardView: View {
+    let block: HabitInsightsIdentityStateBlock
     var minHeight: CGFloat? = nil
 
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Momentum")
+                Text("Identity")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(block.score)")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.primary)
-                    Text(block.momentumLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                Text(block.currentStreakText)
-                    .font(.title3.weight(.bold))
+
+                Text(block.line)
+                    .font(.subheadline)
+                    .foregroundStyle(identityLineColor(for: block.state))
                     .fixedSize(horizontal: false, vertical: true)
-                VStack(alignment: .leading, spacing: 6) {
-                    if !block.longestStreakText.isEmpty {
-                        Text(block.longestStreakText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if minHeight == nil {
-                        Text(block.paceText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Text(block.supportingText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: minHeight, alignment: .topLeading)
+        }
+    }
+
+    private func identityLineColor(for state: HabitIdentityState) -> Color {
+        switch state {
+        case .holding:
+            return .primary
+        case .building:
+            return .secondary
+        case .returning:
+            return .secondary.opacity(0.86)
+        case .starting:
+            return .secondary.opacity(0.8)
         }
     }
 }

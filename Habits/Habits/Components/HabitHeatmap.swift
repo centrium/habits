@@ -22,7 +22,7 @@ struct HabitHeatmap: View {
     let onSelectDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
     let isCompact: Bool
-    let showsMomentumSummary: Bool
+    let showsIdentityStateSummary: Bool
 
     init(
         habit: Habit,
@@ -34,7 +34,7 @@ struct HabitHeatmap: View {
         onSelectDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void = { _ in },
         isCompact: Bool = false,
-        showsMomentumSummary: Bool = true
+        showsIdentityStateSummary: Bool = true
     ) {
         self.habit = habit
         self.service = service
@@ -45,7 +45,7 @@ struct HabitHeatmap: View {
         self.onSelectDay = onSelectDay
         self.onTapLockedDay = onTapLockedDay
         self.isCompact = isCompact
-        self.showsMomentumSummary = showsMomentumSummary
+        self.showsIdentityStateSummary = showsIdentityStateSummary
     }
 
     private var baseAccent: Color {
@@ -82,8 +82,8 @@ struct HabitHeatmap: View {
 
     var body: some View {
         if isCompact {
-            if showsMomentumSummary {
-                cadenceMomentumBlock
+            if showsIdentityStateSummary {
+                identityStateBlock
             } else {
                 compactHeatmap
             }
@@ -247,60 +247,49 @@ struct HabitHeatmap: View {
         return softAccent.opacity(colorScheme == .dark ? 0.68 : 0.58)
     }
     
-    private var cadenceMomentumBlock: some View {
+    private var identityStateBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-
             compactHeatmap
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(momentumInsight)
+                    Text(identityStateInsight)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                     Spacer()
                 }
 
-                Text(momentumLabel)
+                Text(HabitIdentityStateFormatter.shortLabel(identityStateSummary.state))
                     .font(.caption2)
-                    .foregroundStyle(momentumStatusColor)
+                    .foregroundStyle(identityStateColor(for: identityStateSummary.state))
             }
         }
     }
-    
-    private var momentumLabel: String {
-        let last7 = recentCompletionCount(days: 7)
 
-        switch last7 {
-        case 6...7: return "Locked in"
-        case 4...5: return "On track"
-        case 2...3: return "Picking up"
-        default: return "Falling off"
-        }
+    private var identityStateSummary: HabitIdentityStateSnapshot {
+        HabitIdentityStateResolver.recentSnapshot(
+            for: habit,
+            calendar: calendarProvider.calendar,
+            now: Date(),
+            windowDays: 7
+        )
     }
-    
-    private var momentumInsight: String {
-        let last7 = recentCompletionCount(days: 7)
-        return "\(last7) of last 7 days"
+
+    private var identityStateInsight: String {
+        "\(identityStateSummary.activeDays) of last \(identityStateSummary.windowDays) days"
     }
-    
-    private func recentCompletionCount(days: Int) -> Int {
-        let calendar = calendarProvider.calendar
-        let today = calendar.startOfDay(for: Date())
 
-        let range: [Date] = (0..<days).compactMap {
-            calendar.date(byAdding: .day, value: -$0, to: today)
+    private func identityStateColor(for state: HabitIdentityState) -> Color {
+        switch state {
+        case .holding:
+            return baseAccent.opacity(0.9)
+        case .building:
+            return CadenceTokens.Color.Text.secondary
+        case .returning:
+            return CadenceTokens.Color.Text.secondary.opacity(0.72)
+        case .starting:
+            return CadenceTokens.Color.Text.tertiary
         }
-
-        let metrics = service.dayMetrics(for: habit, on: range)
-
-        return range.reduce(0) { count, day in
-            let intensity = metrics[day]?.intensity ?? 0
-            return count + (intensity > 0 ? 1 : 0)
-        }
-    }
-    
-    private var momentumStatusColor: Color {
-        CadenceTokens.Color.Text.secondary
     }
 }

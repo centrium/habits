@@ -72,7 +72,7 @@ final class PaywallViewTests: XCTestCase {
         }
 
         XCTAssertEqual(previewDetails[0].0, .advancedInsights)
-        XCTAssertEqual(previewDetails[0].1, ["Momentum Score", "Habit Strength", "Risk Indicator"])
+        XCTAssertEqual(previewDetails[0].1, ["Identity Signal", "Habit Strength", "Risk Indicator"])
         XCTAssertEqual(previewDetails[1].0, .unlimitedHabits)
         XCTAssertEqual(previewDetails[1].1, ["Cadence 4", "Cadence 5", "Cadence 6"])
         XCTAssertEqual(previewDetails[2].0, .fullHeatmapHistory)

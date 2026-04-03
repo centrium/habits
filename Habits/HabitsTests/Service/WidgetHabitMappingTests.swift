@@ -145,7 +145,7 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertEqual(widgetHabit.goalType, .goal)
         XCTAssertEqual(widgetHabit.progress, 0)
         XCTAssertEqual(widgetHabit.goalProgress, 0)
-        XCTAssertEqual(widgetHabit.momentumScore, 0)
+        XCTAssertEqual(widgetHabit.identityState, .starting)
     }
 
     func testOpenEndedHabitUsesExplicitOpenEndedTypeWhenLoggedToday() throws {
@@ -245,11 +245,11 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertEqual(widgetHabit.goalType, .binary)
         XCTAssertNil(widgetHabit.progress)
         XCTAssertFalse(widgetHabit.hasActivityToday)
-        XCTAssertEqual(widgetHabit.momentumScore, 0)
+        XCTAssertEqual(widgetHabit.identityState, .starting)
         XCTAssertEqual(widgetHabit.name, "Read")
     }
 
-    func testMappedWidgetHabitIncludesMomentumScoreFromSharedService() throws {
+    func testMappedWidgetHabitIncludesIdentityStateFromSharedResolver() throws {
         let calendar = TestDateFactory.utcCalendar
         let date = TestDateFactory.referenceNow
         let habit = TestHabitFactory.frequency(
@@ -266,9 +266,7 @@ final class WidgetHabitMappingTests: XCTestCase {
             mapToWidgetHabits([habit], referenceDate: date, calendar: calendar).first
         )
 
-        let expectedScore = MomentumScoreService(calendar: calendar).score(for: habit, now: date)
-
-        XCTAssertEqual(widgetHabit.momentumScore, expectedScore)
+        XCTAssertEqual(widgetHabit.identityState, .building)
     }
 
     func testGoalWidgetHabitWithNonFiniteProgressNormalizesToZeroAndEncodes() throws {
