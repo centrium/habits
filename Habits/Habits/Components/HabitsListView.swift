@@ -46,6 +46,7 @@ struct HabitsListView: View {
     @State private var touchOffset: CGSize = .zero
     @State private var frames: [Habit.ID: CGRect] = [:]
     @State private var initialFrame: CGRect = .zero
+    @State private var isFABPressed: Bool = false
     
 
     init() {}
@@ -90,14 +91,11 @@ struct HabitsListView: View {
                                     ? CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
                                     : CadenceTokens.Color.Text.secondary
                             )
-                            .frame(width: 36, height: 36)
-                            .background {
-                                if isReordering {
-                                    Circle()
-                                        .fill(CadenceTokens.Color.accent(from: HabitColor.default.hex).tertiary)
-                                }
-                            }
+                            .frame(width: 34, height: 34)
+                            .padding(.horizontal, 4)
+                            .cadenceControlChrome()
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel(isReordering ? "Done reordering" : "Reorder habits")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -105,9 +103,9 @@ struct HabitsListView: View {
                         openGlobalInsights()
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                                .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
+                                Image(systemName: "sparkles")
+                                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                                    .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
 
                             if purchaseService.premiumStatus == .free {
                                 Image(systemName: "lock.fill")
@@ -115,6 +113,9 @@ struct HabitsListView: View {
                                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             }
                         }
+                        .frame(height: 34)
+                        .padding(.horizontal, 10)
+                        .cadenceControlChrome()
                     }
                     .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Global Insights")
@@ -123,36 +124,45 @@ struct HabitsListView: View {
                         SettingsView()
                     } label: {
                         Image(systemName: "gearshape")
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .frame(width: 34, height: 34)
+                            .padding(.horizontal, 4)
+                            .cadenceControlChrome()
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Settings")
                 }
 
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
+                        withAnimation(.easeOut(duration: 0.08)) {
+                            isFABPressed = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                isFABPressed = false
+                            }
+                        }
                         addHabit()
                     } label: {
-                        let accent = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
-
-                        Label("Add", systemImage: "plus")
-                            .font(CadenceTokens.Typography.body.weight(.semibold))
-                            .foregroundStyle(CadenceTokens.Color.Background.primary)
-                            .shadow(
-                                color: Color.black.opacity(0.25),
-                                radius: 0.8,
-                                y: 0.6
+                        Image(systemName: "plus")
+                            .font(.system(size: 27, weight: .medium))
+                            .foregroundStyle(CadenceTokens.Color.Text.primary)
+                            .frame(width: 50, height: 50)
+                            .background(
+                                Circle()
+                                    .fill(CadenceTokens.Color.Background.primary)
                             )
-                            .padding(.horizontal, CadenceTokens.Space.md)
-                            .padding(.vertical, CadenceTokens.Space.sm)
-                            .background {
-                                Capsule()
-                                    .fill(accent)
-                                    .overlay {
-                                        Capsule()
-                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                                    }
-                                    .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                             }
+                            .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                            .scaleEffect(isFABPressed ? 0.96 : 1)
+                            .animation(.easeOut(duration: 0.12), value: isFABPressed)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add habit")
 
                     Spacer()
                 }
@@ -169,6 +179,7 @@ struct HabitsListView: View {
                     }
                 }
         }
+        .cadenceSurface(accent: headerAccentColor)
 
         .environmentObject(userSettings)
         .onAppear {
@@ -367,6 +378,13 @@ struct HabitsListView: View {
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
         ).snapshot(for: habits, now: .now)?.stripSummary
+    }
+
+    private var headerAccentColor: Color {
+        if let firstHabit = habits.first {
+            return CadenceTokens.Color.accent(for: firstHabit).primary
+        }
+        return .systemAccent
     }
 
     private var lockedHabitSlot: some View {
@@ -683,12 +701,12 @@ private struct UpgradeHintRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: CadenceTokens.Space.sm) {
             Image(systemName: "sparkles")
-                .font(.footnote)
+                .font(CadenceTokens.Typography.microCopy)
 
             Text("Free accounts can track up to 3 habits. Upgrade to add unlimited habits.")
-                .font(.footnote)
+                .font(CadenceTokens.Typography.microCopy)
         }
-        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.85))
         .padding(.vertical, CadenceTokens.Space.xs)
     }
 }

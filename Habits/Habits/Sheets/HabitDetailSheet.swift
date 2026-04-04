@@ -88,6 +88,7 @@ struct HabitDetailSheet: View {
             progressRevision: progressRevision,
             earliestCalendarDate: earliestCalendarDate
         )
+        .cadenceSurface(accent: CadenceTokens.Color.accent(for: habit).primary)
         .navigationBarTitleDisplayMode(.large)
         .navigationTitle(habit.name)
         .toolbar {
@@ -114,6 +115,9 @@ struct HabitDetailSheet: View {
                                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
                         }
                     }
+                    .frame(height: 34)
+                    .padding(.horizontal, 10)
+                    .cadenceControlChrome()
                 }
                 .buttonStyle(TactileButtonStyle())
 
@@ -122,6 +126,9 @@ struct HabitDetailSheet: View {
                 } label: {
                     Image(systemName: "pencil")
                         .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .frame(width: 34, height: 34)
+                        .padding(.horizontal, 4)
+                        .cadenceControlChrome()
                 }
                 .buttonStyle(TactileButtonStyle())
 
@@ -228,6 +235,7 @@ struct HabitDetailSheet: View {
                 premiumHistoryGate: premiumHistoryGate,
                 calendar: calendar
             )
+            .cadenceSurface(accent: CadenceTokens.Color.accent(for: habit).primary)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("")
             .toolbar {
@@ -238,6 +246,9 @@ struct HabitDetailSheet: View {
                         Image(systemName: "sparkles")
                             .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                             .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
+                            .frame(width: 34, height: 34)
+                            .padding(.horizontal, 4)
+                            .cadenceControlChrome()
                     }
                     .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Insights")
@@ -247,6 +258,9 @@ struct HabitDetailSheet: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .frame(width: 34, height: 34)
+                            .padding(.horizontal, 4)
+                            .cadenceControlChrome()
                     }
                     .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Quick log")
@@ -255,6 +269,10 @@ struct HabitDetailSheet: View {
                         SettingsView()
                     } label: {
                         Image(systemName: "gearshape")
+                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                            .frame(width: 34, height: 34)
+                            .padding(.horizontal, 4)
+                            .cadenceControlChrome()
                     }
                     .accessibilityLabel("Settings")
                 }
@@ -381,7 +399,7 @@ struct HabitDetailSheet: View {
                 } label: {
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                         Text("Activity")
-                            .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                            .font(CadenceTokens.Typography.sectionHeader)
                             .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                         Text(
@@ -409,7 +427,7 @@ struct HabitDetailSheet: View {
 
                         HStack(spacing: 4) {
                             Text("See all activity →")
-                                .font(CadenceTokens.Typography.supporting)
+                                .font(CadenceTokens.Typography.microCopy)
                                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
                         }
                     }
@@ -457,7 +475,7 @@ struct HabitDetailSheet: View {
             VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
                     Text("History")
-                        .font(CadenceTokens.Typography.sectionHeader.weight(.bold))
+                        .font(CadenceTokens.Typography.sectionHeader)
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                     HStack(spacing: 4) {
@@ -669,7 +687,7 @@ struct HabitDetailSheet: View {
         ZStack {
             Text(text)
                 .id(id)
-                .font(CadenceTokens.Typography.supporting)
+                .font(CadenceTokens.Typography.body)
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
                 .lineLimit(1)
                 .transition(.opacity)
@@ -836,9 +854,9 @@ private struct InsightsInlineNudgeRow: View {
                     .opacity(0.52)
 
                 Text(text)
-                    .font(.caption2)
+                    .font(CadenceTokens.Typography.microCopy)
                     .lineLimit(1)
-                    .opacity(0.6)
+                    .opacity(0.85)
 
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
@@ -869,7 +887,8 @@ private struct HeroTopRow: View {
             VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
                 HStack(spacing: CadenceTokens.Space.sm) {
                     Text(habitName)
-                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .font(CadenceTokens.Typography.title)
+                        .tracking(CadenceTokens.Typography.titleTracking)
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .lineLimit(1)
 
@@ -885,7 +904,7 @@ private struct HeroTopRow: View {
                 }
 
                 Text(loggingContextText)
-                    .font(CadenceTokens.Typography.supporting)
+                    .font(CadenceTokens.Typography.body)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
             }
@@ -914,7 +933,7 @@ private struct HabitIdentityCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Identity")
-                    .font(.caption)
+                    .font(CadenceTokens.Typography.sectionHeader)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                 Text(output.identityLine)
@@ -930,8 +949,8 @@ private struct HabitIdentityCard: View {
 
                     if let emotionalLine = output.emotionalLine {
                         Text(emotionalLine)
-                            .font(.footnote)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.8))
+                            .font(CadenceTokens.Typography.microCopy)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.85))
                             .lineLimit(2)
                     }
                 }
@@ -1101,7 +1120,7 @@ private struct TodaySummarySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
             Text("Today")
-                .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                .font(CadenceTokens.Typography.sectionHeader)
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
             Text(summaryText)
@@ -1121,7 +1140,7 @@ private struct CompactHeatmapPreviewSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
             Text("Activity")
-                .font(CadenceTokens.Typography.supporting.weight(.semibold))
+                .font(CadenceTokens.Typography.sectionHeader)
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
             HabitHeatmap(
@@ -1230,6 +1249,9 @@ private struct HabitProgressSummary: View {
         return VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
             Text(headline)
                 .font(CadenceTokens.Typography.body)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.18), value: headline)
                 .lineLimit(1)
                 .minimumScaleFactor(0.95)
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
@@ -1259,7 +1281,7 @@ private struct HabitProgressSummary: View {
 
             if let overflowText, clampedOverflow > 0 {
                 Text(overflowText)
-                .font(CadenceTokens.Typography.supporting)
+                    .font(CadenceTokens.Typography.supporting)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
             }

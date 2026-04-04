@@ -221,6 +221,22 @@ struct HabitHeatmap: View {
                     .fill(cellColor(intensity: raw))
                     .frame(height: 14)
                     .overlay {
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(
+                                raw > 0.001
+                                    ? softAccent.opacity(0.4)
+                                    : Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.1),
+                                lineWidth: 1
+                            )
+                    }
+                    .shadow(
+                        color: raw > 0.001
+                            ? softAccent.opacity(colorScheme == .dark ? 0.2 : 0.25)
+                            : .clear,
+                        radius: raw > 0.001 ? 4 : 0,
+                        y: raw > 0.001 ? 1 : 0
+                    )
+                    .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)
                                 .stroke(baseAccent.opacity(0.78), lineWidth: 1.5)
@@ -235,9 +251,9 @@ struct HabitHeatmap: View {
 
         if clamped <= 0.001 {
             if colorScheme == .dark {
-                return Color.white.opacity(0.10)
+                return Color.white.opacity(0.12)
             }
-            return Color(uiColor: .secondarySystemFill)
+            return softAccent.opacity(0.14)
         }
 
         if clamped >= 0.999 {

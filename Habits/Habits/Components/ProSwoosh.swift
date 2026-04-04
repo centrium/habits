@@ -143,33 +143,33 @@ struct CadenceProWordmark: View {
         var titleFont: Font {
             switch self {
             case .large:
-                return .system(size: 40, weight: .bold)
+                return .system(size: 28, weight: .semibold, design: .rounded)
             case .small:
-                return .system(size: 16, weight: .semibold)
+                return .system(size: 16, weight: .semibold, design: .rounded)
             case .launch:
-                return .system(size: 46, weight: .semibold)
+                return .system(size: 40, weight: .semibold, design: .rounded)
             }
         }
 
         var proFont: Font {
             switch self {
             case .large:
-                return .system(size: 14, weight: .semibold)
+                return .system(size: 14, weight: .medium)
             case .small:
-                return .system(size: 10, weight: .semibold)
+                return .system(size: 10, weight: .medium)
             case .launch:
-                return .system(size: 14, weight: .semibold)
+                return .system(size: 14, weight: .medium)
             }
         }
 
         var proBaselineOffset: CGFloat {
             switch self {
             case .large:
-                return 16
+                return 2
             case .small:
-                return 7
+                return 1
             case .launch:
-                return 18
+                return 2
             }
         }
 
@@ -207,19 +207,23 @@ struct CadenceProWordmark: View {
         .accessibilityLabel(showsProLabel ? "Cadence Pro" : "Cadence")
     }
 
-    private var wordmarkText: Text {
-        let title = Text("Cadence")
-            .font(size.titleFont)
-            .foregroundStyle(.primary)
+    @ViewBuilder
+    private var wordmarkText: some View {
+        if showsProLabel {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Cadence")
+                    .font(size.titleFont)
+                    .foregroundStyle(.primary)
 
-        guard showsProLabel else { return title }
-
-        let pro = Text(" Pro")
-            .font(size.proFont)
-            .foregroundStyle(.secondary.opacity(0.76))
-            .kerning(-0.15)
-            .baselineOffset(size.proBaselineOffset - (size == .large ? 1 : 0.5))
-
-        return Text("\(title)\(pro)")
+                Text("Pro")
+                    .font(size.proFont)
+                    .foregroundStyle(.secondary.opacity(0.82))
+                    .baselineOffset(size.proBaselineOffset)
+            }
+        } else {
+            Text("Cadence")
+                .font(size.titleFont)
+                .foregroundStyle(.primary)
+        }
     }
 }

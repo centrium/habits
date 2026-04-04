@@ -40,6 +40,7 @@ struct HabitInsightsView: View {
             .padding(.bottom, 40)
         }
         .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
+        .cadenceSurface(accent: accent)
         .navigationTitle(insights.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -66,7 +67,8 @@ private struct HabitInsightsCardsRenderer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Insights")
-                .font(.title2.weight(.semibold))
+                .font(CadenceTokens.Typography.title)
+                .tracking(CadenceTokens.Typography.titleTracking)
                 .foregroundStyle(.primary)
                 .padding(.top, 14)
                 .opacity(hasAnimatedIn ? 1 : 0)
@@ -89,7 +91,7 @@ private struct HabitInsightsCardsRenderer: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(viewModel.notes, id: \.self) { note in
                                 Text(note)
-                                    .font(.subheadline)
+                                    .font(CadenceTokens.Typography.microCopy)
                                     .foregroundStyle(.secondary)
                             }
                         }

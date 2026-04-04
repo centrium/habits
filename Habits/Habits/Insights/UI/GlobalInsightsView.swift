@@ -39,6 +39,7 @@ struct GlobalInsightsView: View {
             }
         }
         .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
+        .cadenceSurface(accent: Color.systemAccent)
         .navigationTitle("Global Insights")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -62,7 +63,7 @@ private struct GlobalInsightsHeroSection: View {
                 }
 
                 Text(hero.summaryText)
-                    .font(CadenceTokens.Typography.sectionHeader)
+                    .font(CadenceTokens.Typography.body)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -77,7 +78,10 @@ private struct GlobalInsightsHeroSection: View {
                 .foregroundStyle(CadenceTokens.Color.Text.tertiary)
 
             Text(value)
-                .font(.system(size: 38, weight: .bold, design: .rounded))
+                .font(CadenceTokens.Typography.primaryValue)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.18), value: value)
                 .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
         }
     }
@@ -106,7 +110,10 @@ private struct GlobalInsightsMetricsSection: View {
     private func metricColumn(title: String, value: String) -> some View {
         VStack(spacing: CadenceTokens.Space.sm - 1) {
             Text(value)
-                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                .font(CadenceTokens.Typography.primaryValue)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.18), value: value)
                 .foregroundStyle(CadenceTokens.Color.Text.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

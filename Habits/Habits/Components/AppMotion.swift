@@ -56,17 +56,32 @@ private struct CadenceSurfaceModifier: ViewModifier {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .stroke(borderColor, lineWidth: 1.2)
                     }
+                    .overlay {
+                        if colorScheme == .dark {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .stroke(Color.white.opacity(0.04), lineWidth: 0.8)
+                                .blendMode(.screen)
+                        }
+                    }
                     .shadow(
                         color: shadowColor,
                         radius: shadowRadius,
                         x: 0,
                         y: shadowYOffset
                     )
+                    .shadow(
+                        color: topHighlightShadowColor,
+                        radius: topHighlightShadowRadius,
+                        x: 0,
+                        y: topHighlightShadowYOffset
+                    )
             }
     }
 
     private var backgroundColor: Color {
-        CadenceTokens.Color.Background.secondary
+        colorScheme == .dark
+            ? CadenceTokens.Color.Background.secondary
+            : CadenceTokens.Color.Background.primary
     }
 
     private var borderColor: Color {
@@ -74,15 +89,83 @@ private struct CadenceSurfaceModifier: ViewModifier {
     }
 
     private var shadowColor: Color {
-        CadenceTokens.Surface.shadowColor(for: colorScheme)
+        colorScheme == .dark
+            ? CadenceTokens.Surface.shadowColor(for: colorScheme)
+            : Color.black.opacity(0.04)
     }
 
     private var shadowRadius: CGFloat {
-        CadenceTokens.Surface.shadowRadius
+        colorScheme == .dark ? CadenceTokens.Surface.shadowRadius : 8
     }
 
     private var shadowYOffset: CGFloat {
-        CadenceTokens.Surface.shadowYOffset
+        colorScheme == .dark ? CadenceTokens.Surface.shadowYOffset : 4
+    }
+
+    private var topHighlightShadowColor: Color {
+        colorScheme == .dark ? .clear : Color.white.opacity(0.6)
+    }
+
+    private var topHighlightShadowRadius: CGFloat {
+        colorScheme == .dark ? 0 : 1
+    }
+
+    private var topHighlightShadowYOffset: CGFloat {
+        colorScheme == .dark ? 0 : -1
+    }
+}
+
+private struct CadenceAmbientSurfaceModifier: ViewModifier {
+    let accent: Color
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var animateSurface = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                LinearGradient(
+                    colors: [
+                        accent.opacity(colorScheme == .dark ? 0.32 : 0.2),
+                        accent.opacity(colorScheme == .dark ? 0.16 : 0.1),
+                        .clear
+                    ],
+                    startPoint: animateSurface ? .topLeading : .topTrailing,
+                    endPoint: animateSurface ? .bottomTrailing : .bottomLeading
+                )
+                .blur(radius: 48)
+                .frame(height: 240)
+                .allowsHitTesting(false)
+                .ignoresSafeArea(edges: .top)
+                .mask(
+                    LinearGradient(
+                        colors: [.white, .white.opacity(0.7), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 260)
+                    .ignoresSafeArea(edges: .top)
+                )
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+                animateSurface.toggle()
+            }
+        }
+    }
+}
+
+private struct CadenceControlChromeModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(0.05), radius: 6, y: 2)
     }
 }
 
@@ -105,5 +188,13 @@ extension View {
                 cornerRadius: cornerRadius
             )
         )
+    }
+
+    func cadenceSurface(accent: Color) -> some View {
+        modifier(CadenceAmbientSurfaceModifier(accent: accent))
+    }
+
+    func cadenceControlChrome() -> some View {
+        modifier(CadenceControlChromeModifier())
     }
 }

@@ -51,11 +51,14 @@ enum CadenceTokens {
     }
 
     enum Typography {
-        static let title = Font.largeTitle.weight(.bold)
-        static let heroHeadline = Font.title2.weight(.bold)
-        static let sectionHeader = Font.subheadline.weight(.medium)
-        static let body = Font.body
-        static let supporting = Font.caption
+        static let title = Font.system(size: 22, weight: .semibold, design: .rounded)
+        static let titleTracking: CGFloat = -0.2
+        static let heroHeadline = Font.system(size: 22, weight: .semibold, design: .rounded)
+        static let sectionHeader = Font.system(size: 15, weight: .medium)
+        static let primaryValue = Font.system(size: 28, weight: .semibold)
+        static let body = Font.system(size: 14)
+        static let supporting = Font.system(size: 14)
+        static let microCopy = Font.system(size: 13, weight: .medium)
     }
 
     enum Surface {
@@ -78,4 +81,3 @@ enum CadenceTokens {
         }
     }
 }
-
