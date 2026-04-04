@@ -127,7 +127,7 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 benefitRow(
                     symbolName: "calendar",
-                    title: "Stay consistent",
+                    title: "Stay in rhythm",
                     message: "Visual progress keeps motivation high."
                 )
 
@@ -154,11 +154,11 @@ struct OnboardingView: View {
                 .foregroundStyle(Color.onboardingAccent)
                 .scaleEffect(heroIconScale)
 
-            Text("Stay on track")
+            Text("Stay in rhythm")
                 .font(.largeTitle.weight(.bold))
                 .multilineTextAlignment(.center)
 
-            Text("Gentle reminders help you stay consistent with your habits.")
+            Text("Gentle reminders help you stay in rhythm with your habits.")
                 .font(.body)
                 .foregroundStyle(Color.onboardingSecondary)
                 .multilineTextAlignment(.center)

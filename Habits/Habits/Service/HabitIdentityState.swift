@@ -7,43 +7,42 @@ enum HabitIdentityState: Equatable {
     case returning
 }
 
-struct HabitIdentityStateFormatter {
-    static func shortLabel(_ state: HabitIdentityState) -> String {
-        switch state {
-        case .starting:
-            return "Starting"
-        case .building:
-            return "Building"
-        case .holding:
-            return "Holding"
-        case .returning:
-            return "Returning"
-        }
+struct CadenceLanguage {
+    static func shortLabel(for state: HabitIdentityState) -> String {
+        CadenceCopyCatalog.shortLabel(for: state.cadenceStateKey)
     }
 
-    static func detailLine(_ state: HabitIdentityState) -> String {
-        switch state {
-        case .starting:
-            return "This is where the habit begins to take shape"
-        case .building:
-            return "You’re building this identity"
-        case .holding:
-            return "This is becoming part of who you are"
-        case .returning:
-            return "Getting back to this keeps the identity intact"
-        }
+    static func identityLine(for state: HabitIdentityState) -> String {
+        CadenceCopyCatalog.identityLine(for: state.cadenceStateKey)
     }
 
-    static func insightLine(_ state: HabitIdentityState) -> String {
-        switch state {
+    static func insightLine(for state: HabitIdentityState) -> String {
+        CadenceCopyCatalog.insightLine(for: state.cadenceStateKey)
+    }
+
+    static func behaviourLine(
+        completions: Int?,
+        window: Int?
+    ) -> String {
+        guard let completions, let window else {
+            return "This is where the habit begins"
+        }
+
+        return "You’ve shown up \(completions) of the last \(window) days"
+    }
+}
+
+private extension HabitIdentityState {
+    var cadenceStateKey: CadenceStateKey {
+        switch self {
         case .starting:
-            return "This habit is just getting started"
+            return .starting
         case .building:
-            return "You’re building consistency with this habit"
+            return .building
         case .holding:
-            return "This habit is holding strong"
+            return .holding
         case .returning:
-            return "You’re in the process of returning to this habit"
+            return .returning
         }
     }
 }
@@ -57,11 +56,13 @@ struct HabitIdentityStateSnapshot: Equatable {
 }
 
 enum HabitIdentityStateResolver {
-    static func state(
-        from completionRate: Double?,
+    static func resolve(
+        completionRate: Double?,
         hasRecentData: Bool
     ) -> HabitIdentityState {
-        guard let rate = completionRate else { return .starting }
+        guard let rate = completionRate else {
+            return .starting
+        }
 
         switch rate {
         case 0.7...:
@@ -97,7 +98,7 @@ enum HabitIdentityStateResolver {
         let completionRate = Double(activeDays) / Double(normalizedWindow)
 
         return HabitIdentityStateSnapshot(
-            state: state(from: completionRate, hasRecentData: hasRecentData),
+            state: resolve(completionRate: completionRate, hasRecentData: hasRecentData),
             completionRate: completionRate,
             activeDays: activeDays,
             windowDays: normalizedWindow,

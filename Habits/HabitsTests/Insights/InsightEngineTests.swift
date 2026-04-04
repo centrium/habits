@@ -1,6 +1,7 @@
 import XCTest
 @testable import Habits
 
+@MainActor
 final class InsightEngineTests: XCTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
@@ -646,7 +647,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertNil(greigBlock(from: disabledViewModel))
     }
 
-    func testGreigModeSupportTextIncludesMomentumContext() {
+    func testGreigModeSupportTextIncludesCadenceContext() {
         // Given
         let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
         let habit = TestHabitFactory.openEnded(

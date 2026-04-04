@@ -7,7 +7,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let identity: String? = nil
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: identity,
             completionRate: 0.8,
             recentCompletions: 6,
@@ -23,7 +23,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let identity = "Someone who trains daily"
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: identity,
             completionRate: nil,
             recentCompletions: nil,
@@ -33,7 +33,7 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // THEN
         XCTAssertEqual(output.identityLine, "Someone who trains daily")
-        XCTAssertEqual(output.behaviourLine, "You’ve shown up 0 of the last 7 days")
+        XCTAssertEqual(output.behaviourLine, "This is where the habit begins")
         XCTAssertEqual(output.emotionalLine, "This is where the habit begins to take shape")
     }
 
@@ -42,7 +42,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let completionRate = 0.8
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: "Someone who trains daily",
             completionRate: completionRate,
             recentCompletions: 5,
@@ -60,7 +60,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let completionRate = 0.5
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: "Someone who trains daily",
             completionRate: completionRate,
             recentCompletions: 4,
@@ -78,7 +78,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let completionRate = 0.2
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: "Someone who trains daily",
             completionRate: completionRate,
             recentCompletions: 1,
@@ -96,7 +96,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let completionRate = 0.7
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: "Someone who trains daily",
             completionRate: completionRate,
             recentCompletions: 5,
@@ -113,7 +113,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let completionRate = 0.4
 
         // WHEN
-        let result = HabitIdentityEngine.narrative(
+        let result = buildOutput(
             identity: "Someone who trains daily",
             completionRate: completionRate,
             recentCompletions: 3,
@@ -134,7 +134,7 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // WHEN
         let first = try XCTUnwrap(
-            HabitIdentityEngine.narrative(
+            buildOutput(
                 identity: identity,
                 completionRate: completionRate,
                 recentCompletions: recentCompletions,
@@ -142,7 +142,7 @@ final class HabitIdentityEngineTests: XCTestCase {
             )
         )
         let second = try XCTUnwrap(
-            HabitIdentityEngine.narrative(
+            buildOutput(
                 identity: identity,
                 completionRate: completionRate,
                 recentCompletions: recentCompletions,
@@ -154,5 +154,21 @@ final class HabitIdentityEngineTests: XCTestCase {
         XCTAssertEqual(first.identityLine, second.identityLine)
         XCTAssertEqual(first.behaviourLine, second.behaviourLine)
         XCTAssertEqual(first.emotionalLine, second.emotionalLine)
+    }
+
+    private func buildOutput(
+        identity: String?,
+        completionRate: Double?,
+        recentCompletions: Int?,
+        window: Int?
+    ) -> HabitIdentityOutput? {
+        HabitIdentityEngine.build(
+            identity: identity,
+            metrics: HabitIdentityMetrics(
+                completionRate: completionRate,
+                recentCompletions: recentCompletions,
+                window: window
+            )
+        )
     }
 }

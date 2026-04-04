@@ -1,7 +1,12 @@
 import Foundation
 
 enum PerformanceSignalsCalculator {
-    private static let momentumLabels = ["Starting", "Building", "Holding", "Holding"]
+    private static let identityStateLabels: [String] = [
+        CadenceLanguage.shortLabel(for: .starting),
+        CadenceLanguage.shortLabel(for: .building),
+        CadenceLanguage.shortLabel(for: .holding),
+        CadenceLanguage.shortLabel(for: .returning),
+    ]
     private static let riskLabels = ["Low", "Moderate", "High", "Critical"]
     private static let strengthLabels = ["Weak", "Developing", "Strong", "Automatic"]
 
@@ -14,13 +19,22 @@ enum PerformanceSignalsCalculator {
         return calculate(for: habit, logs: logs, calendar: calendar, now: now)
     }
 
+    static func identityState(
+        for habit: Habit,
+        calendar: Calendar,
+        now: Date
+    ) -> HabitIdentityState {
+        let logs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
+        return identityState(for: habit, logs: logs, calendar: calendar, now: now)
+    }
+
     static func calculate(
         for habit: Habit,
         logs: [InsightLog],
         calendar: Calendar,
         now: Date
     ) -> [HabitInsightsPerformanceSignal] {
-        let momentum = momentumScore(for: habit, logs: logs, calendar: calendar, now: now)
+        let identityState = identityState(for: habit, logs: logs, calendar: calendar, now: now)
         let risk = habitRiskScore(for: habit, logs: logs, calendar: calendar, now: now)
         let strength = habitStrengthScore(for: habit, logs: logs, calendar: calendar, now: now)
 
@@ -28,11 +42,11 @@ enum PerformanceSignalsCalculator {
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
                     title: "Identity Signal",
-                    value: normalizeMomentum(momentum),
-                    labels: momentumLabels,
-                    explanation: momentumExplanation(for: momentum)
+                    value: identitySignalValue(for: identityState),
+                    labels: identityStateLabels,
+                    explanation: CadenceLanguage.insightLine(for: identityState)
                 ),
-                displayValue: "\(Int(momentum.rounded()))"
+                displayValue: CadenceLanguage.shortLabel(for: identityState)
             ),
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
@@ -53,26 +67,6 @@ enum PerformanceSignalsCalculator {
                 displayValue: unsignedDisplayValue(strength)
             )
         ]
-    }
-
-    static func momentumScore(
-        for habit: Habit,
-        calendar: Calendar,
-        now: Date
-    ) -> Double {
-        let logs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
-        return momentumScore(for: habit, logs: logs, calendar: calendar, now: now)
-    }
-
-    static func momentumScore(
-        for habit: Habit,
-        logs: [InsightLog],
-        calendar: Calendar,
-        now: Date
-    ) -> Double {
-        _ = logs
-        let score = MomentumScoreService(calendar: calendar).score(for: habit, now: now)
-        return Double(score)
     }
 
     static func habitRiskScore(
@@ -157,19 +151,6 @@ enum PerformanceSignalsCalculator {
 
         let strength = (consistency * 0.5) + (normalizedStreak * 0.3) + (completionFrequency * 0.2)
         return clamp(strength, lower: 0, upper: 1)
-    }
-
-    static func momentumExplanation(for score: Double) -> String {
-        switch Int(score.rounded()) {
-        case ...30:
-            return "You are in a starting phase right now. A small action today can restart consistency."
-        case ...60:
-            return "You are in a building phase. Keep showing up to lock in the routine."
-        case ...80:
-            return "Your routine is holding and recent consistency is stable."
-        default:
-            return "Your routine is holding strong with consistent completion signals."
-        }
     }
 
     static func riskExplanation(for score: Double) -> String {
@@ -283,8 +264,48 @@ private extension PerformanceSignalsCalculator {
         return Double(total) / Double(streakLengths.count)
     }
 
-    static func normalizeMomentum(_ score: Double) -> Double {
-        clamp(score / 100, lower: 0, upper: 1)
+    static func identityState(
+        for habit: Habit,
+        logs: [InsightLog],
+        calendar: Calendar,
+        now: Date
+    ) -> HabitIdentityState {
+        let windows = signalWindows(calendar: calendar, now: now)
+        let trackingStart = calendar.startOfDay(for: habit.createdAt)
+        let activity = activitySummary(logs: logs, windowEnd: windows.windowEnd)
+        let recentInterval = windows.recent
+        let recentCompletionRate = completionRate(
+            in: recentInterval,
+            trackingStart: trackingStart,
+            activeDays: activity.activeDays,
+            calendar: calendar
+        )
+        let recentAvailableDays = availableDays(
+            in: recentInterval,
+            trackingStart: trackingStart,
+            calendar: calendar
+        )
+        let hasRecentData = activity.activeDays.contains { day in
+            day >= recentInterval.start && day < recentInterval.end
+        }
+
+        return HabitIdentityStateResolver.resolve(
+            completionRate: recentAvailableDays > 0 ? recentCompletionRate : nil,
+            hasRecentData: hasRecentData
+        )
+    }
+
+    static func identitySignalValue(for state: HabitIdentityState) -> Double {
+        switch state {
+        case .starting:
+            return 0
+        case .building:
+            return 0.33
+        case .holding:
+            return 0.66
+        case .returning:
+            return 1
+        }
     }
 
     static func signedDisplayValue(_ value: Double) -> String {

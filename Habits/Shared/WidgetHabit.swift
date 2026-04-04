@@ -8,6 +8,56 @@
 import Foundation
 import OSLog
 
+enum CadenceStateKey: Equatable {
+    case starting
+    case building
+    case holding
+    case returning
+}
+
+enum CadenceCopyCatalog {
+    // Cadence copy rule:
+    // Do not add state-label or state-line string literals outside this file.
+    static func shortLabel(for state: CadenceStateKey) -> String {
+        switch state {
+        case .starting:
+            return "Starting"
+        case .building:
+            return "Building"
+        case .holding:
+            return "Holding"
+        case .returning:
+            return "Returning"
+        }
+    }
+
+    static func identityLine(for state: CadenceStateKey) -> String {
+        switch state {
+        case .starting:
+            return "This is where the habit begins to take shape"
+        case .building:
+            return "You’re building this identity"
+        case .holding:
+            return "This is becoming part of who you are"
+        case .returning:
+            return "Getting back to this keeps the identity intact"
+        }
+    }
+
+    static func insightLine(for state: CadenceStateKey) -> String {
+        switch state {
+        case .starting:
+            return "This habit is just getting started"
+        case .building:
+            return "You’re building consistency with this habit"
+        case .holding:
+            return "This habit is holding strong"
+        case .returning:
+            return "You’re in the process of returning to this habit"
+        }
+    }
+}
+
 enum WidgetGoalType: String, Codable {
     case binary
     case goal
@@ -61,7 +111,6 @@ struct WidgetHabit: Codable, Identifiable {
         // Legacy payload support
         case progressFraction
         case usesActivityIndicator
-        case momentumScore
     }
 
     init(
@@ -122,8 +171,7 @@ struct WidgetHabit: Codable, Identifiable {
             if let decodedIdentityState = try container.decodeIfPresent(WidgetHabitIdentityState.self, forKey: .identityState) {
                 identityState = decodedIdentityState
             } else {
-                let legacyMomentumScore = try container.decodeIfPresent(Int.self, forKey: .momentumScore) ?? 0
-                identityState = WidgetHabitIdentityState.legacyMapping(fromMomentumScore: legacyMomentumScore)
+                identityState = .starting
             }
             heatmapAggregationKind = try container.decodeIfPresent(
                 WidgetHeatmapAggregationKind.self,
@@ -227,25 +275,10 @@ struct WidgetHabit: Codable, Identifiable {
 }
 
 enum WidgetHabitIdentityState: String, Codable, Equatable {
-    case starting = "Starting"
-    case building = "Building"
-    case holding = "Holding"
-    case returning = "Returning"
-}
-
-private extension WidgetHabitIdentityState {
-    static func legacyMapping(fromMomentumScore score: Int) -> WidgetHabitIdentityState {
-        switch max(score, 0) {
-        case 70...:
-            return .holding
-        case 40..<70:
-            return .building
-        case 1..<40:
-            return .returning
-        default:
-            return .starting
-        }
-    }
+    case starting
+    case building
+    case holding
+    case returning
 }
 
 struct WidgetIdentityStateSummary: Equatable {
@@ -461,8 +494,8 @@ extension WidgetHabit {
     var identityStateSummary: WidgetIdentityStateSummary {
         WidgetIdentityStateSummary(
             state: identityState,
-            shortLabel: identityState.rawValue,
-            insightLine: WidgetHabitIdentityStateCopy.insightLine(identityState),
+            shortLabel: CadenceCopyCatalog.shortLabel(for: identityState.cadenceStateKey),
+            insightLine: CadenceCopyCatalog.insightLine(for: identityState.cadenceStateKey),
             recentCompletionText: "\(recentCompletionCount(days: 7)) of last 7 days"
         )
     }
@@ -475,17 +508,17 @@ extension WidgetHabit {
     }
 }
 
-enum WidgetHabitIdentityStateCopy {
-    static func insightLine(_ state: WidgetHabitIdentityState) -> String {
-        switch state {
+private extension WidgetHabitIdentityState {
+    var cadenceStateKey: CadenceStateKey {
+        switch self {
         case .starting:
-            return "This habit is just getting started"
+            return .starting
         case .building:
-            return "You’re building consistency with this habit"
+            return .building
         case .holding:
-            return "This habit is holding strong"
+            return .holding
         case .returning:
-            return "You’re in the process of returning to this habit"
+            return .returning
         }
     }
 }

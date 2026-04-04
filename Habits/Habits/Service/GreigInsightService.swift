@@ -115,12 +115,6 @@ struct GreigInsightService {
 }
 
 private extension GreigInsightService {
-    enum BehaviourState {
-        case strongConsistency
-        case buildingConsistency
-        case inconsistent
-    }
-
     func generateCumulativeInsight(
         goal: GreigInsightGoal,
         target: Double,
@@ -226,34 +220,27 @@ private extension GreigInsightService {
         goal _: GreigInsightGoal,
         projection: GreigProjectionResult
     ) -> GreigInsight {
-        let state = behaviourState(for: projection.behaviourCompletionRate)
+        let state = HabitIdentityStateResolver.resolve(
+            completionRate: projection.behaviourCompletionRate,
+            hasRecentData: projection.behaviourCompletedDays > 0
+        )
         let status = status(for: state)
         let confidence = confidence(for: state)
         let streak = max(projection.currentStreak, projection.recentStreak)
-
-        let title: String = {
-            switch state {
-            case .strongConsistency:
-                return "You've been consistent recently"
-            case .buildingConsistency:
-                return "You're building a solid routine"
-            case .inconsistent:
-                return "Let's get started"
-            }
-        }()
+        let title = CadenceLanguage.insightLine(for: state)
 
         let evidence: String = {
             switch state {
-            case .strongConsistency:
+            case .holding:
                 return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, including a \(max(streak, 1))-day streak."
-            case .buildingConsistency:
+            case .building:
                 if streak > 1 {
                     return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, including a \(streak)-day streak."
                 }
                 return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days."
-            case .inconsistent:
+            case .starting, .returning:
                 if projection.loggedToday {
-                    return "Keep showing up to build consistency."
+                    return "You're rebuilding this routine through recent behaviour."
                 }
                 return "A quick check-in today will help build consistency."
             }
@@ -274,34 +261,24 @@ private extension GreigInsightService {
         )
     }
 
-    func behaviourState(for completionRate: Double) -> BehaviourState {
-        if completionRate >= 0.7 {
-            return .strongConsistency
-        }
-        if completionRate >= 0.4 {
-            return .buildingConsistency
-        }
-        return .inconsistent
-    }
-
-    func status(for state: BehaviourState) -> InsightStatus {
+    func status(for state: HabitIdentityState) -> InsightStatus {
         switch state {
-        case .strongConsistency:
+        case .holding:
             return .ahead
-        case .buildingConsistency:
+        case .building:
             return .onTrack
-        case .inconsistent:
+        case .starting, .returning:
             return .atRisk
         }
     }
 
-    func confidence(for state: BehaviourState) -> ConfidenceLevel {
+    func confidence(for state: HabitIdentityState) -> ConfidenceLevel {
         switch state {
-        case .strongConsistency:
+        case .holding:
             return .high
-        case .buildingConsistency:
+        case .building:
             return .medium
-        case .inconsistent:
+        case .starting, .returning:
             return .low
         }
     }
@@ -334,9 +311,9 @@ private extension GreigInsightService {
         case .low:
             return "You could reach around \(projectedText) \(periodLabel)"
         case .medium:
-            return "You're on track for about \(projectedText) \(periodLabel)"
+            return "Current pace points to about \(projectedText) \(periodLabel)"
         case .high:
-            return "You're on track for \(projectedText) \(periodLabel)"
+            return "Current pace points to \(projectedText) \(periodLabel)"
         }
     }
 
@@ -349,9 +326,9 @@ private extension GreigInsightService {
         case .low:
             return "You could reach around \(projectedText) sessions \(periodLabel)"
         case .medium:
-            return "You're on track for about \(projectedText) sessions \(periodLabel)"
+            return "Current pace points to about \(projectedText) sessions \(periodLabel)"
         case .high:
-            return "You're on track for \(projectedText) sessions \(periodLabel)"
+            return "Current pace points to \(projectedText) sessions \(periodLabel)"
         }
     }
 
@@ -493,16 +470,16 @@ private extension GreigInsightService {
     }
 
     func openConsistencyNudge(
-        state: BehaviourState,
+        state: HabitIdentityState,
         loggedToday: Bool
     ) -> String? {
         guard !loggedToday else { return nil }
         switch state {
-        case .strongConsistency:
+        case .holding:
             return "Log today to keep this routine steady."
-        case .buildingConsistency:
+        case .building:
             return "Log today to reinforce this routine."
-        case .inconsistent:
+        case .starting, .returning:
             return nil
         }
     }

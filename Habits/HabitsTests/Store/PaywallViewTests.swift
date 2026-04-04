@@ -18,7 +18,7 @@ final class PaywallViewTests: XCTestCase {
         XCTAssertEqual(titles[1], "Track Unlimited Cadences")
         XCTAssertEqual(titles[2], "Unlock Your Full Cadence History")
         XCTAssertEqual(titles[3], "Export Your Cadence Data")
-        XCTAssertEqual(titles[4], "Stay consistent throughout the day")
+        XCTAssertEqual(titles[4], "Stay in rhythm throughout the day")
         XCTAssertEqual(titles[5], "Upgrade to Pro")
     }
 
@@ -93,7 +93,7 @@ final class PaywallViewTests: XCTestCase {
             PaywallView.title(for: PaywallContext.multipleReminders)
         }
 
-        XCTAssertTrue(title.localizedCaseInsensitiveContains("consistent") || title.localizedCaseInsensitiveContains("reminder"))
+        XCTAssertTrue(title.localizedCaseInsensitiveContains("rhythm") || title.localizedCaseInsensitiveContains("reminder"))
     }
 
     func testPaywallIncludesMultipleRemindersFeature() async {

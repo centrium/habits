@@ -52,7 +52,7 @@ enum HabitColor: String, CaseIterable, Identifiable {
         )
     }
 
-    static let `default`: HabitColor = .iris
+    static let `default`: HabitColor = .cobalt
 
     static func from(hex: String) -> HabitColor {
         let normalized = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()

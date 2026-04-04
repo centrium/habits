@@ -136,8 +136,8 @@ struct HabitInsightsEngine {
         )
         let recentCompletionRate = foundation.achievement.completionRatio
             ?? foundation.consistency.activeDayRatio
-        let identityState = HabitIdentityStateResolver.state(
-            from: recentCompletionRate,
+        let identityState = HabitIdentityStateResolver.resolve(
+            completionRate: recentCompletionRate,
             hasRecentData: (foundation.activitySummary?.entriesThisWeek ?? 0) > 0
         )
         let weeklyRhythmBlock = weeklyRhythmBlock(
@@ -217,10 +217,10 @@ struct HabitInsightsEngine {
         }
 
         cards.append(
-            .identityState(
+                .identityState(
                 HabitInsightsIdentityStateBlock(
                     state: identityState,
-                    line: HabitIdentityStateFormatter.insightLine(identityState)
+                    line: CadenceLanguage.insightLine(for: identityState)
                 )
             )
         )
@@ -371,7 +371,7 @@ struct HabitInsightsEngine {
         let support: String = {
             if habit.goalType == .frequency, let target = metrics.target {
                 let remaining = max(Int(ceil(target - metrics.progress)), 1)
-                return "\(remaining) sessions will put you back on track this \(habit.goalPeriod.unit)"
+                return "\(remaining) sessions will put you back into rhythm this \(habit.goalPeriod.unit)"
             }
             if let target = metrics.target {
                 let remaining = max(target - metrics.progress, 0)
@@ -1071,7 +1071,7 @@ struct HabitInsightsEngine {
             weakestWeekday: nil,
             commonLogWindow: nil,
             activitySummary: behaviour.activitySummary,
-            momentumMessage: behaviour.momentumMessage,
+            cadenceMessage: behaviour.cadenceMessage,
             patternItems: [],
             retentionItems: []
         )

@@ -123,7 +123,7 @@ struct PaywallView: View {
     static func title(for context: PaywallContext) -> String {
         switch context {
         case .multipleReminders:
-            return "Stay consistent throughout the day"
+            return "Stay in rhythm throughout the day"
         case .dataExport:
             return "Export your progress"
         case .general:
@@ -160,7 +160,7 @@ struct PaywallView: View {
             BenefitContent(
                 feature: .multipleReminders,
                 icon: "bell.badge",
-                title: "Multiple reminders to stay on track throughout the day",
+                title: "Multiple reminders to stay in rhythm throughout the day",
                 description: "Add more than one reminder to reinforce a cadence when it matters."
             )
         ]

@@ -1,11 +1,11 @@
 import XCTest
 @testable import Habits
 
-final class MomentumServiceTests: XCTestCase {
+@MainActor
+final class HabitStateServiceTests: XCTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
-    func testHighMomentumScore() {
-        // Given: 6/7 completed and a 5-day streak
+    func testHoldingStateForHighRecentCompletionRate() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.frequency(
             target: 1,
@@ -19,18 +19,14 @@ final class MomentumServiceTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let service = MomentumService(calendar: calendar, weekStartPreference: .monday)
+        let service = HabitStateService(calendar: calendar, weekStartPreference: .monday)
 
-        // When
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        // Then
-        XCTAssertGreaterThan(breakdown.score, 75)
-        XCTAssertEqual(breakdown.band, .strong)
+        XCTAssertEqual(breakdown.state, .holding)
     }
 
-    func testMomentumDropsWithGaps() {
-        // Given
+    func testReturningStateForLowRateWithRecentData() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.frequency(
             target: 1,
@@ -40,17 +36,14 @@ final class MomentumServiceTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let service = MomentumService(calendar: calendar, weekStartPreference: .monday)
+        let service = HabitStateService(calendar: calendar, weekStartPreference: .monday)
 
-        // When
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        // Then
-        XCTAssertLessThan(breakdown.score, 40)
+        XCTAssertEqual(breakdown.state, .returning)
     }
 
-    func testOpenGoalMomentumUsesBinaryCompletion() {
-        // Given: multiple logs in one day still count as one completed day
+    func testOpenGoalBreakdownUsesBinaryCompletion() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
             entries: [
@@ -61,18 +54,15 @@ final class MomentumServiceTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let service = MomentumService(calendar: calendar, weekStartPreference: .monday)
+        let service = HabitStateService(calendar: calendar, weekStartPreference: .monday)
 
-        // When
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        // Then
         XCTAssertEqual(breakdown.completedDays, 3)
         XCTAssertEqual(breakdown.completionRate, 3.0 / 7.0, accuracy: 0.0001)
     }
 
-    func testFrequencyGoalMomentumRequiresTargetMet() {
-        // Given: only one day reaches target 2
+    func testFrequencyGoalBreakdownRequiresTargetMet() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.frequency(
             target: 2,
@@ -83,18 +73,15 @@ final class MomentumServiceTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let service = MomentumService(calendar: calendar, weekStartPreference: .monday)
+        let service = HabitStateService(calendar: calendar, weekStartPreference: .monday)
 
-        // When
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        // Then
         XCTAssertEqual(breakdown.completedDays, 1)
         XCTAssertEqual(breakdown.completionRate, 1.0 / 7.0, accuracy: 0.0001)
     }
 
-    func testCumulativeGoalMomentumCountsAnyProgress() {
-        // Given: any positive value counts, independent of target
+    func testCumulativeGoalBreakdownCountsAnyProgress() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.cumulative(
             target: 100,
@@ -104,18 +91,15 @@ final class MomentumServiceTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let service = MomentumService(calendar: calendar, weekStartPreference: .monday)
+        let service = HabitStateService(calendar: calendar, weekStartPreference: .monday)
 
-        // When
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        // Then
         XCTAssertEqual(breakdown.completedDays, 2)
         XCTAssertEqual(breakdown.completionRate, 2.0 / 7.0, accuracy: 0.0001)
     }
 
-    func testMomentumIndependentOfBestStreak() {
-        // Given
+    func testBreakdownIncludesCurrentStreak() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
             entries: [
@@ -125,13 +109,11 @@ final class MomentumServiceTests: XCTestCase {
             ],
             calendar: calendar
         )
-        let service = MomentumService(calendar: calendar, weekStartPreference: .monday)
+        let service = HabitStateService(calendar: calendar, weekStartPreference: .monday)
 
-        // When
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        // Then
         XCTAssertEqual(breakdown.streak, 3)
-        XCTAssertGreaterThan(breakdown.score, 0)
+        XCTAssertEqual(breakdown.state, .building)
     }
 }

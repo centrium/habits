@@ -293,7 +293,7 @@ struct HabitFormView: View {
             }
 
             Section("Reminders") {
-                Text("Gentle prompts to help you stay consistent")
+                Text("Gentle prompts to help you stay in rhythm")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 

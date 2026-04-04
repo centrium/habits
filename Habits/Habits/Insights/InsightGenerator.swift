@@ -36,7 +36,7 @@ enum InsightGenerator {
             case .completed:
                 message = "You're ahead of pace this period."
             case .likelyToHitTarget:
-                message = "You're on track to hit your goal."
+                message = "You're positioned to hit your goal."
             case .likelyShort:
                 message = "You may fall short of your target."
             case .paceOnly:

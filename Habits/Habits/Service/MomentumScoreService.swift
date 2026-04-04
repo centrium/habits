@@ -1,6 +1,6 @@
 import Foundation
 
-struct MomentumScoreService {
+struct HabitStateScoreService {
     private let calendar: Calendar
     private let streakService: StreakService
 
@@ -15,19 +15,11 @@ struct MomentumScoreService {
         )
     }
 
-    func score(
-        for habit: Habit,
-        now: Date = .now,
-        windowDays: Int = 7
-    ) -> Int {
-        breakdown(for: habit, now: now, windowDays: windowDays).score
-    }
-
     func breakdown(
         for habit: Habit,
         now: Date = .now,
         windowDays: Int = 7
-    ) -> MomentumBreakdown {
+    ) -> HabitStateBreakdown {
         let totalDays = clampedWindowDays(windowDays)
         let today = calendar.startOfDay(for: now)
         let completedDays = completionCount(
@@ -37,39 +29,26 @@ struct MomentumScoreService {
         )
 
         let completionRate = rate(numerator: completedDays, denominator: totalDays)
-        let gaps = max(totalDays - completedDays, 0)
-        let consistency = clamp(
-            1 - rate(numerator: gaps, denominator: totalDays),
-            lower: 0,
-            upper: 1
-        )
 
         let currentStreak = streakService.currentStreak(
             for: habit,
             referenceDate: today
         )
-        let streakScore = Double(min(currentStreak, 7)) / 7.0
 
-        let momentum =
-            (streakScore * 0.4) +
-            (completionRate * 0.4) +
-            (consistency * 0.2)
-        let score = Int(clamp(momentum, lower: 0, upper: 1) * 100)
-
-        return MomentumBreakdown(
-            score: score,
+        return HabitStateBreakdown(
             streak: currentStreak,
             completionRate: completionRate,
-            consistency: consistency,
             completedDays: completedDays,
             totalDays: totalDays,
-            band: MomentumBand(score: score),
-            isMomentumDropping: isMomentumDropping(for: habit, today: today, windowDays: totalDays)
+            state: HabitIdentityStateResolver.resolve(
+                completionRate: completionRate,
+                hasRecentData: completedDays > 0
+            )
         )
     }
 }
 
-private extension MomentumScoreService {
+private extension HabitStateScoreService {
     func completionCount(
         for habit: Habit,
         today: Date,
@@ -89,34 +68,6 @@ private extension MomentumScoreService {
         return completed
     }
 
-    func isMomentumDropping(
-        for habit: Habit,
-        today: Date,
-        windowDays: Int
-    ) -> Bool {
-        let halfWindow = max(windowDays / 2, 1)
-        guard halfWindow > 1 else { return false }
-
-        let recentCompleted = completionCount(
-            for: habit,
-            today: today,
-            windowDays: halfWindow
-        )
-
-        guard let previousWindowEnd = calendar.date(byAdding: .day, value: -halfWindow, to: today) else {
-            return false
-        }
-        let previousCompleted = completionCount(
-            for: habit,
-            today: previousWindowEnd,
-            windowDays: halfWindow
-        )
-
-        let recentRate = rate(numerator: recentCompleted, denominator: halfWindow)
-        let previousRate = rate(numerator: previousCompleted, denominator: halfWindow)
-        return recentRate < previousRate
-    }
-
     func clampedWindowDays(_ value: Int) -> Int {
         min(max(value, 1), 14)
     }
@@ -126,7 +77,4 @@ private extension MomentumScoreService {
         return Double(max(numerator, 0)) / Double(denominator)
     }
 
-    func clamp(_ value: Double, lower: Double, upper: Double) -> Double {
-        min(max(value, lower), upper)
-    }
 }

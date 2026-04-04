@@ -24,7 +24,7 @@ Key production code: `HabitInsightsEngine`, `HabitInsightsEngine.snapshot`, `Pac
 Decision: KEEP.
 
 `HabitInsightsEngineFoundationTests.swift`
-Purpose: foundation snapshot metrics for achievement, consistency, streaks, momentum, and card ordering.
+Purpose: foundation snapshot metrics for achievement, consistency, streaks, identity state, and card ordering.
 Key production code: `HabitInsightsEngine.habitInsightSnapshot`, `AchievementCalculator`, `ConsistencyCalculator`, `TrendCalculator`, streak calculation in `HabitInsightsEngine+Snapshot.swift`.
 Decision: KEEP.
 

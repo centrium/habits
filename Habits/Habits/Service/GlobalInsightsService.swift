@@ -23,6 +23,7 @@ struct GlobalInsightsMetrics: Equatable {
 struct GlobalInsightHabitRow: Identifiable, Equatable {
     let id: UUID
     let name: String
+    let state: HabitIdentityState
     let statusLabel: String
 }
 
@@ -86,7 +87,7 @@ struct GlobalInsightsService {
         let greig = greigSummary(from: metricsByHabit, now: now)
         let stripSummary = PremiumInsightsStripSummary(
             primaryLabel: "Identity ",
-            primaryValue: HabitIdentityStateFormatter.shortLabel(dominantState),
+            primaryValue: CadenceLanguage.shortLabel(for: dominantState),
             secondaryLabel: "Consistency ",
             secondaryValue: "\(consistency)%",
             secondarySuffix: stripSuffix(for: atRiskCount)
@@ -138,8 +139,8 @@ private extension GlobalInsightsService {
 
         return HabitMetrics(
             habit: habit,
-            identityState: HabitIdentityStateResolver.state(
-                from: progressRatio,
+            identityState: HabitIdentityStateResolver.resolve(
+                completionRate: progressRatio,
                 hasRecentData: hasRecentData(completedDays: completedDays, now: now)
             ),
             consistency: insightsService.snapshot(for: habit, now: now).consistency,
@@ -165,28 +166,10 @@ private extension GlobalInsightsService {
         consistency: Int,
         atRiskCount: Int
     ) -> String {
-        let base: String
-        switch dominantState {
-        case .starting:
-            base = "Most of your habits are just getting started"
-        case .building:
-            base = "Most of your habits are building consistency"
-        case .holding:
-            base = "Most of your habits are holding strong"
-        case .returning:
-            base = "Most of your habits are in the process of returning"
-        }
-
-        if atRiskCount == 0 && consistency >= 75 {
-            return "\(base)."
-        }
-        if atRiskCount == 1 {
-            return "\(base), with 1 needing attention."
-        }
-        if atRiskCount > 1 {
-            return "\(base), with \(atRiskCount) needing attention."
-        }
-        return "\(base)."
+        _ = consistency
+        _ = atRiskCount
+        let dominantInsight = CadenceLanguage.insightLine(for: dominantState).lowercased()
+        return "Most of your habits are \(dominantInsight)."
     }
 
     func bestDayOfWeek(
@@ -251,13 +234,14 @@ private extension GlobalInsightsService {
             GlobalInsightHabitRow(
                 id: metric.habit.id,
                 name: metric.habit.name,
+                state: metric.identityState,
                 statusLabel: statusLabel(for: metric)
             )
         }
     }
 
     func statusLabel(for metric: HabitMetrics) -> String {
-        HabitIdentityStateFormatter.shortLabel(metric.identityState)
+        CadenceLanguage.shortLabel(for: metric.identityState)
     }
 
     func riskBucket(for metric: HabitMetrics) -> Int {

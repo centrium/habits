@@ -57,7 +57,7 @@ private struct GlobalInsightsHeroSection: View {
                 ProSwoosh(size: .small)
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
-                    metricLine(label: "Identity", value: HabitIdentityStateFormatter.shortLabel(hero.dominantState))
+                    metricLine(label: "Identity", value: CadenceLanguage.shortLabel(for: hero.dominantState))
                     metricLine(label: "Consistency", value: hero.consistency)
                 }
 
@@ -141,7 +141,7 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 
                             Text(row.statusLabel)
                                 .font(CadenceTokens.Typography.supporting.weight(.regular))
-                                .foregroundStyle(statusColor(for: row.statusLabel))
+                                .foregroundStyle(statusColor(for: row.state))
                         }
                         .opacity(rowOpacity(for: index))
                     }
@@ -150,15 +150,15 @@ private struct GlobalInsightsHabitSnapshotSection: View {
         }
     }
 
-    private func statusColor(for label: String) -> Color {
-        switch label {
-        case "Holding":
+    private func statusColor(for state: HabitIdentityState) -> Color {
+        switch state {
+        case .holding:
             return CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
-        case "Returning":
+        case .returning:
             return CadenceTokens.Color.Text.secondary.opacity(0.72)
-        case "Starting":
+        case .starting:
             return CadenceTokens.Color.Text.tertiary
-        default:
+        case .building:
             return CadenceTokens.Color.Text.primary
         }
     }

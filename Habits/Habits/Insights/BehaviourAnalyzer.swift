@@ -7,7 +7,7 @@ struct HabitBehaviourSnapshot {
     let weakestWeekday: String?
     let commonLogWindow: String?
     let activitySummary: ActivitySummaryInsight?
-    let momentumMessage: String
+    let cadenceMessage: String
     let patternItems: [String]
     let retentionItems: [String]
 }
@@ -23,7 +23,7 @@ enum BehaviourAnalyzer {
         let activitySummary = foundation.activitySummary
         let patternSignals = foundation.patternSignals
 
-        let momentumMessage: String = {
+        let cadenceMessage: String = {
             if let paceMessage = foundation.pace?.message {
                 return paceMessage
             }
@@ -40,7 +40,7 @@ enum BehaviourAnalyzer {
             weakestWeekday: patternSignals?.weakestWeekday,
             commonLogWindow: patternSignals?.commonLogWindow,
             activitySummary: activitySummary,
-            momentumMessage: momentumMessage,
+            cadenceMessage: cadenceMessage,
             patternItems: patternSignals?.patternItems ?? [],
             retentionItems: patternSignals?.retentionItems ?? []
         )

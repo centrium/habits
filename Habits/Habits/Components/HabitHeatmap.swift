@@ -251,18 +251,12 @@ struct HabitHeatmap: View {
         VStack(alignment: .leading, spacing: 10) {
             compactHeatmap
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(identityStateInsight)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.primary)
-
-                    Spacer()
-                }
-
-                Text(HabitIdentityStateFormatter.shortLabel(identityStateSummary.state))
-                    .font(.caption2)
+            HStack {
+                Text(CadenceLanguage.shortLabel(for: identityStateSummary.state))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(identityStateColor(for: identityStateSummary.state))
+
+                Spacer()
             }
         }
     }
@@ -274,10 +268,6 @@ struct HabitHeatmap: View {
             now: Date(),
             windowDays: 7
         )
-    }
-
-    private var identityStateInsight: String {
-        "\(identityStateSummary.activeDays) of last \(identityStateSummary.windowDays) days"
     }
 
     private func identityStateColor(for state: HabitIdentityState) -> Color {

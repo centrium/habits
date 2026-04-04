@@ -448,7 +448,6 @@ struct HabitsListView: View {
 
     @ViewBuilder
     private func reorderHandle(for habit: Habit) -> some View {
-        let accent = habit.curatedAccentColor
         let isPressed = pressingItemID == habit.id && activeItem == nil
         let isDraggingThisItem = activeItem?.id == habit.id
 

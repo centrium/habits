@@ -28,7 +28,7 @@ final class GreigInsightServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(insight?.confidence, .medium)
-        XCTAssertTrue(insight?.title.contains("on track for about") ?? false)
+        XCTAssertTrue(insight?.title.contains("Current pace points to about") ?? false)
         XCTAssertTrue(insight?.body?.contains("/day") ?? false)
     }
 
@@ -56,7 +56,6 @@ final class GreigInsightServiceTests: XCTestCase {
 
         XCTAssertEqual(insight?.confidence, .low)
         XCTAssertTrue(insight?.title.contains("could reach around") ?? false)
-        XCTAssertFalse(insight?.title.contains("on track for") ?? true)
         XCTAssertTrue(insight?.body?.contains("early estimate") ?? false)
     }
 
@@ -109,7 +108,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, "You've been consistent recently")
+        XCTAssertEqual(insight?.title, CadenceLanguage.insightLine(for: .holding))
         XCTAssertTrue(insight?.body?.contains("7 of the last 8 days") ?? false)
         XCTAssertTrue(insight?.body?.contains("7-day streak") ?? false)
         XCTAssertTrue(insight?.body?.contains("Log today to keep this routine steady.") ?? false)
@@ -138,7 +137,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, "You've been consistent recently")
+        XCTAssertEqual(insight?.title, CadenceLanguage.insightLine(for: .holding))
         XCTAssertEqual(insight?.confidence, .high)
     }
 
@@ -163,7 +162,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(insight?.title.contains("on track") ?? false)
+        XCTAssertTrue(insight?.title.contains("Current pace points to") ?? false)
         XCTAssertNotNil(insight?.body)
         XCTAssertTrue(insight?.body?.contains("/day") ?? false)
     }
@@ -188,7 +187,7 @@ final class GreigInsightServiceTests: XCTestCase {
 
         XCTAssertTrue(insight?.title.contains("Projection needs more data") ?? false)
         XCTAssertTrue(insight?.body?.contains("of the last") ?? false)
-        XCTAssertFalse(insight?.title.contains("on track for") ?? true)
+        XCTAssertFalse(insight?.title.contains(CadenceLanguage.insightLine(for: .building)) ?? true)
     }
 
     func testNoLastOneDayMessaging() {

@@ -1,11 +1,12 @@
 import XCTest
 @testable import Habits
 
+@MainActor
 final class WidgetHabitIdentityStateTests: XCTestCase {
     func testIdentitySummaryUsesStateLabelAndRecentCompletionText() {
         let habit = makeHabit(
             identityState: .holding,
-            recentActivity: samples(values: [1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0])
+            recentActivity: samples(values: [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1])
         )
 
         let summary = habit.identityStateSummary
@@ -24,20 +25,19 @@ final class WidgetHabitIdentityStateTests: XCTestCase {
         XCTAssertEqual(summary.insightLine, "You’re in the process of returning to this habit")
     }
 
-    func testDecodingLegacyMomentumScoreMapsToIdentityState() throws {
+    func testDecodingWithoutIdentityStateDefaultsToStarting() throws {
         let json = """
         {
           "id": "00000000-0000-0000-0000-000000000099",
           "name": "Read",
           "isCompleteToday": false,
           "streak": 0,
-          "goalType": "binary",
-          "momentumScore": 85
+          "goalType": "binary"
         }
         """.data(using: .utf8)!
 
         let decoded = try JSONDecoder().decode(WidgetHabit.self, from: json)
-        XCTAssertEqual(decoded.identityState, .holding)
+        XCTAssertEqual(decoded.identityState, .starting)
     }
 
     private func makeHabit(

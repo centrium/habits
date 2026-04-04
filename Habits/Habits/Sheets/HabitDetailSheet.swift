@@ -578,7 +578,7 @@ struct HabitDetailSheet: View {
     }
 
     private func heroCenterStatusText(identityState: HabitIdentityState) -> String {
-        HabitIdentityStateFormatter.shortLabel(identityState)
+        CadenceLanguage.shortLabel(for: identityState)
     }
 
     private func identityStateSummary() -> HabitIdentityStateSnapshot {
@@ -594,7 +594,7 @@ struct HabitDetailSheet: View {
         identityState: HabitIdentityStateSnapshot
     ) -> String? {
         if habit.logs.isEmpty {
-            return HabitIdentityStateFormatter.insightLine(.starting)
+            return CadenceLanguage.insightLine(for: .starting)
         }
 
         return "\(identityState.activeDays) of last \(identityState.windowDays) days"
@@ -752,11 +752,13 @@ struct HabitDetailSheet: View {
         logCount: Int,
         activeDays: Int
     ) -> HabitIdentityOutput? {
-        HabitIdentityEngine.narrative(
-            identity: habit.identity,
-            completionRate: logCount > 0 ? Double(activeDays) / 7.0 : nil,
-            recentCompletions: logCount > 0 ? activeDays : nil,
-            window: logCount > 0 ? 7 : nil
+        HabitIdentityEngine.build(
+            habit: habit,
+            metrics: HabitIdentityMetrics(
+                completionRate: logCount > 0 ? Double(activeDays) / 7.0 : nil,
+                recentCompletions: logCount > 0 ? activeDays : nil,
+                window: logCount > 0 ? 7 : nil
+            )
         )
     }
 
@@ -766,8 +768,8 @@ struct HabitDetailSheet: View {
     ) -> HabitIdentityCard.Strength {
         guard logCount > 0 else { return .neutral }
 
-        let state = HabitIdentityStateResolver.state(
-            from: Double(activeDays) / 7.0,
+        let state = HabitIdentityStateResolver.resolve(
+            completionRate: Double(activeDays) / 7.0,
             hasRecentData: activeDays > 0
         )
         switch state {

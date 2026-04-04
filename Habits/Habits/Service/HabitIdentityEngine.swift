@@ -6,43 +6,69 @@ struct HabitIdentityOutput {
     let emotionalLine: String?
 }
 
+struct HabitIdentityMetrics {
+    let completionRate: Double?
+    let recentCompletions: Int?
+    let window: Int?
+
+    static func from(snapshot: HabitIdentityStateSnapshot) -> HabitIdentityMetrics {
+        HabitIdentityMetrics(
+            completionRate: snapshot.completionRate,
+            recentCompletions: snapshot.activeDays,
+            window: snapshot.windowDays
+        )
+    }
+}
+
 struct HabitIdentityEngine {
-    static func narrative(
+    static func build(
+        habit: Habit,
+        metrics: HabitIdentityMetrics
+    ) -> HabitIdentityOutput? {
+        build(
+            identity: habit.identity,
+            metrics: metrics
+        )
+    }
+
+    static func build(
         identity: String?,
-        completionRate: Double?,
-        recentCompletions: Int?,
-        window: Int?
+        metrics: HabitIdentityMetrics
     ) -> HabitIdentityOutput? {
         guard let rawIdentity = identity?.trimmingCharacters(in: .whitespacesAndNewlines),
               !rawIdentity.isEmpty else {
             return nil
         }
 
-        guard let completionRate,
-              let recentCompletions,
-              let window,
-              window > 0 else {
-            let state = HabitIdentityStateResolver.state(
-                from: nil,
-                hasRecentData: false
-            )
-            return HabitIdentityOutput(
-                identityLine: rawIdentity,
-                behaviourLine: "You’ve shown up 0 of the last 7 days",
-                emotionalLine: HabitIdentityStateFormatter.detailLine(state)
-            )
-        }
-
-        let state = HabitIdentityStateResolver.state(
-            from: completionRate,
-            hasRecentData: recentCompletions > 0
+        let state = HabitIdentityStateResolver.resolve(
+            completionRate: metrics.completionRate,
+            hasRecentData: (metrics.recentCompletions ?? 0) > 0
         )
-        let behaviourLine = "You’ve shown up \(recentCompletions) of the last \(window) days"
 
         return HabitIdentityOutput(
             identityLine: rawIdentity,
-            behaviourLine: behaviourLine,
-            emotionalLine: HabitIdentityStateFormatter.detailLine(state)
+            behaviourLine: CadenceLanguage.behaviourLine(
+                completions: metrics.recentCompletions,
+                window: metrics.window
+            ),
+            emotionalLine: CadenceLanguage.identityLine(for: state)
+        )
+    }
+
+    @available(*, deprecated, message: "Use build(habit:metrics:) or build(identity:metrics:)")
+    static func narrative(
+        identity: String?,
+        completionRate: Double?,
+        recentCompletions: Int?,
+        window: Int?
+    ) -> HabitIdentityOutput? {
+        build(
+            identity: identity,
+            metrics: HabitIdentityMetrics(
+                completionRate: completionRate,
+                recentCompletions: recentCompletions,
+                window: window
+            )
         )
     }
 }

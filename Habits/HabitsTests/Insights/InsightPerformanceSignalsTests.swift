@@ -1,68 +1,59 @@
 import XCTest
 @testable import Habits
 
+@MainActor
 final class InsightPerformanceSignalsTests: XCTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
-    func testMomentumScoreIsHighForStrongRecentStreak() {
+    func testIdentityStateIsHoldingForStrongRecentStreak() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
             offsets: [0, -1, -2, -3, -4, -5]
         )
 
-        let score = PerformanceSignalsCalculator.momentumScore(
+        let state = PerformanceSignalsCalculator.identityState(
             for: habit,
             calendar: calendar,
             now: now
         )
 
-        XCTAssertGreaterThan(score, 80)
-        XCTAssertEqual(
-            PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "Your routine is holding strong with consistent completion signals."
-        )
+        XCTAssertEqual(state, .holding)
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is holding strong")
     }
 
-    func testMomentumScoreIsLowWhenPatternIsBroken() {
+    func testIdentityStateIsReturningWhenPatternIsBroken() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
             offsets: [0, -8, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -19, -20, -21, -22]
         )
 
-        let score = PerformanceSignalsCalculator.momentumScore(
+        let state = PerformanceSignalsCalculator.identityState(
             for: habit,
             calendar: calendar,
             now: now
         )
 
-        XCTAssertLessThan(score, 30)
-        XCTAssertEqual(
-            PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "You are in a starting phase right now. A small action today can restart consistency."
-        )
+        XCTAssertEqual(state, .returning)
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "You’re in the process of returning to this habit")
     }
 
-    func testMomentumScoreIsBuildingForModerateRecentConsistency() {
+    func testIdentityStateIsBuildingForModerateRecentConsistency() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
             offsets: [0, -1, -3, -5]
         )
 
-        let score = PerformanceSignalsCalculator.momentumScore(
+        let state = PerformanceSignalsCalculator.identityState(
             for: habit,
             calendar: calendar,
             now: now
         )
 
-        XCTAssertGreaterThan(score, 30)
-        XCTAssertLessThanOrEqual(score, 60)
-        XCTAssertEqual(
-            PerformanceSignalsCalculator.momentumExplanation(for: score),
-            "You are in a building phase. Keep showing up to lock in the routine."
-        )
+        XCTAssertEqual(state, .building)
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "You’re building consistency with this habit")
     }
 
     func testHabitRiskIsLowWithRecentLogsAndHighCompletion() {
