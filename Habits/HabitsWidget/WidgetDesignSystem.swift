@@ -7,7 +7,7 @@ import SwiftUI
 import WidgetKit
 
 private enum WidgetLayout {
-    static let containerPadding: CGFloat = 12
+    static let containerPadding: CGFloat = 8
     static let cornerRadius: CGFloat = 20
     static let stackSpacing: CGFloat = 6
 }
@@ -31,7 +31,7 @@ struct WidgetContainer<Content: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: WidgetLayout.cornerRadius)
-                .fill(Color(.systemBackground))
+                .fill(Color.clear)
         )
     }
 }

@@ -40,18 +40,17 @@ struct HabitFocusWidgetEntryView: View {
                 title: "Focus",
                 trailingValue: habit.streak > 0 ? "\(habit.streak)" : nil
             ) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(habit.name)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 19, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Text("Log today")
-                        .font(.caption)
+
+                    Text("Show up today")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .opacity(0.6)
                         .lineLimit(1)
-                }
-            }
+                }            }
             .widgetURL(habit.deepLinkURL)
 
         case .allComplete(_, let completedCount):
@@ -73,13 +72,14 @@ struct HabitFocusWidgetEntryView: View {
 
         case .noHabits:
             WidgetContainer(title: "Focus", trailingValue: nil) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No habits yet")
-                        .font(.system(size: 18, weight: .semibold))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Start your first habit")
+                        .font(.system(size: 19, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Text("Add one to get started")
-                        .font(.caption)
+
+                    Text("Build your rhythm")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

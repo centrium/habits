@@ -66,13 +66,13 @@ struct HabitConsistencyWidgetEntryView: View {
 
     var body: some View {
         WidgetContainer(
-            title: "Streak",
-            trailingValue: entry.hasHabits ? "\(entry.snapshot.activeDayCount)/7" : nil
+            title: "Consistency",
+            trailingValue: nil
         ) {
             if entry.hasHabits {
                 MicroGraph(days: entry.snapshot.days)
 
-                Text("Last 7 days")
+                Text("7 Day View")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -99,7 +99,7 @@ struct HabitConsistencyWidget: Widget {
             HabitConsistencyWidgetEntryView(entry: entry)
                 .widgetSurface()
         }
-        .configurationDisplayName("Streak")
+        .configurationDisplayName("Consistency")
         .description("Your 7-day pattern.")
         .supportedFamilies([.systemSmall])
     }

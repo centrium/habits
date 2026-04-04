@@ -78,6 +78,9 @@ struct WidgetActivitySample: Codable, Equatable {
 struct WidgetHabit: Codable, Identifiable {
     let id: UUID
     let name: String
+    let identityTitle: String
+    let identityLine1: String?
+    let identityLine2: String?
     let isCompleteToday: Bool
     let streak: Int
     let goalType: WidgetGoalType
@@ -97,6 +100,9 @@ struct WidgetHabit: Codable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id
         case name
+        case identityTitle
+        case identityLine1
+        case identityLine2
         case isCompleteToday
         case streak
         case goalType
@@ -111,11 +117,17 @@ struct WidgetHabit: Codable, Identifiable {
         // Legacy payload support
         case progressFraction
         case usesActivityIndicator
+        case identityText
+        case stateText
+        case progressText
     }
 
     init(
         id: UUID,
         name: String,
+        identityTitle: String? = nil,
+        identityLine1: String? = nil,
+        identityLine2: String? = nil,
         isCompleteToday: Bool,
         streak: Int,
         goalType: WidgetGoalType,
@@ -129,6 +141,11 @@ struct WidgetHabit: Codable, Identifiable {
     ) {
         self.id = id
         self.name = name
+        self.identityTitle = Self.normalizedIdentityTitle(identityTitle, fallbackName: name)
+        self.identityLine1 = Self.normalizedLine(identityLine1)
+            ?? Self.defaultLine1(from: recentActivity, windowDays: 7)
+        self.identityLine2 = Self.normalizedLine(identityLine2)
+            ?? "This is becoming part of who you are"
         self.isCompleteToday = isCompleteToday
         self.streak = streak
         self.goalType = goalType
@@ -153,6 +170,8 @@ struct WidgetHabit: Codable, Identifiable {
 
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
+        let decodedIdentityTitle = try container.decodeIfPresent(String.self, forKey: .identityTitle)
+            ?? (try container.decodeIfPresent(String.self, forKey: .identityText))
         isCompleteToday = try container.decode(Bool.self, forKey: .isCompleteToday)
         streak = try container.decode(Int.self, forKey: .streak)
         iconName = try container.decodeIfPresent(String.self, forKey: .iconName)
@@ -181,6 +200,15 @@ struct WidgetHabit: Codable, Identifiable {
                 [WidgetActivitySample].self,
                 forKey: .recentActivity
             ) ?? []
+            let decodedLine1 = try container.decodeIfPresent(String.self, forKey: .identityLine1)
+                ?? (try container.decodeIfPresent(String.self, forKey: .progressText))
+            let decodedLine2 = try container.decodeIfPresent(String.self, forKey: .identityLine2)
+                ?? (try container.decodeIfPresent(String.self, forKey: .stateText))
+            identityTitle = Self.normalizedIdentityTitle(decodedIdentityTitle, fallbackName: name)
+            identityLine1 = Self.normalizedLine(decodedLine1)
+                ?? Self.defaultLine1(from: recentActivity, windowDays: 7)
+            identityLine2 = Self.normalizedLine(decodedLine2)
+                ?? "This is becoming part of who you are"
             WidgetHabitLogger.log(
                 context: "decoded",
                 habitName: name,
@@ -207,6 +235,9 @@ struct WidgetHabit: Codable, Identifiable {
             hasActivityToday = isCompleteToday
         }
         identityState = .starting
+        identityTitle = name
+        identityLine1 = Self.defaultLine1(from: [], windowDays: 7)
+        identityLine2 = "This is becoming part of who you are"
         heatmapAggregationKind = .completion
         recentActivity = []
 
@@ -223,6 +254,9 @@ struct WidgetHabit: Codable, Identifiable {
 
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
+        try container.encode(identityTitle, forKey: .identityTitle)
+        try container.encodeIfPresent(identityLine1, forKey: .identityLine1)
+        try container.encodeIfPresent(identityLine2, forKey: .identityLine2)
         try container.encode(isCompleteToday, forKey: .isCompleteToday)
         try container.encode(streak, forKey: .streak)
         try container.encode(goalType, forKey: .goalType)
@@ -271,6 +305,54 @@ struct WidgetHabit: Codable, Identifiable {
         case .openEnded:
             return false
         }
+    }
+
+    private static func normalizedLine(_ line: String?) -> String? {
+        guard let trimmed = line?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private static func normalizedIdentityTitle(
+        _ title: String?,
+        fallbackName: String
+    ) -> String {
+        normalizedLine(title) ?? fallbackName
+    }
+
+    private static func defaultLine1(
+        from recentActivity: [WidgetActivitySample],
+        windowDays: Int
+    ) -> String {
+        let normalizedWindow = max(1, windowDays)
+        let activeDays = recentActivity
+            .sorted { $0.date > $1.date }
+            .prefix(normalizedWindow)
+            .reduce(0) { count, sample in
+                count + (sample.value > 0 ? 1 : 0)
+            }
+
+        return "\(activeDays) of last \(normalizedWindow) days"
+    }
+}
+
+struct WidgetHabitSummary: Codable {
+    let id: UUID
+    let identityTitle: String
+    let identityLine1: String?
+    let identityLine2: String?
+}
+
+extension WidgetHabit {
+    var summary: WidgetHabitSummary {
+        WidgetHabitSummary(
+            id: id,
+            identityTitle: identityTitle,
+            identityLine1: identityLine1,
+            identityLine2: identityLine2
+        )
     }
 }
 

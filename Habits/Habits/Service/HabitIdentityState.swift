@@ -1,5 +1,11 @@
 import Foundation
 
+struct IdentityOutput: Codable {
+    let title: String
+    let line1: String?
+    let line2: String?
+}
+
 enum HabitIdentityState: Equatable {
     case starting
     case building
@@ -29,6 +35,39 @@ struct CadenceLanguage {
         }
 
         return "You’ve shown up \(completions) of the last \(window) days"
+    }
+
+    static func identityOutput(
+        for habit: Habit,
+        date: Date,
+        calendar: Calendar = .current
+    ) -> IdentityOutput {
+        let snapshot = HabitIdentityStateResolver.recentSnapshot(
+            for: habit,
+            calendar: calendar,
+            now: date,
+            windowDays: 7
+        )
+        let metrics = HabitIdentityMetrics.from(snapshot: snapshot)
+        let identityNarrative = HabitIdentityEngine.build(habit: habit, metrics: metrics)
+
+        let title: String = {
+            if let identityNarrative {
+                return identityNarrative.identityLine
+            }
+            return habit.name
+        }()
+        let line1 = behaviourLine(
+            completions: snapshot.activeDays,
+            window: snapshot.windowDays
+        )
+        let line2 = identityNarrative?.emotionalLine ?? "This is becoming part of who you are"
+
+        return IdentityOutput(
+            title: title,
+            line1: line1,
+            line2: line2
+        )
     }
 }
 

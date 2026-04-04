@@ -67,6 +67,9 @@ final class WidgetDataStore {
             return WidgetHabit(
                 id: habit.id,
                 name: habit.name,
+                identityTitle: habit.identityTitle,
+                identityLine1: habit.identityLine1,
+                identityLine2: habit.identityLine2,
                 isCompleteToday: habit.isCompleteToday,
                 streak: habit.streak,
                 goalType: .goal,

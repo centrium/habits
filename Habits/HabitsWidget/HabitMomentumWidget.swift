@@ -58,7 +58,7 @@ struct HabitIdentityStateWidgetEntryView: View {
     let entry: HabitIdentityStateEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Identity")
                     .font(.system(size: 14, weight: .semibold))
@@ -77,22 +77,39 @@ struct HabitIdentityStateWidgetEntryView: View {
             Spacer(minLength: 4)
 
             if let habit = entry.habit {
-                let summary = habit.identityStateSummary
 
-                Text(habit.name)
-                    .font(.system(size: 17, weight: .semibold))
-                    .lineLimit(2)
+                // GROUP 1 — Identity + Habit (tight)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(habit.identityTitle)
+                        .font(.system(size: 17, weight: .semibold))
+                        .lineLimit(2)
 
-                Text("is \(summary.shortLabel.lowercased())")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.systemAccent)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    if shouldShowHabitName(for: habit) {
+                        Text(habit.name)
+                            .font(.caption2) // slightly smaller = subtitle feel
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
-                Text("\(habit.recentCompletionCount(days: 7)) of last 7 days")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Spacer(minLength: 4)
+
+                // GROUP 2 — Supporting text (looser)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let line1 = habit.identityLine1 {
+                        Text(line1)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    if let line2 = habit.identityLine2 {
+                        Text(line2)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             } else {
                 Text("Choose a habit")
                     .font(.system(size: 17, weight: .semibold))
@@ -111,11 +128,11 @@ struct HabitIdentityStateWidgetEntryView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemBackground))
+                .fill(Color.clear)
         )
         .widgetURL(entry.habit?.deepLinkURL)
     }
@@ -123,6 +140,18 @@ struct HabitIdentityStateWidgetEntryView: View {
     private var trailingValue: String? {
         guard let habit = entry.habit else { return nil }
         return "\(habit.recentCompletionCount(days: 7))/7"
+    }
+
+    private func shouldShowHabitName(for habit: WidgetHabit) -> Bool {
+        let title = habit.identityTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let name = habit.name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !name.isEmpty else { return false }
+        return !title.contains(name)
     }
 }
 

@@ -17,6 +17,12 @@ func mapToWidgetHabits(
             now: referenceDate,
             windowDays: 7
         )
+        let resolvedIdentityState = widgetIdentityState(from: identitySnapshot.state)
+        let identityOutput = CadenceLanguage.identityOutput(
+            for: habit,
+            date: referenceDate,
+            calendar: calendar
+        )
         let mappedProgress = habit.widgetProgressForWidget(
             referenceDate: referenceDate,
             calendar: calendar,
@@ -26,6 +32,9 @@ func mapToWidgetHabits(
         var widgetHabit = WidgetHabit(
             id: habit.id,
             name: habit.name,
+            identityTitle: identityOutput.title,
+            identityLine1: identityOutput.line1,
+            identityLine2: identityOutput.line2,
             isCompleteToday: habit.isComplete(
                 for: referenceDate,
                 calendar: calendar,
@@ -41,7 +50,7 @@ func mapToWidgetHabits(
             hasActivityToday: hasActivityToday,
             iconName: habit.iconName,
             colorHex: habit.colorHex,
-            identityState: widgetIdentityState(from: identitySnapshot.state),
+            identityState: resolvedIdentityState,
             heatmapAggregationKind: habit.widgetHeatmapAggregationKind,
             recentActivity: habit.widgetRecentActivity(
                 referenceDate: referenceDate,
@@ -57,6 +66,9 @@ func mapToWidgetHabits(
             widgetHabit = WidgetHabit(
                 id: widgetHabit.id,
                 name: widgetHabit.name,
+                identityTitle: widgetHabit.identityTitle,
+                identityLine1: widgetHabit.identityLine1,
+                identityLine2: widgetHabit.identityLine2,
                 isCompleteToday: widgetHabit.isCompleteToday,
                 streak: widgetHabit.streak,
                 goalType: .goal,
