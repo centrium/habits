@@ -16,8 +16,8 @@ enum CadenceTokens {
 
         enum Text {
             static let primary = SwiftUI.Color.primary
-            static let secondary = SwiftUI.Color.secondary
-            static let tertiary = SwiftUI.Color.secondary.opacity(0.72)
+            static let secondary = SwiftUI.Color.primary.opacity(0.65)
+            static let tertiary = SwiftUI.Color.primary.opacity(0.5)
         }
 
         enum State {
@@ -84,7 +84,7 @@ enum CadenceTokens {
     enum Intensity {
         // Global visual tuning knobs.
         // 1.0 = current calibrated baseline.
-        static let ambientSurface: CGFloat = 1.12
+        static let ambientSurface: CGFloat = 1.0
         static let heatmapGlow: CGFloat = 1.18
     }
 }

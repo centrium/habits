@@ -367,6 +367,7 @@ struct HabitDetailSheet: View {
                         strength: identityStrength,
                         accent: CadenceTokens.Color.accent(for: habit)
                     )
+                    .padding(.top, 6)
                     .padding(.horizontal, sectionPadding)
                 }
 
@@ -393,6 +394,7 @@ struct HabitDetailSheet: View {
                 .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 70)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
+                .padding(.top, 6)
                 .padding(.horizontal, sectionPadding)
 
                 Button {
@@ -577,7 +579,6 @@ struct HabitDetailSheet: View {
                         )
                     )
                     .padding(.top, CadenceTokens.Space.sm + 2)
-                    .opacity(0.96)
                 }
                 .padding(CadenceTokens.Space.md)
                 .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
@@ -936,7 +937,7 @@ private struct HabitIdentityCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(accent.primary.opacity(0.6))
+                .fill(accent.primary.opacity(0.72))
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -971,6 +972,11 @@ private struct HabitIdentityCard: View {
             RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
                 .fill(tintColor.opacity(0.06))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
     }
 

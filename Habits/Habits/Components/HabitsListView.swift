@@ -155,9 +155,9 @@ struct HabitsListView: View {
                             )
                             .overlay {
                                 Circle()
-                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                                    .strokeBorder(Color.black.opacity(0.05), lineWidth: 1)
                             }
-                            .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                            .shadow(color: Color.black.opacity(0.14), radius: 14, y: 6)
                             .scaleEffect(isFABPressed ? 0.96 : 1)
                             .animation(.easeOut(duration: 0.12), value: isFABPressed)
                     }

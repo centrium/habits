@@ -225,22 +225,22 @@ struct HabitHeatmap: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(
                                 raw > 0.001
-                                    ? softAccent.opacity(0.4)
-                                    : Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.1),
+                                    ? softAccent.opacity(0.35)
+                                    : Color.primary.opacity(0.1),
                                 lineWidth: 1
                             )
                     }
                     .shadow(
                         color: raw > 0.001
-                            ? softAccent.opacity((colorScheme == .dark ? 0.2 : 0.25) * glow)
+                            ? softAccent.opacity((colorScheme == .dark ? 0.1 : 0.12) * glow)
                             : .clear,
-                        radius: raw > 0.001 ? 4 * glow : 0,
-                        y: raw > 0.001 ? 1 * glow : 0
+                        radius: raw > 0.001 ? 2 * glow : 0,
+                        y: raw > 0.001 ? 0.8 * glow : 0
                     )
                     .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(baseAccent.opacity(0.78), lineWidth: 1.5)
+                                .stroke(softAccent, lineWidth: 2)
                         }
                     }
             }
@@ -251,17 +251,14 @@ struct HabitHeatmap: View {
         let clamped = clamp(intensity)
 
         if clamped <= 0.001 {
-            if colorScheme == .dark {
-                return Color.white.opacity(0.12)
-            }
-            return softAccent.opacity(0.14)
+            return Color.primary.opacity(0.08)
         }
 
         if clamped >= 0.999 {
-            return softAccent.opacity(colorScheme == .dark ? 0.86 : 0.8)
+            return softAccent.opacity(0.9)
         }
 
-        return softAccent.opacity(colorScheme == .dark ? 0.68 : 0.58)
+        return softAccent.opacity(colorScheme == .dark ? 0.78 : 0.72)
     }
     
     private var identityStateBlock: some View {

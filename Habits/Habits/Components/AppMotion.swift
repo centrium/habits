@@ -54,7 +54,7 @@ private struct CadenceSurfaceModifier: ViewModifier {
                     .fill(backgroundColor)
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(borderColor, lineWidth: 1.2)
+                            .stroke(borderColor, lineWidth: 1)
                     }
                     .overlay {
                         if colorScheme == .dark {
@@ -79,27 +79,25 @@ private struct CadenceSurfaceModifier: ViewModifier {
     }
 
     private var backgroundColor: Color {
-        colorScheme == .dark
-            ? CadenceTokens.Color.Background.secondary
-            : CadenceTokens.Color.Background.primary
+        CadenceTokens.Color.Background.secondary
     }
 
     private var borderColor: Color {
-        CadenceTokens.Surface.strokeColor(for: colorScheme)
+        colorScheme == .light
+            ? Color.black.opacity(0.08)
+            : Color.white.opacity(0.14)
     }
 
     private var shadowColor: Color {
-        colorScheme == .dark
-            ? CadenceTokens.Surface.shadowColor(for: colorScheme)
-            : Color.black.opacity(0.04)
+        Color.black.opacity(colorScheme == .light ? 0.07 : 0.24)
     }
 
     private var shadowRadius: CGFloat {
-        colorScheme == .dark ? CadenceTokens.Surface.shadowRadius : 8
+        colorScheme == .light ? 6 : 8
     }
 
     private var shadowYOffset: CGFloat {
-        colorScheme == .dark ? CadenceTokens.Surface.shadowYOffset : 4
+        colorScheme == .light ? 3 : 4
     }
 
     private var topHighlightShadowColor: Color {
@@ -131,14 +129,14 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
             .overlay(alignment: .top) {
                 LinearGradient(
                     colors: [
-                        accent.opacity((colorScheme == .dark ? 0.32 : 0.2) * ambient),
-                        accent.opacity((colorScheme == .dark ? 0.16 : 0.1) * ambient),
+                        accent.opacity((colorScheme == .dark ? 0.24 : 0.14) * ambient),
+                        accent.opacity((colorScheme == .dark ? 0.1 : 0.06) * ambient),
                         .clear
                     ],
                     startPoint: animateSurface ? .topLeading : .topTrailing,
                     endPoint: animateSurface ? .bottomTrailing : .bottomLeading
                 )
-                .blur(radius: 48 + (12 * (ambient - 1)))
+                .blur(radius: 40 + (8 * (ambient - 1)))
                 .frame(height: 240)
                 .allowsHitTesting(false)
                 .ignoresSafeArea(edges: .top)
@@ -186,7 +184,7 @@ private struct CadenceControlChromeModifier: ViewModifier {
             .background(.ultraThinMaterial, in: Capsule(style: .continuous))
             .overlay {
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             }
             .shadow(color: Color.black.opacity(0.05), radius: 6, y: 2)
     }
