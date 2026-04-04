@@ -117,24 +117,28 @@ private struct CadenceSurfaceModifier: ViewModifier {
 
 private struct CadenceAmbientSurfaceModifier: ViewModifier {
     let accent: Color
+    let accentKey: String
+    let motionEnabled: Bool
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animateSurface = false
 
     func body(content: Content) -> some View {
+        let ambient = max(0, Double(CadenceTokens.Intensity.ambientSurface))
+
         content
             .overlay(alignment: .top) {
                 LinearGradient(
                     colors: [
-                        accent.opacity(colorScheme == .dark ? 0.32 : 0.2),
-                        accent.opacity(colorScheme == .dark ? 0.16 : 0.1),
+                        accent.opacity((colorScheme == .dark ? 0.32 : 0.2) * ambient),
+                        accent.opacity((colorScheme == .dark ? 0.16 : 0.1) * ambient),
                         .clear
                     ],
                     startPoint: animateSurface ? .topLeading : .topTrailing,
                     endPoint: animateSurface ? .bottomTrailing : .bottomLeading
                 )
-                .blur(radius: 48)
+                .blur(radius: 48 + (12 * (ambient - 1)))
                 .frame(height: 240)
                 .allowsHitTesting(false)
                 .ignoresSafeArea(edges: .top)
@@ -147,12 +151,31 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                     .frame(height: 260)
                     .ignoresSafeArea(edges: .top)
                 )
+                .id(accentKey)
         }
         .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
-                animateSurface.toggle()
-            }
+            restartAmbientAnimation()
+        }
+        .onChange(of: accentKey) { _, _ in
+            restartAmbientAnimation()
+        }
+        .onChange(of: motionEnabled) { _, _ in
+            restartAmbientAnimation()
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            restartAmbientAnimation()
+        }
+    }
+
+    private func restartAmbientAnimation() {
+        guard motionEnabled, !reduceMotion else {
+            animateSurface = false
+            return
+        }
+
+        animateSurface = false
+        withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+            animateSurface = true
         }
     }
 }
@@ -190,8 +213,18 @@ extension View {
         )
     }
 
-    func cadenceSurface(accent: Color) -> some View {
-        modifier(CadenceAmbientSurfaceModifier(accent: accent))
+    func cadenceSurface(
+        accent: Color,
+        accentKey: String = "default",
+        motionEnabled: Bool = true
+    ) -> some View {
+        modifier(
+            CadenceAmbientSurfaceModifier(
+                accent: accent,
+                accentKey: accentKey,
+                motionEnabled: motionEnabled
+            )
+        )
     }
 
     func cadenceControlChrome() -> some View {

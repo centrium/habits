@@ -88,7 +88,11 @@ struct HabitDetailSheet: View {
             progressRevision: progressRevision,
             earliestCalendarDate: earliestCalendarDate
         )
-        .cadenceSurface(accent: CadenceTokens.Color.accent(for: habit).primary)
+        .cadenceSurface(
+            accent: CadenceTokens.Color.accent(for: habit).primary,
+            accentKey: "detail-\(habit.colorHex)",
+            motionEnabled: userSettings.ambientSurfaceMotionEnabled
+        )
         .navigationBarTitleDisplayMode(.large)
         .navigationTitle(habit.name)
         .toolbar {
@@ -235,7 +239,11 @@ struct HabitDetailSheet: View {
                 premiumHistoryGate: premiumHistoryGate,
                 calendar: calendar
             )
-            .cadenceSurface(accent: CadenceTokens.Color.accent(for: habit).primary)
+            .cadenceSurface(
+                accent: CadenceTokens.Color.accent(for: habit).primary,
+                accentKey: "history-\(habit.colorHex)",
+                motionEnabled: userSettings.ambientSurfaceMotionEnabled
+            )
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("")
             .toolbar {

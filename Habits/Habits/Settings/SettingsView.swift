@@ -170,6 +170,7 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Tap to Log", isOn: $userSettings.tapToLogEnabled)
+                Toggle("Ambient Surface Motion", isOn: $userSettings.ambientSurfaceMotionEnabled)
             } header: {
                 SettingsSectionHeader("Behaviour")
             }

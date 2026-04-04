@@ -15,16 +15,18 @@ struct HeatmapCellView: View, Equatable {
     }
 
     var body: some View {
+        let glow = max(0, Double(CadenceTokens.Intensity.heatmapGlow))
+
         RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(cellColor)
             .overlay(cellBorderOverlay)
             .overlay(selectionOverlay)
             .shadow(
                 color: isActive
-                    ? accent.opacity(colorScheme == .dark ? 0.2 : 0.25)
+                    ? accent.opacity((colorScheme == .dark ? 0.2 : 0.25) * glow)
                     : .clear,
-                radius: isActive ? 3.5 : 0,
-                y: isActive ? 1 : 0
+                radius: isActive ? 3.5 * glow : 0,
+                y: isActive ? 1 * glow : 0
             )
     }
 

@@ -84,6 +84,7 @@ final class UserSettings: ObservableObject {
     private enum Keys {
         static let weekStart = "settings.weekStart"
         static let tapToLogEnabled = "settings.tapToLogEnabled"
+        static let ambientSurfaceMotionEnabled = "settings.ambientSurfaceMotionEnabled"
         static let greigModeEnabled = "settings.greigModeEnabled"
         static let showPremiumInsightsView = "settings.showPremiumInsightsView"
 
@@ -114,6 +115,12 @@ final class UserSettings: ObservableObject {
     @Published var tapToLogEnabled: Bool {
         didSet {
             store.set(tapToLogEnabled, forKey: Keys.tapToLogEnabled)
+        }
+    }
+
+    @Published var ambientSurfaceMotionEnabled: Bool {
+        didSet {
+            store.set(ambientSurfaceMotionEnabled, forKey: Keys.ambientSurfaceMotionEnabled)
         }
     }
 
@@ -172,6 +179,9 @@ final class UserSettings: ObservableObject {
 
         self.tapToLogEnabled =
             store.bool(forKey: Keys.tapToLogEnabled) ?? true
+        
+        self.ambientSurfaceMotionEnabled =
+            store.bool(forKey: Keys.ambientSurfaceMotionEnabled) ?? true
 
         self.greigModeEnabled =
             store.bool(forKey: Keys.greigModeEnabled) ?? true
@@ -205,6 +215,7 @@ final class UserSettings: ObservableObject {
         store.set(eveningReflectionHour, forKey: Keys.eveningReflectionHour)
         store.set(eveningReflectionMinute, forKey: Keys.eveningReflectionMinute)
         store.set(tapToLogEnabled, forKey: Keys.tapToLogEnabled)
+        store.set(ambientSurfaceMotionEnabled, forKey: Keys.ambientSurfaceMotionEnabled)
         store.set(showPremiumInsightsView, forKey: Keys.showPremiumInsightsView)
     }
 

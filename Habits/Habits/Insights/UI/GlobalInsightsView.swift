@@ -39,7 +39,11 @@ struct GlobalInsightsView: View {
             }
         }
         .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
-        .cadenceSurface(accent: Color.systemAccent)
+        .cadenceSurface(
+            accent: Color.systemAccent,
+            accentKey: "global-insights",
+            motionEnabled: userSettings.ambientSurfaceMotionEnabled
+        )
         .navigationTitle("Global Insights")
         .navigationBarTitleDisplayMode(.inline)
     }

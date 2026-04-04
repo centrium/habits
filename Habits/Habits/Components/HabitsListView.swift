@@ -179,7 +179,11 @@ struct HabitsListView: View {
                     }
                 }
         }
-        .cadenceSurface(accent: headerAccentColor)
+        .cadenceSurface(
+            accent: activeSurfaceAccent,
+            accentKey: activeSurfaceAccentKey,
+            motionEnabled: userSettings.ambientSurfaceMotionEnabled
+        )
 
         .environmentObject(userSettings)
         .onAppear {
@@ -385,6 +389,22 @@ struct HabitsListView: View {
             return CadenceTokens.Color.accent(for: firstHabit).primary
         }
         return .systemAccent
+    }
+
+    private var headerAccentKey: String {
+        habits.first?.colorHex ?? "system-accent"
+    }
+
+    private var activeSurfaceAccent: Color {
+        showsHomeAmbientSurface ? headerAccentColor : .clear
+    }
+
+    private var activeSurfaceAccentKey: String {
+        showsHomeAmbientSurface ? headerAccentKey : "home-ambient-hidden"
+    }
+
+    private var showsHomeAmbientSurface: Bool {
+        selectedHabitID == nil && !showGlobalInsights
     }
 
     private var lockedHabitSlot: some View {

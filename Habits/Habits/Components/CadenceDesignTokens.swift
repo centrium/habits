@@ -80,4 +80,11 @@ enum CadenceTokens {
                 : SwiftUI.Color.black.opacity(0.06)
         }
     }
+
+    enum Intensity {
+        // Global visual tuning knobs.
+        // 1.0 = current calibrated baseline.
+        static let ambientSurface: CGFloat = 1.12
+        static let heatmapGlow: CGFloat = 1.18
+    }
 }

@@ -212,6 +212,7 @@ struct HabitHeatmap: View {
     ) -> some View {
         let calendar = calendarProvider.calendar
         let columns = Array(repeating: GridItem(.flexible(), spacing: 2.5), count: 7)
+        let glow = max(0, Double(CadenceTokens.Intensity.heatmapGlow))
 
         return LazyVGrid(columns: columns, spacing: 2.5) {
             ForEach(days, id: \.self) { day in
@@ -231,10 +232,10 @@ struct HabitHeatmap: View {
                     }
                     .shadow(
                         color: raw > 0.001
-                            ? softAccent.opacity(colorScheme == .dark ? 0.2 : 0.25)
+                            ? softAccent.opacity((colorScheme == .dark ? 0.2 : 0.25) * glow)
                             : .clear,
-                        radius: raw > 0.001 ? 4 : 0,
-                        y: raw > 0.001 ? 1 : 0
+                        radius: raw > 0.001 ? 4 * glow : 0,
+                        y: raw > 0.001 ? 1 * glow : 0
                     )
                     .overlay {
                         if calendar.isDateInToday(day) {

@@ -40,7 +40,11 @@ struct HabitInsightsView: View {
             .padding(.bottom, 40)
         }
         .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
-        .cadenceSurface(accent: accent)
+        .cadenceSurface(
+            accent: accent,
+            accentKey: "habit-insights-\(habit.colorHex)",
+            motionEnabled: userSettings.ambientSurfaceMotionEnabled
+        )
         .navigationTitle(insights.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
