@@ -2,13 +2,11 @@
 //  HabitIdentityStateWidget.swift
 //  HabitsWidget
 //
-//  Created by Codex on 25/03/2026.
-//
 
 import AppIntents
-import WidgetKit
-import SwiftUI
 import Foundation
+import SwiftUI
+import WidgetKit
 
 struct HabitIdentityStateProvider: AppIntentTimelineProvider {
     typealias Intent = HabitSelectionIntent
@@ -60,70 +58,71 @@ struct HabitIdentityStateWidgetEntryView: View {
     let entry: HabitIdentityStateEntry
 
     var body: some View {
-        Group {
-            if let habit = entry.habit {
-                HabitIdentityStateCard(habit: habit)
-                    .widgetURL(identityStateDeepLinkURL(for: habit))
-            } else {
-                EmptyHabitIdentityStateCard()
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Identity")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.systemAccent)
+
+                Spacer()
+
+                if let trailingValue {
+                    Text(trailingValue)
+                        .font(.system(size: 18, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
 
-private struct HabitIdentityStateCard: View {
-    let habit: WidgetHabit
+            Spacer(minLength: 4)
 
-    private var summary: WidgetIdentityStateSummary {
-        habit.identityStateSummary
-    }
+            if let habit = entry.habit {
+                let summary = habit.identityStateSummary
 
-    var body: some View {
-        VStack(spacing: WidgetSpacing.identityClusterSpacing) {
-            Text(habit.name)
-                .font(WidgetTypography.tertiary)
-                .foregroundStyle(WidgetColors.habitName)
-                .lineLimit(1)
-                .multilineTextAlignment(.center)
+                Text(habit.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(2)
 
-            VStack(spacing: WidgetSpacing.identityTextSpacing) {
-                Text(summary.shortLabel)
-                    .font(WidgetTypography.identityState)
-                    .foregroundStyle(WidgetColors.identityStateText(summary.state))
-                    .lineLimit(1)
-
-                Text(summary.recentCompletionText)
-                    .font(WidgetTypography.identitySupport)
-                    .foregroundStyle(WidgetColors.identitySupportText)
+                Text("is \(summary.shortLabel.lowercased())")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.systemAccent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-            }
-            .contentTransition(.opacity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(WidgetSpacing.containerPadding)
-        .multilineTextAlignment(.center)
-        .animation(.easeInOut(duration: WidgetMetrics.identityAnimationDuration), value: summary.shortLabel)
-    }
-}
 
-private struct EmptyHabitIdentityStateCard: View {
-    var body: some View {
-        VStack(spacing: WidgetSpacing.verticalStack) {
-            Text("Choose a habit")
-                .font(WidgetTypography.identityEmptyTitle)
-                .foregroundStyle(WidgetColors.emptyPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text("Pick one in Edit Widget")
-                .font(WidgetTypography.identityEmptySubtitle)
-                .foregroundStyle(WidgetColors.secondaryText)
-                .lineLimit(2)
+                Text("\(habit.recentCompletionCount(days: 7)) of last 7 days")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text("Choose a habit")
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(2)
+
+                Text("is starting")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.systemAccent)
+                    .lineLimit(1)
+
+                Text("Pick one in Edit Widget")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
         }
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(WidgetSpacing.containerPadding)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color(.systemBackground))
+        )
+        .widgetURL(entry.habit?.deepLinkURL)
+    }
+
+    private var trailingValue: String? {
+        guard let habit = entry.habit else { return nil }
+        return "\(habit.recentCompletionCount(days: 7))/7"
     }
 }
 
@@ -139,9 +138,9 @@ struct HabitIdentityStateWidget: Widget {
             HabitIdentityStateWidgetEntryView(entry: entry)
                 .widgetSurface()
         }
-        .configurationDisplayName("Cadence: Identity State")
-        .description("Track your current identity state.")
-        .supportedFamilies([.systemSmall])
+        .configurationDisplayName("Identity")
+        .description("A quick identity signal.")
+        .supportedFamilies([.systemMedium])
     }
 }
 
@@ -173,8 +172,4 @@ private extension WidgetHabit {
             return WidgetActivitySample(date: date, value: value)
         }
     }
-}
-
-private func identityStateDeepLinkURL(for habit: WidgetHabit) -> URL {
-    URL(string: "habits://habit/\(habit.id.uuidString)")!
 }

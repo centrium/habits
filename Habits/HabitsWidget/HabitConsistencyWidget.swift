@@ -2,12 +2,10 @@
 //  HabitConsistencyWidget.swift
 //  HabitsWidget
 //
-//  Created by Codex on 25/03/2026.
-//
 
-import WidgetKit
-import SwiftUI
 import Foundation
+import SwiftUI
+import WidgetKit
 
 struct HabitConsistencyProvider: TimelineProvider {
     func placeholder(in context: Context) -> HabitConsistencyEntry {
@@ -46,13 +44,12 @@ struct HabitConsistencyProvider: TimelineProvider {
     private var previewDays: [WidgetHeatmapDay] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
+        let previewIntensities = [0, 1, 2, 4, 3, 2, 4]
 
         return (0..<7).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -6 + offset, to: today) else {
                 return nil
             }
-
-            let previewIntensities = [0, 1, 2, 4, 3, 2, 4]
             return WidgetHeatmapDay(date: date, intensity: previewIntensities[offset])
         }
     }
@@ -68,51 +65,29 @@ struct HabitConsistencyWidgetEntryView: View {
     let entry: HabitConsistencyEntry
 
     var body: some View {
-        Group {
+        WidgetContainer(
+            title: "Streak",
+            trailingValue: entry.hasHabits ? "\(entry.snapshot.activeDayCount)/7" : nil
+        ) {
             if entry.hasHabits {
-                VStack(alignment: .leading, spacing: WidgetSpacing.verticalStack) {
-                    Text("Consistency")
-                        .font(WidgetTypography.consistencyLabel)
-                        .foregroundStyle(WidgetColors.secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                MicroGraph(days: entry.snapshot.days)
 
-                    WidgetHeatmapStrip(days: entry.snapshot.days)
-
-                    Text(entry.snapshot.summaryText)
-                        .font(WidgetTypography.consistencySummary)
-                        .foregroundStyle(WidgetColors.primaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .padding(WidgetSpacing.containerPadding)
+                Text("Last 7 days")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             } else {
-                HabitConsistencyEmptyState()
+                Text("No habits yet")
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Text("Add a habit")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct HabitConsistencyEmptyState: View {
-    var body: some View {
-        VStack(spacing: WidgetSpacing.verticalStack) {
-            Text("No habits yet")
-                .font(WidgetTypography.primary)
-                .foregroundStyle(WidgetColors.emptyPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-
-            Text("Add a habit")
-                .font(WidgetTypography.secondary)
-                .foregroundStyle(WidgetColors.secondaryText)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(WidgetSpacing.containerPadding)
-        .multilineTextAlignment(.center)
     }
 }
 
@@ -124,8 +99,8 @@ struct HabitConsistencyWidget: Widget {
             HabitConsistencyWidgetEntryView(entry: entry)
                 .widgetSurface()
         }
-        .configurationDisplayName("Cadence: Consistency")
-        .description("Your recent activity.")
+        .configurationDisplayName("Streak")
+        .description("Your 7-day pattern.")
         .supportedFamilies([.systemSmall])
     }
 }

@@ -2,12 +2,10 @@
 //  HabitFocusWidget.swift
 //  HabitsWidget
 //
-//  Created by Codex on 25/03/2026.
-//
 
-import WidgetKit
-import SwiftUI
 import Foundation
+import SwiftUI
+import WidgetKit
 
 struct HabitFocusProvider: TimelineProvider {
     func placeholder(in context: Context) -> HabitFocusEntry {
@@ -36,97 +34,57 @@ struct HabitFocusWidgetEntryView: View {
     let entry: HabitFocusEntry
 
     var body: some View {
-        Group {
-            switch entry.state {
-            case .needsAttention(let habit):
-                HabitFocusCard(habit: habit)
-                    .widgetURL(habit.deepLinkURL)
-            case .allComplete(_, let completedCount):
-                HabitFocusAllDoneState(completedCount: completedCount)
-            case .noHabits:
-                HabitFocusEmptyState()
+        switch entry.state {
+        case .needsAttention(let habit):
+            WidgetContainer(
+                title: "Focus",
+                trailingValue: habit.streak > 0 ? "\(habit.streak)" : nil
+            ) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(habit.name)
+                        .font(.system(size: 18, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text("Log today")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .opacity(0.6)
+                        .lineLimit(1)
+                }
+            }
+            .widgetURL(habit.deepLinkURL)
+
+        case .allComplete(_, let completedCount):
+            WidgetContainer(
+                title: "Focus",
+                trailingValue: "\(completedCount)"
+            ) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("All habits logged")
+                        .font(.system(size: 18, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text("Great consistency today")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+        case .noHabits:
+            WidgetContainer(title: "Focus", trailingValue: nil) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No habits yet")
+                        .font(.system(size: 18, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text("Add one to get started")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct HabitFocusCard: View {
-    let habit: WidgetHabit
-
-    private var state: WidgetFocusState {
-        .needsAttention(habit)
-    }
-
-    var body: some View {
-        VStack(spacing: WidgetSpacing.verticalStack) {
-            Text(state.titleText)
-                .font(WidgetTypography.focusTitle)
-                .foregroundStyle(WidgetColors.primaryText)
-                .lineLimit(1)
-                .multilineTextAlignment(.center)
-
-            WidgetHabitIndicator(habit: habit, accent: habit.widgetAccentColor, style: .focusHero)
-
-            Text(state.subtitleText)
-                .font(WidgetTypography.secondary)
-                .foregroundStyle(WidgetColors.secondaryText)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(WidgetSpacing.containerPadding)
-        .multilineTextAlignment(.center)
-    }
-}
-
-private struct HabitFocusAllDoneState: View {
-    let completedCount: Int
-
-    private var state: WidgetFocusState {
-        .allComplete(primaryHabit: .focusPreview, completedCount: completedCount)
-    }
-
-    var body: some View {
-        VStack(spacing: WidgetSpacing.verticalStack) {
-            Text(state.titleText)
-                .font(WidgetTypography.primary)
-                .foregroundStyle(WidgetColors.score)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-
-            WidgetSystemCompletionBadge(style: .focusCelebration)
-
-            Text(state.subtitleText)
-                .font(WidgetTypography.secondary)
-                .foregroundStyle(WidgetColors.secondaryText)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(WidgetSpacing.containerPadding)
-        .multilineTextAlignment(.center)
-    }
-}
-
-private struct HabitFocusEmptyState: View {
-    private let state: WidgetFocusState = .noHabits
-
-    var body: some View {
-        VStack(spacing: WidgetSpacing.verticalStack) {
-            Text(state.titleText)
-                .font(WidgetTypography.primary)
-                .foregroundStyle(WidgetColors.emptyPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            Text(state.subtitleText)
-                .font(WidgetTypography.secondary)
-                .foregroundStyle(WidgetColors.secondaryText)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(WidgetSpacing.containerPadding)
-        .multilineTextAlignment(.center)
     }
 }
 
@@ -138,8 +96,8 @@ struct HabitFocusWidget: Widget {
             HabitFocusWidgetEntryView(entry: entry)
                 .widgetSurface()
         }
-        .configurationDisplayName("Cadence: Focus")
-        .description("See what needs your attention today.")
+        .configurationDisplayName("Focus")
+        .description("Your next action.")
         .supportedFamilies([.systemSmall])
     }
 }
