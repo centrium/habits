@@ -498,7 +498,6 @@ struct HabitDetailSheet: View {
             .padding(.bottom, CadenceTokens.Space.md)
         }
         .scrollContentBackground(.hidden)
-        .background(CadenceTokens.Color.Background.primary)
     }
 
     @ViewBuilder
@@ -620,7 +619,6 @@ struct HabitDetailSheet: View {
             .padding(.bottom, CadenceTokens.Space.lg)
         }
         .scrollContentBackground(.hidden)
-        .background(CadenceTokens.Color.Background.primary)
     }
 
     private var loggingContextText: String {

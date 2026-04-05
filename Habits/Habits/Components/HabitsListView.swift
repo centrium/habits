@@ -71,6 +71,11 @@ struct HabitsListView: View {
     var body: some View {
         NavigationStack {
             listContent
+                .cadenceSurface(
+                    accent: activeSurfaceAccent,
+                    accentKey: activeSurfaceAccentKey,
+                    motionEnabled: userSettings.ambientSurfaceMotionEnabled
+                )
                 .alert(
                 "Delete Habit?",
                 isPresented: HabitDeletionConfirmationState.isPresentedBinding(
@@ -196,12 +201,6 @@ struct HabitsListView: View {
                     }
                 }
         }
-        .cadenceSurface(
-            accent: activeSurfaceAccent,
-            accentKey: activeSurfaceAccentKey,
-            motionEnabled: userSettings.ambientSurfaceMotionEnabled
-        )
-
         .environmentObject(userSettings)
         .onAppear {
             habitLogService.updateCalendar(calculationCalendar)

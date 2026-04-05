@@ -126,7 +126,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
         let ambient = max(0, Double(CadenceTokens.Intensity.ambientSurface))
 
         content
-            .overlay(alignment: .top) {
+            .background(alignment: .top) {
                 LinearGradient(
                     colors: [
                         accent.opacity((colorScheme == .dark ? 0.24 : 0.14) * ambient),
@@ -150,7 +150,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                     .ignoresSafeArea(edges: .top)
                 )
                 .id(accentKey)
-        }
+            }
         .onAppear {
             restartAmbientAnimation()
         }
@@ -181,7 +181,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
 private struct CadenceControlChromeModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+            .background(CadenceTokens.Color.Background.secondary, in: Capsule(style: .continuous))
             .overlay {
                 Capsule(style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)

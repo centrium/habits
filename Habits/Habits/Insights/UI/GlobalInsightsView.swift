@@ -38,12 +38,12 @@ struct GlobalInsightsView: View {
                     .padding(.bottom, CadenceTokens.Space.x3l + CadenceTokens.Space.xs)
             }
         }
-        .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
         .cadenceSurface(
             accent: Color.systemAccent,
             accentKey: "global-insights",
             motionEnabled: userSettings.ambientSurfaceMotionEnabled
         )
+        .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
         .navigationTitle("Global Insights")
         .navigationBarTitleDisplayMode(.inline)
     }
