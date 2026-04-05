@@ -87,6 +87,59 @@ final class HabitsListDeletionTests: XCTestCase {
         XCTAssertTrue(remainingHabits.isEmpty)
     }
 
+    func testDeletingParentHabitUnlinksDirectChildrenOnly() throws {
+        let persistence = try TestPersistence()
+        let a = makeHabit(name: "A", orderIndex: 0)
+        let b = makeHabit(name: "B", orderIndex: 1)
+        let c = makeHabit(name: "C", orderIndex: 2)
+        b.triggerHabitID = a.id
+        c.triggerHabitID = b.id
+
+        persistence.insert(a)
+        persistence.insert(b)
+        persistence.insert(c)
+        try persistence.save()
+
+        HabitDeletionAction.perform(
+            habit: a,
+            modelContext: persistence.context
+        )
+
+        let remainingHabits = try fetchOrderedHabits(in: persistence.context)
+        XCTAssertEqual(remainingHabits.map(\.name), ["B", "C"])
+
+        let bStored = try XCTUnwrap(remainingHabits.first(where: { $0.name == "B" }))
+        let cStored = try XCTUnwrap(remainingHabits.first(where: { $0.name == "C" }))
+
+        XCTAssertNil(bStored.triggerHabitID)
+        XCTAssertEqual(cStored.triggerHabitID, bStored.id)
+    }
+
+    func testDeletingMiddleHabitDoesNotAutoRelinkChildren() throws {
+        let persistence = try TestPersistence()
+        let a = makeHabit(name: "A", orderIndex: 0)
+        let b = makeHabit(name: "B", orderIndex: 1)
+        let c = makeHabit(name: "C", orderIndex: 2)
+        b.triggerHabitID = a.id
+        c.triggerHabitID = b.id
+
+        persistence.insert(a)
+        persistence.insert(b)
+        persistence.insert(c)
+        try persistence.save()
+
+        HabitDeletionAction.perform(
+            habit: b,
+            modelContext: persistence.context
+        )
+
+        let remainingHabits = try fetchOrderedHabits(in: persistence.context)
+        XCTAssertEqual(remainingHabits.map(\.name), ["A", "C"])
+
+        let cStored = try XCTUnwrap(remainingHabits.first(where: { $0.name == "C" }))
+        XCTAssertNil(cStored.triggerHabitID)
+    }
+
     func testCancelingDeletionDoesNotDeleteHabit() throws {
         let persistence = try TestPersistence()
         let habit = makeHabit(name: "Keep", orderIndex: 0)

@@ -12,6 +12,7 @@ enum TestHabitFactory {
         period: GoalPeriod = .daily,
         target: Int = 1,
         hasGoal: Bool = true,
+        triggerHabitID: UUID? = nil,
         createdAt: Date = TestDateFactory.referenceNow,
         entries: [Entry] = [],
         calendar: Calendar = TestDateFactory.utcCalendar
@@ -26,7 +27,8 @@ enum TestHabitFactory {
             targetValue: nil,
             unit: nil,
             allowsDecimals: false,
-            createdAt: createdAt
+            createdAt: createdAt,
+            triggerHabitID: triggerHabitID
         )
         add(entries: entries, to: habit, calendar: calendar)
         return habit

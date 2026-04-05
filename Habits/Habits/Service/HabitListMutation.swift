@@ -276,6 +276,13 @@ enum HabitListMutation {
     }
 
     static func delete(_ habit: Habit, in modelContext: ModelContext) {
+        let descriptor = FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.orderIndex)])
+        let allHabits = (try? modelContext.fetch(descriptor)) ?? []
+
+        for child in allHabits where child.triggerHabitID == habit.id {
+            child.triggerHabitID = nil
+        }
+
         modelContext.delete(habit)
         _ = modelContext.saveAndSyncWidgetData()
         normalizeOrderIndexes(in: modelContext)

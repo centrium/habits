@@ -57,6 +57,23 @@ final class SwiftDataPersistenceTests: XCTestCase {
         XCTAssertEqual(stored.categoryRaw, HabitCategory.learning.rawValue)
     }
 
+    func testSavingHabitPersistsTriggerHabitID() throws {
+        let persistence = try TestPersistence()
+        let parent = TestHabitFactory.frequency(name: "Parent")
+        let child = TestHabitFactory.frequency(name: "Child")
+        child.triggerHabitID = parent.id
+        persistence.insert(parent)
+        persistence.insert(child)
+
+        try persistence.save()
+
+        let fetched = try persistence.context.fetch(
+            FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.orderIndex)])
+        )
+        let storedChild = try XCTUnwrap(fetched.first(where: { $0.name == "Child" }))
+        XCTAssertEqual(storedChild.triggerHabitID, parent.id)
+    }
+
     func testSeparateInMemoryContainersAreFullyIsolated() throws {
         // Given
         let firstPersistence = try TestPersistence()

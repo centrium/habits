@@ -4,6 +4,7 @@ import SwiftData
 struct AddHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Habit.orderIndex) private var existingHabits: [Habit]
 
     @State private var name: String = ""
     @State private var identity: String = ""
@@ -19,6 +20,8 @@ struct AddHabitSheet: View {
     @State private var unit: String = ""
     @State private var allowsDecimals = false
     @State private var nextIndex: Int = 0
+    @State private var triggerHabitID: UUID? = nil
+    @State private var draftHabitID: UUID = UUID()
 
     @State private var reminders: [HabitReminderDraft] = []
 
@@ -44,7 +47,9 @@ struct AddHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
+                triggerHabitID: $triggerHabitID,
                 reminders: $reminders,
+                flowCandidates: flowCandidates
             )
             .navigationTitle("Add Habit")
             .toolbar {
@@ -74,7 +79,9 @@ struct AddHabitSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }
 
-        guard hasStreakGoal else { return true }
+        guard isFlowSelectionValid else { return false }
+
+        guard hasStreakGoal else { return goalType == .frequency || triggerHabitID == nil }
 
         switch goalType {
         case .frequency:
@@ -82,6 +89,19 @@ struct AddHabitSheet: View {
         case .cumulative:
             return targetValue > 0 && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+    }
+
+    private var flowCandidates: [Habit] {
+        existingHabits.filter { $0.goalType == .frequency }
+    }
+
+    private var isFlowSelectionValid: Bool {
+        HabitStackingRules.canAssignTrigger(
+            childID: draftHabitID,
+            childGoalType: goalType,
+            triggerID: triggerHabitID,
+            habits: existingHabits
+        )
     }
 
     private func addHabit() {
@@ -114,7 +134,8 @@ struct AddHabitSheet: View {
             targetValue: finalUnit == nil ? nil : targetValue,
             unit: finalUnit,
             allowsDecimals: allowsDecimals,
-            orderIndex: nextIndex
+            orderIndex: nextIndex,
+            triggerHabitID: goalType == .frequency ? triggerHabitID : nil
         )
 
         habit.reminders = reminders.map { $0.makeReminder() }

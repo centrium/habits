@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 private enum ActiveSheet: Identifiable {
     case edit
@@ -22,6 +23,8 @@ private enum ActiveSheet: Identifiable {
 
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
@@ -34,6 +37,7 @@ struct HabitDetailSheet: View {
     @State private var snapshotRefreshTask: Task<Void, Never>?
     @State private var selectedDate: Date
     @State private var isHistoryPresented = false
+    @State private var isFlowPickerPresented = false
     @State private var displayedIdentityNarrative: HabitIdentityOutput?
     @State private var identityNarrativeUpdateWorkItem: DispatchWorkItem?
     private let onDeleted: (() -> Void)?
@@ -231,6 +235,19 @@ struct HabitDetailSheet: View {
         .onDisappear {
             identityNarrativeUpdateWorkItem?.cancel()
         }
+        .sheet(isPresented: $isFlowPickerPresented) {
+            FlowPickerSheet(
+                options: eligibleFlowParents,
+                selectedParentID: parentHabit?.id,
+                onSelect: { selectedID in
+                    applyInlineFlowSelection(selectedID)
+                    isFlowPickerPresented = false
+                }
+            )
+            .presentationDetents([.height(340)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
+        }
         .navigationDestination(isPresented: $isHistoryPresented) {
             historyTabContent(
                 progressRevision: progressRevision,
@@ -370,6 +387,17 @@ struct HabitDetailSheet: View {
                     .padding(.top, 6)
                     .padding(.horizontal, sectionPadding)
                 }
+
+                FlowCard(
+                    isInteractive: canEditFlowInline,
+                    parentName: parentHabit?.name,
+                    childSummaryText: childSummaryText,
+                    onTapRow: {
+                        guard canEditFlowInline else { return }
+                        isFlowPickerPresented = true
+                    }
+                )
+                .padding(.horizontal, sectionPadding)
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                     if logCount == 0 {
@@ -849,6 +877,75 @@ struct HabitDetailSheet: View {
         )
     }
 
+    private var stackingSnapshot: HabitStackingSnapshot {
+        HabitStackingOrder.resolve(baseHabits: allHabits)
+    }
+
+    private var parentHabit: Habit? {
+        guard let parentID = stackingSnapshot.parentByChildID[habit.id] else {
+            return nil
+        }
+
+        return allHabits.first(where: { $0.id == parentID })
+    }
+
+    private var childHabits: [Habit] {
+        stackingSnapshot.childrenByParentID[habit.id] ?? []
+    }
+
+    private var childSummaryText: String? {
+        guard !childHabits.isEmpty else { return nil }
+
+        let visibleNames = childHabits.prefix(2).map(\.name)
+        let overflowCount = max(0, childHabits.count - visibleNames.count)
+
+        if overflowCount > 0 {
+            return "\(visibleNames.joined(separator: ", ")) +\(overflowCount) more"
+        }
+
+        return visibleNames.joined(separator: ", ")
+    }
+
+    private var canEditFlowInline: Bool {
+        habit.goalType == .frequency
+    }
+
+    private var eligibleFlowParents: [Habit] {
+        guard canEditFlowInline else { return [] }
+
+        return allHabits.filter { candidate in
+            guard candidate.id != habit.id else { return false }
+            guard candidate.goalType == .frequency else { return false }
+
+            return HabitStackingRules.canAssignTrigger(
+                childID: habit.id,
+                childGoalType: habit.goalType,
+                triggerID: candidate.id,
+                habits: allHabits,
+                parentOverrideByChildID: [habit.id: candidate.id]
+            )
+        }
+    }
+
+    private func applyInlineFlowSelection(_ triggerID: UUID?) {
+        guard canEditFlowInline else { return }
+        guard habit.triggerHabitID != triggerID else { return }
+
+        if let triggerID {
+            let isValid = HabitStackingRules.canAssignTrigger(
+                childID: habit.id,
+                childGoalType: habit.goalType,
+                triggerID: triggerID,
+                habits: allHabits,
+                parentOverrideByChildID: [habit.id: triggerID]
+            )
+            guard isValid else { return }
+        }
+
+        habit.triggerHabitID = triggerID
+        _ = modelContext.saveAndSyncWidgetData()
+    }
+
 }
 
 private struct InsightsInlineNudgeRow: View {
@@ -1141,6 +1238,205 @@ private struct TodaySummarySection: View {
                 .font(CadenceTokens.Typography.body)
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
         }
+    }
+}
+
+private struct FlowCard: View {
+    let isInteractive: Bool
+    let parentName: String?
+    let childSummaryText: String?
+    let onTapRow: () -> Void
+    @State private var didAppear = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.62))
+
+                Text("Flow")
+                    .font(CadenceTokens.Typography.sectionHeader)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            }
+
+            Button(action: onTapRow) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(parentName == nil ? "When" : "After")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+                    Image(systemName: "arrow.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.45))
+
+                    Text(parentName.map { "\($0) completes" } ?? "No sequence set")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(
+                            parentName == nil
+                                ? CadenceTokens.Color.Text.secondary
+                                : CadenceTokens.Color.Text.primary
+                        )
+                        .lineLimit(1)
+                        .id("flow-parent-\(parentName ?? "none")")
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(CadenceTokens.Color.Background.tertiary.opacity(isInteractive ? 0.58 : 0.42))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(FlowSectionButtonStyle(isEnabled: isInteractive))
+            .disabled(!isInteractive)
+            .animation(.easeInOut(duration: 0.2), value: parentName)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    guard isInteractive else { return }
+                    Haptics.impactLight()
+                }
+            )
+
+            if let childSummaryText {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Then")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+                    Image(systemName: "arrow.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.45))
+
+                    Text(childSummaryText)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .id("flow-children-\(childSummaryText)")
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                .padding(.top, 4)
+                .animation(.easeInOut(duration: 0.2), value: childSummaryText)
+            } else if parentName == nil {
+                Text("No sequence set")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+        .overlay {
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.03), lineWidth: 0.8)
+                .blendMode(.screen)
+        }
+        .background {
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.04),
+                            .clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+        .opacity(didAppear ? 1 : 0.94)
+        .animation(.easeInOut(duration: 0.2), value: didAppear)
+        .onAppear {
+            didAppear = true
+        }
+    }
+}
+
+private struct FlowSectionButtonStyle: ButtonStyle {
+    let isEnabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(configuration.isPressed && isEnabled ? 0.06 : 0))
+            }
+            .animation(AppMotion.press, value: configuration.isPressed)
+    }
+}
+
+private struct FlowPickerSheet: View {
+    let options: [Habit]
+    let selectedParentID: UUID?
+    let onSelect: (UUID?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Do after")
+                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+            VStack(spacing: 10) {
+                flowOptionRow(
+                    title: "None",
+                    isSelected: selectedParentID == nil
+                ) {
+                    onSelect(nil)
+                }
+
+                ForEach(options) { habit in
+                    flowOptionRow(
+                        title: habit.name,
+                        isSelected: selectedParentID == habit.id
+                    ) {
+                        onSelect(habit.id)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(CadenceTokens.Color.Background.primary)
+    }
+
+    @ViewBuilder
+    private func flowOptionRow(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(CadenceTokens.Color.Background.secondary)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+        }
+        .buttonStyle(TactileButtonStyle(pressedScale: 0.985, pressedOpacity: 0.96))
     }
 }
 

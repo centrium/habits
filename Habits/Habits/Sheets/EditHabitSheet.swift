@@ -4,6 +4,7 @@ import SwiftData
 struct EditHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
 
     @Bindable var habit: Habit
     private let onDeleted: (() -> Void)?
@@ -21,6 +22,7 @@ struct EditHabitSheet: View {
     @State private var targetValue: Double
     @State private var unit: String
     @State private var allowsDecimals: Bool
+    @State private var triggerHabitID: UUID?
 
     @State private var reminders: [HabitReminderDraft]
     @State private var showDeleteConfirmation: Bool = false
@@ -43,6 +45,7 @@ struct EditHabitSheet: View {
         _targetValue = State(initialValue: habit.targetValue ?? 1)
         _unit = State(initialValue: habit.unit ?? "")
         _allowsDecimals = State(initialValue: habit.allowsDecimals)
+        _triggerHabitID = State(initialValue: habit.triggerHabitID)
         _reminders = State(initialValue: HabitReminderDraft.makeDrafts(from: habit.reminders))
     }
 
@@ -62,7 +65,9 @@ struct EditHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
+                triggerHabitID: $triggerHabitID,
                 reminders: $reminders,
+                flowCandidates: flowCandidates,
                 showsDelete: true,
                 onDelete: {
                     showDeleteConfirmation = true
@@ -124,14 +129,16 @@ struct EditHabitSheet: View {
                targetValue == (habit.targetValue ?? 1) &&
                unit == (habit.unit ?? "") &&
                allowsDecimals == habit.allowsDecimals &&
+               triggerHabitID == habit.triggerHabitID &&
                reminders == HabitReminderDraft.makeDrafts(from: habit.reminders)
     }
 
     private var canSave: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }
+        guard isFlowSelectionValid else { return false }
 
-        guard hasStreakGoal else { return true }
+        guard hasStreakGoal else { return goalType == .frequency || triggerHabitID == nil }
 
         switch goalType {
         case .frequency:
@@ -140,6 +147,21 @@ struct EditHabitSheet: View {
             return targetValue > 0 &&
                    !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+    }
+
+    private var flowCandidates: [Habit] {
+        allHabits.filter { $0.id != habit.id && $0.goalType == .frequency }
+    }
+
+    private var isFlowSelectionValid: Bool {
+        HabitStackingRules.canAssignTrigger(
+            childID: habit.id,
+            childGoalType: goalType,
+            triggerID: triggerHabitID,
+            habits: allHabits,
+            parentOverrideByChildID: [habit.id: triggerHabitID],
+            goalTypeOverrideByHabitID: [habit.id: goalType]
+        )
     }
 
     private func saveChanges() {
@@ -172,6 +194,13 @@ struct EditHabitSheet: View {
         habit.targetValue = finalUnit == nil ? nil : targetValue
         habit.unit = finalUnit
         habit.allowsDecimals = allowsDecimals
+        habit.triggerHabitID = goalType == .frequency ? triggerHabitID : nil
+
+        if goalType != .frequency {
+            for child in allHabits where child.triggerHabitID == habit.id {
+                child.triggerHabitID = nil
+            }
+        }
 
         applyReminderDrafts()
 

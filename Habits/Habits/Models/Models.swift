@@ -225,6 +225,7 @@ final class Habit: Identifiable {
 
     var createdAt: Date
     var orderIndex: Int
+    var triggerHabitID: UUID?
 
     @Relationship(deleteRule: .cascade)
     var reminders: [HabitReminder] = []
@@ -272,7 +273,8 @@ final class Habit: Identifiable {
         unit: String? = nil,
         allowsDecimals: Bool = false,
         createdAt: Date = .now,
-        orderIndex: Int = 0
+        orderIndex: Int = 0,
+        triggerHabitID: UUID? = nil
     ) {
         self.id = UUID()
         self.name = name
@@ -292,6 +294,7 @@ final class Habit: Identifiable {
 
         self.createdAt = createdAt
         self.orderIndex = orderIndex
+        self.triggerHabitID = triggerHabitID
     }
 }
 

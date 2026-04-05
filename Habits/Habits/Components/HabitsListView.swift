@@ -24,6 +24,17 @@ private enum ActiveSheet: Identifiable {
     }
 }
 
+private struct StackConnectorSegment: Identifiable {
+    let firstHabitID: UUID
+    let lastHabitID: UUID
+    let rootHabitID: UUID
+    let rootColorHex: String
+
+    var id: String {
+        "\(firstHabitID.uuidString)-\(lastHabitID.uuidString)"
+    }
+}
+
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -47,6 +58,10 @@ struct HabitsListView: View {
     @State private var frames: [Habit.ID: CGRect] = [:]
     @State private var initialFrame: CGRect = .zero
     @State private var isFABPressed: Bool = false
+    @State private var flowNudgeHabitID: UUID?
+    @State private var clearFlowNudgeTask: Task<Void, Never>?
+    @State private var emphasizedStackRootID: UUID?
+    @State private var clearEmphasisTask: Task<Void, Never>?
     
 
     init() {}
@@ -205,6 +220,10 @@ struct HabitsListView: View {
         }
         .onDisappear {
             flushPendingReorderPersistence()
+            clearFlowNudgeTask?.cancel()
+            clearFlowNudgeTask = nil
+            clearEmphasisTask?.cancel()
+            clearEmphasisTask = nil
         }
         .task {
             try? await Task.sleep(nanoseconds: 200_000_000)
@@ -237,7 +256,7 @@ struct HabitsListView: View {
 
     private var listContent: some View {
         ScrollView {
-            LazyVStack(spacing: isReordering ? 20 : 16) {
+            LazyVStack(spacing: isReordering ? 20 : 12) {
                 CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, CadenceTokens.Space.xl)
@@ -257,7 +276,7 @@ struct HabitsListView: View {
                     .padding(.bottom, 4)
                 }
 
-                ForEach(habits) { habit in
+                ForEach(visibleHabits) { habit in
                     habitRow(for: habit)
                 }
 
@@ -275,7 +294,8 @@ struct HabitsListView: View {
                     EmptyState()
                 }
             }
-            .padding(.horizontal, CadenceTokens.Space.lg)
+            .padding(.leading, 36)
+            .padding(.trailing, 16)
             .padding(.top, CadenceTokens.Space.sm)
             .padding(.bottom, 4)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
@@ -289,11 +309,17 @@ struct HabitsListView: View {
 
                 if let activeItem,
                    let frame = frames[activeItem.id] {
+                    let activeViewModel = stackSnapshot.habitViewModelByID[activeItem.id]
                     DraggableHabitRow(
                         habit: activeItem,
                         isDragging: true,
                         isPressing: false,
                         isReordering: isReordering,
+                        isStacked: activeViewModel?.isStacked ?? false,
+                        relationText: nil,
+                        flowRootColorHex: nil,
+                        shouldNudgeFlow: false,
+                        onFrequencyCompletion: nil,
                         trailingAccessory: AnyView(reorderHandle(for: activeItem)),
                         onTap: nil
                     )
@@ -303,6 +329,18 @@ struct HabitsListView: View {
                             y: fingerLocation.y - touchOffset.height
                         )
                         .zIndex(1000)
+                }
+
+                if !isReordering {
+                    StackConnectorOverlay(
+                        segments: stackConnectorSegments,
+                        frames: frames,
+                        pulseChildID: flowNudgeHabitID,
+                        emphasizedRootID: emphasizedStackRootID,
+                        parentByChildID: stackSnapshot.parentByChildID,
+                        rootColorHexByHabitID: stackSnapshot.stackColorHexByHabitID
+                    )
+                    .allowsHitTesting(false)
                 }
             }
         }
@@ -324,18 +362,43 @@ struct HabitsListView: View {
 
     @ViewBuilder
     private func habitRow(for habit: Habit) -> some View {
+        let habitViewModel = stackSnapshot.habitViewModelByID[habit.id]
+        let isStacked = habitViewModel?.isStacked ?? false
+        let isStackChild =
+            isStacked &&
+            habitViewModel?.stackRootID != habit.id
+        let rowOpacity: Double = {
+            if activeItem?.id == habit.id { return 0 }
+            let baseOpacity = isReordering ? 0.96 : 1.0
+            let hierarchyOpacity = (!isReordering && isStackChild) ? 0.96 : 1.0
+            return baseOpacity * hierarchyOpacity
+        }()
+
         DraggableHabitRow(
             habit: habit,
             isDragging: activeItem?.id == habit.id,
             isPressing: pressingItemID == habit.id && activeItem == nil,
             isReordering: isReordering,
+            isStacked: habitViewModel?.isStacked ?? false,
+            relationText: habitViewModel?.relationText,
+            flowRootColorHex: habitViewModel?.stackColorHex,
+            shouldNudgeFlow: flowNudgeHabitID == habit.id,
+            onFrequencyCompletion: handleFrequencyCompletion,
             trailingAccessory: AnyView(reorderHandle(for: habit)),
             onTap: {
+                if let viewModel = habitViewModel,
+                   viewModel.isStacked,
+                   let rootID = viewModel.stackRootID {
+                    emphasizeStackConnector(rootID: rootID)
+                }
                 selectedHabitID = habit.id
             }
         )
-        .opacity(activeItem?.id == habit.id ? 0 : (isReordering ? 0.96 : 1))
+        .opacity(rowOpacity)
+        .frame(maxWidth: .infinity)
         .padding(.vertical, isReordering ? 2 : 0)
+        .padding(.bottom, isReordering ? 0 : ((habitViewModel?.hasAdjacentChild ?? false) ? -6 : 0))
+        .animation(.easeOut(duration: 0.2), value: isStacked)
         .background(
             GeometryReader { geo in
                 Color.clear
@@ -385,14 +448,18 @@ struct HabitsListView: View {
     }
 
     private var headerAccentColor: Color {
-        if let firstHabit = habits.first {
+        if let firstHabit = firstVisibleHabitForAmbient {
             return CadenceTokens.Color.accent(for: firstHabit).primary
         }
         return .systemAccent
     }
 
     private var headerAccentKey: String {
-        habits.first?.colorHex ?? "system-accent"
+        firstVisibleHabitForAmbient?.colorHex ?? "system-accent"
+    }
+
+    private var firstVisibleHabitForAmbient: Habit? {
+        visibleHabits.first
     }
 
     private var activeSurfaceAccent: Color {
@@ -609,6 +676,37 @@ struct HabitsListView: View {
         return habits.first(where: { $0.id == selectedHabitID })
     }
 
+    private var stackSnapshot: HabitStackingSnapshot {
+        HabitStackingOrder.resolve(baseHabits: habits)
+    }
+
+    private var visibleHabits: [Habit] {
+        isReordering ? habits : stackSnapshot.displayHabits
+    }
+
+    private var stackConnectorSegments: [StackConnectorSegment] {
+        guard !isReordering else { return [] }
+
+        var segments: [StackConnectorSegment] = []
+        segments.reserveCapacity(stackSnapshot.todayItems.count)
+
+        for item in stackSnapshot.todayItems {
+            guard case .stack(let stack) = item,
+                  let firstHabit = stack.orderedHabits.first,
+                  let lastHabit = stack.orderedHabits.last else { continue }
+            segments.append(
+                StackConnectorSegment(
+                    firstHabitID: firstHabit.id,
+                    lastHabitID: lastHabit.id,
+                    rootHabitID: stack.rootHabit.id,
+                    rootColorHex: stack.stackColorHex
+                )
+            )
+        }
+
+        return segments
+    }
+
     private func scheduleReorderPersistence() {
         pendingReorderCommitTask?.cancel()
         pendingReorderCommitTask = Task(priority: .utility) { @MainActor in
@@ -644,6 +742,45 @@ struct HabitsListView: View {
             deepLinkManager.clearSelectedHabit(deepLinkedHabitID)
         }
     }
+
+    private func handleFrequencyCompletion(_ habit: Habit) {
+        guard !isReordering else { return }
+
+        let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        guard let children = stackSnapshot.childrenByParentID[habit.id], !children.isEmpty else { return }
+
+        let nextChild = children.first { child in
+            !child.isComplete(
+                for: currentDay,
+                calendar: calculationCalendar,
+                weekStartPreference: userSettings.weekStartPreference
+            )
+        } ?? children.first
+
+        guard let nextChild else { return }
+        flowNudgeHabitID = nextChild.id
+
+        clearFlowNudgeTask?.cancel()
+        clearFlowNudgeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            if flowNudgeHabitID == nextChild.id {
+                flowNudgeHabitID = nil
+            }
+        }
+    }
+
+    private func emphasizeStackConnector(rootID: UUID) {
+        emphasizedStackRootID = rootID
+        clearEmphasisTask?.cancel()
+        clearEmphasisTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled else { return }
+            if emphasizedStackRootID == rootID {
+                emphasizedStackRootID = nil
+            }
+        }
+    }
 }
 
 private struct DraggableHabitRow: View {
@@ -652,6 +789,11 @@ private struct DraggableHabitRow: View {
     let isDragging: Bool
     let isPressing: Bool
     let isReordering: Bool
+    let isStacked: Bool
+    let relationText: String?
+    let flowRootColorHex: String?
+    let shouldNudgeFlow: Bool
+    let onFrequencyCompletion: ((Habit) -> Void)?
     let trailingAccessory: AnyView?
     let onTap: (() -> Void)?
 
@@ -659,6 +801,11 @@ private struct DraggableHabitRow: View {
         HabitCard(
             habit: habit,
             isReordering: isReordering,
+            isStacked: isStacked,
+            relationText: relationText,
+            flowRootColorHex: flowRootColorHex,
+            shouldNudgeFlow: shouldNudgeFlow,
+            onFrequencyCompletion: onFrequencyCompletion,
             trailingAccessory: trailingAccessory,
             onTap: onTap
         )
@@ -666,20 +813,159 @@ private struct DraggableHabitRow: View {
             .scaleEffect(isPressing ? 0.98 : (isDragging ? 1.038 : (isReordering ? 0.995 : 1.0)))
             .shadow(
                 color: .black.opacity(
-                    colorScheme == .dark
-                        ? (isDragging ? 0.14 : 0.03)
-                        : (isDragging ? 0.2 : 0.06)
+                    isDragging
+                        ? (colorScheme == .dark ? 0.14 : 0.2)
+                        : (isStacked ? 0.18 : 0.28)
                 ),
-                radius: colorScheme == .dark
-                    ? (isDragging ? 16 : 3)
-                    : (isDragging ? 20 : 6),
-                y: colorScheme == .dark
-                    ? (isDragging ? 7 : 1)
-                    : (isDragging ? 10 : 2)
+                radius: isDragging
+                    ? (colorScheme == .dark ? 16 : 20)
+                    : (isStacked ? 8 : 12),
+                y: isDragging
+                    ? (colorScheme == .dark ? 7 : 10)
+                    : (isStacked ? 4 : 6)
             )
             .zIndex(isDragging ? 1 : 0)
             .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDragging)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)
+    }
+}
+
+private struct StackConnectorOverlay: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    let segments: [StackConnectorSegment]
+    let frames: [UUID: CGRect]
+    let pulseChildID: UUID?
+    let emphasizedRootID: UUID?
+    let parentByChildID: [UUID: UUID]
+    let rootColorHexByHabitID: [UUID: String]
+
+    private let edgeInset: CGFloat = 18
+    private let spineX: CGFloat = 24
+
+    private var lineWidth: CGFloat {
+        1.5
+    }
+
+    private let capDiameter: CGFloat = 6
+
+    var body: some View {
+        let connectorX = resolvedConnectorX()
+
+        ZStack {
+            // MARK: - Main stack connectors
+            ForEach(segments) { segment in
+                if let firstFrame = frames[segment.firstHabitID],
+                   let lastFrame = frames[segment.lastHabitID] {
+
+                    let isEmphasized = emphasizedRootID == segment.rootHabitID
+
+                    connector(
+                        x: connectorX,
+                        startY: firstFrame.minY + edgeInset - 6,
+                        endY: lastFrame.maxY - edgeInset + 6,
+                        color: CadenceTokens.Color.accent(from: segment.rootColorHex).primary,
+                        lineWidth: lineWidth,
+                        capDiameter: capDiameter,
+                        opacity: isEmphasized ? 0.6 : 0.6,
+                        glowOpacity: isEmphasized ? 0.08 : 0.08,
+                        glowBlur: isEmphasized ? 10 : 8
+                    )
+                    .animation(.easeOut(duration: 0.2), value: emphasizedRootID)
+                }
+            }
+
+            // MARK: - Pulse connector
+            if let pulseChildID,
+               let parentID = parentByChildID[pulseChildID],
+               let childFrame = frames[pulseChildID],
+               let parentFrame = frames[parentID] {
+
+                let rootHex =
+                    rootColorHexByHabitID[pulseChildID] ??
+                    rootColorHexByHabitID[parentID] ??
+                    ""
+
+                let pulseColor = CadenceTokens.Color.accent(from: rootHex).primary
+
+                connector(
+                    x: connectorX,
+                    startY: min(parentFrame.midY, childFrame.midY),
+                    endY: max(parentFrame.midY, childFrame.midY),
+                    color: pulseColor,
+                    lineWidth: lineWidth + 0.2,
+                    capDiameter: capDiameter + 0.4,
+                    opacity: 0.6,
+                    glowOpacity: 0.08,
+                    glowBlur: 10
+                )
+                .animation(.easeOut(duration: 0.26), value: pulseChildID)
+            }
+        }
+    }
+
+    // MARK: - Stable X Anchor (correct gutter positioning)
+    private func resolvedConnectorX() -> CGFloat {
+        spineX
+    }
+
+    // MARK: - Connector
+    @ViewBuilder
+    private func connector(
+        x: CGFloat,
+        startY: CGFloat,
+        endY: CGFloat,
+        color: Color,
+        lineWidth: CGFloat,
+        capDiameter: CGFloat,
+        opacity: Double,
+        glowOpacity: Double,
+        glowBlur: CGFloat
+    ) -> some View {
+
+        let height = max(0, endY - startY)
+        let visualInset: CGFloat = 1.5
+        let nodeOpacity = min(1, opacity * 0.85)
+        let nodeScale: CGFloat = 0.95
+
+        VStack(spacing: 0) {
+            // Top cap
+            Circle()
+                .fill(color.opacity(nodeOpacity))
+                .frame(width: capDiameter, height: capDiameter)
+                .scaleEffect(nodeScale)
+                .overlay {
+                    Circle()
+                        .fill(color.opacity(glowOpacity))
+                        .frame(width: capDiameter + 2, height: capDiameter + 2)
+                        .blur(radius: glowBlur * 0.5)
+                }
+
+            // Line
+            Capsule(style: .continuous)
+                .fill(color.opacity(opacity))
+                .frame(width: lineWidth, height: max(0, height - visualInset))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: lineWidth, height: height)
+                        .blendMode(.plusLighter)
+                }
+
+            // Bottom cap
+            Circle()
+                .fill(color.opacity(nodeOpacity))
+                .frame(width: capDiameter, height: capDiameter)
+                .scaleEffect(nodeScale)
+                .overlay {
+                    Circle()
+                        .fill(color.opacity(glowOpacity))
+                        .frame(width: capDiameter + 2, height: capDiameter + 2)
+                        .blur(radius: glowBlur * 0.5)
+                }
+        }
+        .frame(width: max(lineWidth, capDiameter))
+        .position(x: x, y: startY + (height / 2))
     }
 }
 
@@ -693,6 +979,7 @@ private struct CustomHomeHeader: View {
                 animateSwoosh: showsPremiumAccent,
                 showsProLabel: showsPremiumAccent
             )
+            .opacity(0.94)
             .accessibilityAddTraits(.isHeader)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -91,7 +91,9 @@ struct HabitFormView: View {
     @Binding var targetValue: Double
     @Binding var unit: String
     @Binding var allowsDecimals: Bool
+    @Binding var triggerHabitID: UUID?
     @Binding var reminders: [HabitReminderDraft]
+    var flowCandidates: [Habit] = []
     var showsDelete: Bool = false
     var onDelete: (() -> Void)? = nil
 
@@ -326,6 +328,32 @@ struct HabitFormView: View {
                 }
             }
 
+            Section("Flow") {
+                if goalType == .frequency {
+                    Picker("After", selection: $triggerHabitID) {
+                        Text("None").tag(Optional<UUID>.none)
+                        ForEach(flowCandidates) { habit in
+                            Text(habit.name).tag(Optional(habit.id))
+                        }
+                    }
+
+                    if let triggerHabitID,
+                       let selectedParent = flowCandidates.first(where: { $0.id == triggerHabitID }) {
+                        Text("Runs after \(selectedParent.name).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Optional. Keep this nil for standalone habits.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Flow applies to frequency habits only.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if showsDelete {
                 Section {
                     Button(role: .destructive) {
@@ -347,6 +375,11 @@ struct HabitFormView: View {
         .onChange(of: identity) { _, newValue in
             guard newValue.count > Self.identityCharacterLimit else { return }
             identity = String(newValue.prefix(Self.identityCharacterLimit))
+        }
+        .onChange(of: goalType) { _, newValue in
+            if newValue != .frequency {
+                triggerHabitID = nil
+            }
         }
         .transaction { transaction in
             transaction.animation = nil
