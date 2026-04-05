@@ -7,6 +7,28 @@
 
 import SwiftUI
 
+enum HabitRowGrid {
+    static let listSafeLeading: CGFloat = 10
+    static let cardTrailingInList: CGFloat = 8
+    static let spineToCardGutter: CGFloat = 16
+    static let contentLeading: CGFloat = 16
+    static let contentSpacing: CGFloat = 12
+    static let iconSize: CGFloat = 40
+    static let titleSubtitleSpacing: CGFloat = 2
+    static let headerToHeatmapSpacing: CGFloat = 12
+    static let spineOpticalCorrection: CGFloat = -1
+
+    private static let spineBaseXInList: CGFloat = 8
+
+    static var spineXInList: CGFloat {
+        spineBaseXInList + spineOpticalCorrection
+    }
+
+    static var cardLeadingInList: CGFloat {
+        max(listSafeLeading, spineXInList + spineToCardGutter)
+    }
+}
+
 struct HabitHeader: View {
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
 
@@ -124,17 +146,22 @@ struct HabitHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: CadenceTokens.Space.md) {
+        HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.contentSpacing) {
             HabitBadge(
                 iconName: iconName,
                 accent: accent,
-                habitName: habit.name
+                habitName: habit.name,
+                size: HabitRowGrid.iconSize
             )
+            .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize)
+            .alignmentGuide(.firstTextBaseline) { dimensions in
+                dimensions[VerticalAlignment.center]
+            }
 
-            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs / 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: HabitRowGrid.titleSubtitleSpacing) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(habit.name)
-                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -144,7 +171,7 @@ struct HabitHeader: View {
                 }
 
                 Text(subtitleText)
-                    .font(CadenceTokens.Typography.supporting)
+                    .font(.system(size: 14))
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -176,6 +203,9 @@ struct HabitHeader: View {
                     )
                     .transition(.opacity.combined(with: .scale))
                 }
+            }
+            .alignmentGuide(.firstTextBaseline) { dimensions in
+                dimensions[VerticalAlignment.center]
             }
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
@@ -246,23 +276,28 @@ struct HabitHeaderPreview: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.contentSpacing) {
             HabitBadge(
                 iconName: resolvedIcon,
                 accent: accent,
-                habitName: name.isEmpty ? "Habit name" : name
+                habitName: name.isEmpty ? "Habit name" : name,
+                size: HabitRowGrid.iconSize
             )
+            .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize)
+            .alignmentGuide(.firstTextBaseline) { dimensions in
+                dimensions[VerticalAlignment.center]
+            }
 
-            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs / 2) {
+            VStack(alignment: .leading, spacing: HabitRowGrid.titleSubtitleSpacing) {
                 Text(name.isEmpty ? "Habit name" : name)
-                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(CadenceTokens.Color.Text.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
                 Text(displaySubtitle)
-                    .font(CadenceTokens.Typography.supporting)
+                    .font(.system(size: 14))
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

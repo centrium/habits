@@ -18,7 +18,6 @@ struct HabitCard: View {
     @State private var showHeatmapPaywall = false
     @State private var displayedStreak: Int = 0
     private let isReordering: Bool
-    private let isStacked: Bool
     private let relationText: String?
     private let flowRootColorHex: String?
     private let shouldNudgeFlow: Bool
@@ -44,7 +43,6 @@ struct HabitCard: View {
     init(
         habit: Habit,
         isReordering: Bool = false,
-        isStacked: Bool = false,
         relationText: String? = nil,
         flowRootColorHex: String? = nil,
         shouldNudgeFlow: Bool = false,
@@ -54,7 +52,6 @@ struct HabitCard: View {
     ) {
         self.habit = habit
         self.isReordering = isReordering
-        self.isStacked = isStacked
         self.relationText = relationText
         self.flowRootColorHex = flowRootColorHex
         self.shouldNudgeFlow = shouldNudgeFlow
@@ -65,7 +62,7 @@ struct HabitCard: View {
 
     var body: some View {
         
-        VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
+        VStack(alignment: .leading, spacing: HabitRowGrid.headerToHeatmapSpacing) {
             HabitHeader(
                 habit: habit,
                 selectedDate: selectedDate,
@@ -128,8 +125,7 @@ struct HabitCard: View {
                 )
             
         }
-        .padding(.horizontal, CadenceTokens.Space.lg)
-        .padding(.leading, isStacked ? 12 : 0)
+        .padding(.horizontal, HabitRowGrid.contentLeading)
         .padding(.vertical, CadenceTokens.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)

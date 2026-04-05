@@ -62,7 +62,9 @@ struct HabitsListView: View {
     @State private var clearFlowNudgeTask: Task<Void, Never>?
     @State private var emphasizedStackRootID: UUID?
     @State private var clearEmphasisTask: Task<Void, Never>?
-    
+    private let cardLeading: CGFloat = HabitRowGrid.cardLeadingInList
+    private let cardTrailing: CGFloat = HabitRowGrid.cardTrailingInList
+    private var spineX: CGFloat { HabitRowGrid.spineXInList }
 
     init() {}
 
@@ -294,8 +296,8 @@ struct HabitsListView: View {
                     EmptyState()
                 }
             }
-            .padding(.leading, 36)
-            .padding(.trailing, 16)
+            .padding(.leading, cardLeading)
+            .padding(.trailing, cardTrailing)
             .padding(.top, CadenceTokens.Space.sm)
             .padding(.bottom, 4)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
@@ -335,6 +337,7 @@ struct HabitsListView: View {
                     StackConnectorOverlay(
                         segments: stackConnectorSegments,
                         frames: frames,
+                        spineX: spineX,
                         pulseChildID: flowNudgeHabitID,
                         emphasizedRootID: emphasizedStackRootID,
                         parentByChildID: stackSnapshot.parentByChildID,
@@ -801,7 +804,6 @@ private struct DraggableHabitRow: View {
         HabitCard(
             habit: habit,
             isReordering: isReordering,
-            isStacked: isStacked,
             relationText: relationText,
             flowRootColorHex: flowRootColorHex,
             shouldNudgeFlow: shouldNudgeFlow,
@@ -835,13 +837,13 @@ private struct StackConnectorOverlay: View {
 
     let segments: [StackConnectorSegment]
     let frames: [UUID: CGRect]
+    let spineX: CGFloat
     let pulseChildID: UUID?
     let emphasizedRootID: UUID?
     let parentByChildID: [UUID: UUID]
     let rootColorHexByHabitID: [UUID: String]
 
     private let edgeInset: CGFloat = 18
-    private let spineX: CGFloat = 24
 
     private var lineWidth: CGFloat {
         1.5
