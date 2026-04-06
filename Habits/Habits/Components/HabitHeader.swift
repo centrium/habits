@@ -39,7 +39,6 @@ struct HabitHeader: View {
     let isReordering: Bool
     let showsQuickLogButton: Bool
     let showsQuickLogForFrequencyHabits: Bool
-    let showsInlineProgressText: Bool
     let secondaryTextOverride: String?
     let currentStreak: Int?
     let trailingAccessory: AnyView?
@@ -54,7 +53,6 @@ struct HabitHeader: View {
         isReordering: Bool = false,
         showsQuickLogButton: Bool,
         showsQuickLogForFrequencyHabits: Bool = true,
-        showsInlineProgressText: Bool,
         secondaryTextOverride: String?,
         currentStreak: Int? = nil,
         trailingAccessory: AnyView? = nil,
@@ -68,7 +66,6 @@ struct HabitHeader: View {
         self.isReordering = isReordering
         self.showsQuickLogButton = showsQuickLogButton
         self.showsQuickLogForFrequencyHabits = showsQuickLogForFrequencyHabits
-        self.showsInlineProgressText = showsInlineProgressText
         self.secondaryTextOverride = secondaryTextOverride
         self.currentStreak = currentStreak
         self.trailingAccessory = trailingAccessory
@@ -84,19 +81,11 @@ struct HabitHeader: View {
         }
 
         let trimmed = habit.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let progressText = showsInlineProgressText
-            ? (habit.inlineProgressText(
-                for: selectedDate,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            ) ?? "")
-            : ""
-
-        if !progressText.isEmpty {
-            return progressText
+        if !trimmed.isEmpty {
+            return trimmed
         }
 
-        return trimmed.isEmpty ? "Tap to log" : trimmed
+        return habit.logs.isEmpty ? "Tap to log" : ""
     }
 
     private var iconName: String? {
@@ -170,11 +159,13 @@ struct HabitHeader: View {
                     HabitHeaderStreakIndicator(streak: resolvedCurrentStreak)
                 }
 
-                Text(subtitleText)
-                    .font(.system(size: 14))
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if !subtitleText.isEmpty {
+                    Text(subtitleText)
+                        .font(.system(size: 14))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)

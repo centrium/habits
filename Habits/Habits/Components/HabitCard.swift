@@ -70,7 +70,6 @@ struct HabitCard: View {
                 weekStartPreference: userSettings.weekStartPreference,
                 isReordering: isReordering,
                 showsQuickLogButton: true,
-                showsInlineProgressText: true,
                 secondaryTextOverride: nil,
                 currentStreak: displayedStreak,
                 trailingAccessory: trailingAccessory,
