@@ -978,6 +978,12 @@ private struct HabitIdentityCard: View {
                                         .font(.system(size: 13))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(2)
+
+                                    Text(CadenceLanguage.identityReinforcement())
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary.opacity(0.9))
+                                        .padding(.top, 3)
+                                        .lineLimit(2)
                                 }
                             } else {
                                 Text(CadenceLanguage.identityEmptyPrompt())

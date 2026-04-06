@@ -7,6 +7,7 @@ struct HeatmapCellView: View, Equatable {
     let isSelected: Bool
     let intensity: Double
     let accent: Color
+    let selectionAccent: Color
 
     static func == (lhs: HeatmapCellView, rhs: HeatmapCellView) -> Bool {
         lhs.date == rhs.date &&
@@ -77,7 +78,7 @@ struct HeatmapCellView: View, Equatable {
 
         if isSelected {
             RoundedRectangle(cornerRadius: 4)
-                .stroke(today ? accent : Color.primary.opacity(0.9), lineWidth: today ? 2 : 1.6)
+                .stroke(selectionAccent, lineWidth: today ? 2 : 1.6)
         }
     }
 }

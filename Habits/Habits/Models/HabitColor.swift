@@ -1,27 +1,35 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 struct HabitColorVariants {
     let base: Color
-    let accent: Color
+    let strong: Color
     let soft: Color
+
+    // Backward-compatible alias used by existing call sites.
+    var accent: Color { strong }
 }
 
 enum HabitColor: String, CaseIterable, Identifiable {
-    case fern = "#59BE67"
-    case sage = "#76B987"
-    case cobalt = "#4B7FDF"
-    case sky = "#4E9DDF"
-    case iris = "#7E68D8"
-    case amethyst = "#9B72D3"
-    case apricot = "#D88F45"
-    case amber = "#C99A3F"
-    case coral = "#CD6A67"
-    case rose = "#C15D82"
-    case teal = "#48B0A2"
-    case cyan = "#4DB3C5"
+    case fern
+    case sage
+    case cobalt
+    case sky
+    case iris
+    case amethyst
+    case apricot
+    case amber
+    case coral
+    case rose
+    case teal
+    case cyan
 
     var id: String { rawValue }
-    var hex: String { rawValue }
+    var hex: String { CadenceColorPalette.light(for: paletteToken).base }
 
     var name: String {
         switch self {
@@ -41,60 +49,72 @@ enum HabitColor: String, CaseIterable, Identifiable {
     }
 
     var color: Color {
-        Color(hex: rawValue)
+        variants.base
     }
 
     var variants: HabitColorVariants {
+        let light = CadenceColorPalette.light(for: paletteToken)
+        let dark = CadenceColorPalette.dark(for: paletteToken)
         return HabitColorVariants(
-            base: color,
-            accent: Color(hex: accentHex),
-            soft: Color(hex: softHex).opacity(softOpacity)
+            base: Color.dynamic(lightHex: light.base, darkHex: dark.base),
+            strong: Color.dynamic(lightHex: light.strong, darkHex: dark.strong),
+            soft: Color.dynamic(lightHex: light.soft, darkHex: dark.soft)
         )
     }
 
     static let `default`: HabitColor = .cobalt
 
     static func from(hex: String) -> HabitColor {
-        let normalized = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        return allCases.first { $0.rawValue == normalized } ?? .default
+        let normalized = CadenceColorPalette.normalizeHex(hex)
+        if let paletteToken = CadenceColorPalette.token(from: normalized) {
+            return from(token: paletteToken)
+        }
+
+        let stripped = normalized.trimmingCharacters(in: CharacterSet(charactersIn: "#")).lowercased()
+        if let tokenByName = CadencePaletteToken(rawValue: stripped) {
+            return from(token: tokenByName)
+        }
+
+        return .default
     }
 
-    var accentHex: String {
+    // Compatibility helpers for legacy call sites.
+    var accentHex: String { CadenceColorPalette.light(for: paletteToken).strong }
+    var softHex: String { CadenceColorPalette.light(for: paletteToken).soft }
+    var softOpacity: Double { 1.0 }
+
+    private var paletteToken: CadencePaletteToken {
         switch self {
-        case .fern: return "#60C96F"
-        case .sage: return "#7FC590"
-        case .cobalt: return "#568CEB"
-        case .sky: return "#5AAAE9"
-        case .iris: return "#8A73E4"
-        case .amethyst: return "#A77FDE"
-        case .apricot: return "#E59A4F"
-        case .amber: return "#D7A64A"
-        case .coral: return "#DA7673"
-        case .rose: return "#CD688D"
-        case .teal: return "#52BCAD"
-        case .cyan: return "#58BFD0"
+        case .fern: return .fern
+        case .sage: return .sage
+        case .cobalt: return .cobalt
+        case .sky: return .sky
+        case .iris: return .iris
+        case .amethyst: return .amethyst
+        case .apricot: return .apricot
+        case .amber: return .amber
+        case .coral: return .coral
+        case .rose: return .rose
+        case .teal: return .teal
+        case .cyan: return .cyan
         }
     }
 
-    var softHex: String {
-        switch self {
-        case .fern: return "#5FA86A"
-        case .sage: return "#7AA88A"
-        case .cobalt: return "#5A83C6"
-        case .sky: return "#5A99C7"
-        case .iris: return "#8774C2"
-        case .amethyst: return "#9B7DBF"
-        case .apricot: return "#C48B55"
-        case .amber: return "#B69352"
-        case .coral: return "#B86E6C"
-        case .rose: return "#AD6481"
-        case .teal: return "#57A094"
-        case .cyan: return "#5AABBA"
+    private static func from(token: CadencePaletteToken) -> HabitColor {
+        switch token {
+        case .fern: return .fern
+        case .sage: return .sage
+        case .cobalt: return .cobalt
+        case .sky: return .sky
+        case .iris: return .iris
+        case .amethyst: return .amethyst
+        case .apricot: return .apricot
+        case .amber: return .amber
+        case .coral: return .coral
+        case .rose: return .rose
+        case .teal: return .teal
+        case .cyan: return .cyan
         }
-    }
-
-    var softOpacity: Double {
-        0.78
     }
 }
 
@@ -104,10 +124,56 @@ extension Habit {
     }
 
     var curatedAccentColor: Color {
-        curatedColor.color
+        curatedColor.variants.base
     }
 
     var curatedColorVariants: HabitColorVariants {
         curatedColor.variants
     }
 }
+
+private extension Color {
+    static func dynamic(lightHex: String, darkHex: String) -> Color {
+        #if canImport(UIKit)
+        return Color(
+            UIColor { traits in
+                UIColor(hex: traits.userInterfaceStyle == .dark ? darkHex : lightHex)
+            }
+        )
+        #elseif canImport(AppKit)
+        let dynamic = NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+            return NSColor(hex: match == .darkAqua ? darkHex : lightHex)
+        } ?? NSColor(hex: lightHex)
+        return Color(dynamic)
+        #else
+        return Color(hex: lightHex)
+        #endif
+    }
+}
+
+#if canImport(UIKit)
+private extension UIColor {
+    convenience init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = CGFloat((int >> 16) & 255) / 255
+        let g = CGFloat((int >> 8) & 255) / 255
+        let b = CGFloat(int & 255) / 255
+        self.init(red: r, green: g, blue: b, alpha: 1)
+    }
+}
+#elseif canImport(AppKit)
+private extension NSColor {
+    convenience init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = CGFloat((int >> 16) & 255) / 255
+        let g = CGFloat((int >> 8) & 255) / 255
+        let b = CGFloat(int & 255) / 255
+        self.init(red: r, green: g, blue: b, alpha: 1)
+    }
+}
+#endif

@@ -8,6 +8,129 @@
 import Foundation
 import OSLog
 
+enum CadencePaletteToken: String, CaseIterable {
+    case fern
+    case sage
+    case cobalt
+    case sky
+    case iris
+    case amethyst
+    case apricot
+    case amber
+    case coral
+    case rose
+    case teal
+    case cyan
+}
+
+struct CadencePaletteTones {
+    let base: String
+    let soft: String
+    let strong: String
+}
+
+enum CadenceColorPalette {
+    static func light(for token: CadencePaletteToken) -> CadencePaletteTones {
+        switch token {
+        case .fern:
+            return CadencePaletteTones(base: "#5FAF7A", soft: "#E6F2EB", strong: "#3F8F5C")
+        case .sage:
+            return CadencePaletteTones(base: "#7FBF95", soft: "#EDF6F1", strong: "#5C9F78")
+        case .cobalt:
+            return CadencePaletteTones(base: "#5B7DB8", soft: "#E7EDF7", strong: "#3E5F99")
+        case .sky:
+            return CadencePaletteTones(base: "#6F95C8", soft: "#EDF3FB", strong: "#4E74A8")
+        case .iris:
+            return CadencePaletteTones(base: "#7A6FB2", soft: "#EEEAF7", strong: "#5A4F91")
+        case .amethyst:
+            return CadencePaletteTones(base: "#8B80C2", soft: "#F3F0FA", strong: "#6A5FA1")
+        case .apricot:
+            return CadencePaletteTones(base: "#C69C4F", soft: "#F4EBDD", strong: "#9E7A34")
+        case .amber:
+            return CadencePaletteTones(base: "#D2AE6A", soft: "#F7F1E4", strong: "#A88745")
+        case .coral:
+            return CadencePaletteTones(base: "#C46A6A", soft: "#F6E8E8", strong: "#9F4E4E")
+        case .rose:
+            return CadencePaletteTones(base: "#C46A6A", soft: "#F6E8E8", strong: "#9F4E4E")
+        case .teal:
+            return CadencePaletteTones(base: "#5FA3A0", soft: "#E7F2F1", strong: "#417F7C")
+        case .cyan:
+            return CadencePaletteTones(base: "#5FA3A0", soft: "#E7F2F1", strong: "#417F7C")
+        }
+    }
+
+    static func dark(for token: CadencePaletteToken) -> CadencePaletteTones {
+        let light = light(for: token)
+        return CadencePaletteTones(
+            base: lighten(hex: light.base, by: 0.08),
+            soft: mix(hex: light.base, with: "#121212", towardSecond: 0.85),
+            strong: lighten(hex: light.strong, by: 0.10)
+        )
+    }
+
+    static func token(from baseHex: String) -> CadencePaletteToken? {
+        let normalized = normalizeHex(baseHex)
+        return CadencePaletteToken.allCases.first {
+            normalizeHex(light(for: $0).base) == normalized
+        }
+    }
+
+    static func normalizeHex(_ hex: String) -> String {
+        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return cleaned.hasPrefix("#") ? cleaned : "#\(cleaned)"
+    }
+
+    static func lighten(hex: String, by amount: Double) -> String {
+        let rgb = RGB(hex: hex)
+        return rgb.mixed(with: RGB(hex: "#FFFFFF"), amount: amount).hex
+    }
+
+    static func mix(hex: String, with otherHex: String, towardSecond amount: Double) -> String {
+        let first = RGB(hex: hex)
+        let second = RGB(hex: otherHex)
+        return first.mixed(with: second, amount: amount).hex
+    }
+}
+
+private struct RGB {
+    let r: Double
+    let g: Double
+    let b: Double
+
+    init(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var value: UInt64 = 0
+        Scanner(string: cleaned).scanHexInt64(&value)
+        self.r = Double((value >> 16) & 0xFF) / 255.0
+        self.g = Double((value >> 8) & 0xFF) / 255.0
+        self.b = Double(value & 0xFF) / 255.0
+    }
+
+    private init(r: Double, g: Double, b: Double) {
+        self.r = min(max(r, 0), 1)
+        self.g = min(max(g, 0), 1)
+        self.b = min(max(b, 0), 1)
+    }
+
+    func mixed(with other: RGB, amount: Double) -> RGB {
+        let t = min(max(amount, 0), 1)
+        return RGB(
+            r: (r * (1 - t)) + (other.r * t),
+            g: (g * (1 - t)) + (other.g * t),
+            b: (b * (1 - t)) + (other.b * t)
+        )
+    }
+
+    var hex: String {
+        String(
+            format: "#%02X%02X%02X",
+            Int(round(r * 255)),
+            Int(round(g * 255)),
+            Int(round(b * 255))
+        )
+    }
+}
+
 enum CadenceStateKey: Equatable {
     case gettingStarted
     case building
@@ -38,6 +161,10 @@ enum CadenceCopyCatalog {
 
     static func identityStat(days: Int, window: Int) -> String {
         "Shown up \(days) of the last \(window) days"
+    }
+
+    static func identityReinforcement() -> String {
+        "Each check-in reinforces this"
     }
 
     static func shortLabel(for state: CadenceStateKey) -> String {

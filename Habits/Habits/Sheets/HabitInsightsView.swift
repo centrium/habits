@@ -14,7 +14,7 @@ struct HabitInsightsView: View {
     @State private var hasAnimatedIn = false
 
     private var accent: Color {
-        habit.curatedAccentColor
+        habit.curatedColorVariants.strong
     }
 
     private var insights: HabitInsightsViewModel {
@@ -1300,7 +1300,7 @@ private struct HabitInsightsPreviewScenario: Identifiable {
 
                     HabitInsightsCardsRenderer(
                         viewModel: model,
-                        accent: scenario.habit.curatedAccentColor,
+                        accent: scenario.habit.curatedColorVariants.strong,
                         hasAnimatedIn: true
                     )
                     .padding(.horizontal, 20)

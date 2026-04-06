@@ -10,6 +10,7 @@ import SwiftUI
 
 struct GitHubHeatmapGrid: View {
     let accent: Color
+    let selectionAccent: Color
     let style: HeatmapStyleConfiguration
     let calendarProvider: CalendarProvider
     let weeks: [Week]
@@ -24,6 +25,7 @@ struct GitHubHeatmapGrid: View {
 
     init(
         accent: Color,
+        selectionAccent: Color,
         style: HeatmapStyleConfiguration,
         calendarProvider: CalendarProvider,
         weeks: [Week],
@@ -35,6 +37,7 @@ struct GitHubHeatmapGrid: View {
         onTapLockedDay: @escaping (Date) -> Void
     ) {
         self.accent = accent
+        self.selectionAccent = selectionAccent
         self.style = style
         self.calendarProvider = calendarProvider
         self.weeks = weeks
@@ -136,7 +139,8 @@ struct GitHubHeatmapGrid: View {
                                     date: normalizedDay,
                                     isSelected: calendarProvider.calendar.isDate(normalizedDay, inSameDayAs: selectedDate),
                                     intensity: intensity,
-                                    accent: accent
+                                    accent: accent,
+                                    selectionAccent: selectionAccent
                                 )
                             )
                             .frame(width: style.cellSize, height: style.cellSize)

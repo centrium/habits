@@ -21,9 +21,9 @@ enum CadenceTokens {
         }
 
         enum State {
-            static let success = SwiftUI.Color(red: 0.26, green: 0.63, blue: 0.43)
-            static let warning = SwiftUI.Color(red: 0.75, green: 0.54, blue: 0.24)
-            static let negative = SwiftUI.Color(red: 0.74, green: 0.35, blue: 0.34)
+            static let success = HabitColor.fern.variants.strong
+            static let warning = HabitColor.amber.variants.strong
+            static let negative = HabitColor.coral.variants.strong
         }
 
         static func accent(for habit: Habit) -> CadenceAccentTokens {
@@ -33,8 +33,8 @@ enum CadenceTokens {
         static func accent(from hex: String) -> CadenceAccentTokens {
             let variants = HabitColor.from(hex: hex).variants
             return CadenceAccentTokens(
-                primary: variants.accent,
-                secondary: variants.accent.opacity(0.68),
+                primary: variants.strong,
+                secondary: variants.base.opacity(0.74),
                 tertiary: variants.soft
             )
         }

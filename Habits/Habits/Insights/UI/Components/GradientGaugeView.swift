@@ -18,10 +18,10 @@ struct GradientGaugeView: View {
     private var gradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.blue.opacity(colorScheme == .dark ? 0.78 : 0.62),
-                Color.green.opacity(colorScheme == .dark ? 0.8 : 0.64),
-                Color.orange.opacity(colorScheme == .dark ? 0.8 : 0.64),
-                Color.red.opacity(colorScheme == .dark ? 0.78 : 0.62)
+                HabitColor.cobalt.variants.strong.opacity(colorScheme == .dark ? 0.82 : 0.66),
+                HabitColor.teal.variants.strong.opacity(colorScheme == .dark ? 0.82 : 0.66),
+                HabitColor.amber.variants.strong.opacity(colorScheme == .dark ? 0.8 : 0.64),
+                HabitColor.coral.variants.strong.opacity(colorScheme == .dark ? 0.8 : 0.64)
             ],
             startPoint: .leading,
             endPoint: .trailing

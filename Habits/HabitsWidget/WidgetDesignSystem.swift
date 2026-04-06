@@ -5,6 +5,11 @@
 
 import SwiftUI
 import WidgetKit
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 private enum WidgetLayout {
     static let containerPadding: CGFloat = 8
@@ -159,5 +164,64 @@ extension WidgetHabit {
 }
 
 extension Color {
-    static let systemAccent = Color.blue
+    static let systemAccent = Color.dynamic(
+        lightHex: CadenceColorPalette.light(for: .cobalt).strong,
+        darkHex: CadenceColorPalette.dark(for: .cobalt).strong
+    )
 }
+
+private extension Color {
+    static func dynamic(lightHex: String, darkHex: String) -> Color {
+        #if canImport(UIKit)
+        return Color(
+            UIColor { traits in
+                UIColor(hex: traits.userInterfaceStyle == .dark ? darkHex : lightHex)
+            }
+        )
+        #elseif canImport(AppKit)
+        let dynamic = NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+            return NSColor(hex: match == .darkAqua ? darkHex : lightHex)
+        } ?? NSColor(hex: lightHex)
+        return Color(dynamic)
+        #else
+        return colorFromHex(lightHex)
+        #endif
+    }
+
+    static func colorFromHex(_ hex: String) -> Color {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var value: UInt64 = 0
+        Scanner(string: cleaned).scanHexInt64(&value)
+        let r = Double((value >> 16) & 255) / 255
+        let g = Double((value >> 8) & 255) / 255
+        let b = Double(value & 255) / 255
+        return Color(.sRGB, red: r, green: g, blue: b, opacity: 1)
+    }
+}
+
+#if canImport(UIKit)
+private extension UIColor {
+    convenience init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = CGFloat((int >> 16) & 255) / 255
+        let g = CGFloat((int >> 8) & 255) / 255
+        let b = CGFloat(int & 255) / 255
+        self.init(red: r, green: g, blue: b, alpha: 1)
+    }
+}
+#elseif canImport(AppKit)
+private extension NSColor {
+    convenience init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = CGFloat((int >> 16) & 255) / 255
+        let g = CGFloat((int >> 8) & 255) / 255
+        let b = CGFloat(int & 255) / 255
+        self.init(red: r, green: g, blue: b, alpha: 1)
+    }
+}
+#endif

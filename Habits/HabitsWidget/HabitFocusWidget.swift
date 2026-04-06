@@ -112,7 +112,7 @@ private extension WidgetHabit {
         progress: 0,
         hasActivityToday: false,
         iconName: "book.closed.fill",
-        colorHex: "#1F7A8C",
+        colorHex: CadenceColorPalette.light(for: .teal).base,
         identityState: .rebuilding
     )
 }

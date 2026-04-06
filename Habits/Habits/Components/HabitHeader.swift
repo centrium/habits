@@ -73,7 +73,8 @@ struct HabitHeader: View {
         self.onQuickLogLongPress = onQuickLogLongPress
     }
 
-    private var accent: Color { habit.curatedAccentColor }
+    private var iconAccent: Color { habit.curatedColorVariants.base }
+    private var actionAccent: Color { habit.curatedColorVariants.strong }
 
     private var subtitleText: String {
         if let secondaryTextOverride, !secondaryTextOverride.isEmpty {
@@ -138,7 +139,7 @@ struct HabitHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.contentSpacing) {
             HabitBadge(
                 iconName: iconName,
-                accent: accent,
+                accent: iconAccent,
                 habitName: habit.name,
                 size: HabitRowGrid.iconSize
             )
@@ -178,7 +179,7 @@ struct HabitHeader: View {
                         .transition(.opacity.combined(with: .scale))
                 } else if shouldShowQuickLogButton {
                     GoalProgressButton(
-                        accent: accent,
+                        accent: actionAccent,
                         hasGoal: habit.hasGoal,
                         progressFraction: goalProgressFraction,
                         isComplete: isComplete,

@@ -144,6 +144,7 @@ struct HabitHeatmap: View {
 
         return GitHubHeatmapGrid(
             accent: softAccent,
+            selectionAccent: accent,
             style: style,
             calendarProvider: calendarProvider,
             weeks: timeline.weeks,

@@ -55,7 +55,8 @@ struct CalendarDayCell: View {
     let intensity: Double
     let count: Int
     let indicatorText: String?
-    let accent: Color
+    let softAccent: Color
+    let selectedAccent: Color
     let isInDisplayedMonth: Bool
     let isDisabled: Bool
     let isLocked: Bool
@@ -74,7 +75,7 @@ struct CalendarDayCell: View {
             return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
         }
 
-        return accent.opacity(backgroundOpacity)
+        return softAccent.opacity(backgroundOpacity)
     }
 
     private var backgroundOpacity: Double {
@@ -210,7 +211,7 @@ struct CalendarDayCell: View {
         let lineWidth: CGFloat
 
         if isSelected {
-            strokeColor = Color.primary.opacity(Layout.selectedStrokeOpacity)
+            strokeColor = selectedAccent.opacity(Layout.selectedStrokeOpacity)
             lineWidth = Layout.selectedStrokeWidth
         } else if isToday {
             strokeColor = Color.primary.opacity(colorScheme == .light ? 0.28 : Layout.todayStrokeOpacity)
@@ -294,7 +295,7 @@ struct CalendarDayCell: View {
             }
             .brightness(colorScheme == .dark && !isSelected ? 0.08 : 0)
             .shadow(
-                color: colorScheme == .dark ? accent.opacity(isSelected ? 0.2 : 0.24) : .clear,
+                color: colorScheme == .dark ? selectedAccent.opacity(isSelected ? 0.2 : 0.24) : .clear,
                 radius: colorScheme == .dark ? 1.6 : 0,
                 y: 0.4
             )
@@ -307,9 +308,9 @@ struct CalendarDayCell: View {
                 return AnyShapeStyle(Color.white.opacity(0.9))
             }
 
-            return AnyShapeStyle(accent.opacity(0.96))
+            return AnyShapeStyle(selectedAccent.opacity(0.96))
         }
 
-        return AnyShapeStyle(accent)
+        return AnyShapeStyle(selectedAccent)
     }
 }

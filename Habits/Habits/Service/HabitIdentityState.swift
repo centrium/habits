@@ -40,6 +40,10 @@ struct CadenceLanguage {
         CadenceCopyCatalog.identityStat(days: days, window: window)
     }
 
+    static func identityReinforcement() -> String {
+        CadenceCopyCatalog.identityReinforcement()
+    }
+
     static func shortLabel(for state: HabitIdentityState) -> String {
         stateTitle(state)
     }

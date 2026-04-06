@@ -418,7 +418,7 @@ private extension PaywallView {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .shadow(
-                color: colorScheme == .light ? Color.black.opacity(0.08) : Color.blue.opacity(0.25),
+                color: colorScheme == .light ? Color.black.opacity(0.08) : Color.systemAccent.opacity(0.25),
                 radius: colorScheme == .light ? 6 : 10,
                 y: 4
             )
