@@ -316,7 +316,7 @@ private struct IdentityStateCardView: View {
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Identity")
+                Text(CadenceLanguage.identityTitle())
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -331,16 +331,8 @@ private struct IdentityStateCardView: View {
     }
 
     private func identityLineColor(for state: HabitIdentityState) -> Color {
-        switch state {
-        case .holding:
-            return .primary
-        case .building:
-            return .secondary
-        case .returning:
-            return .secondary.opacity(0.86)
-        case .starting:
-            return .secondary.opacity(0.8)
-        }
+        _ = state
+        return .secondary
     }
 }
 

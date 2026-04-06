@@ -231,14 +231,18 @@ private extension GreigInsightService {
 
         let evidence: String = {
             switch state {
-            case .holding:
+            case .strong:
                 return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, including a \(max(streak, 1))-day streak."
+            case .steady:
+                return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days and kept a steady routine."
             case .building:
                 if streak > 1 {
                     return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, including a \(streak)-day streak."
                 }
                 return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days."
-            case .starting, .returning:
+            case .slipping:
+                return "Recent consistency has dropped, but one check-in today can help stabilise this routine."
+            case .gettingStarted, .rebuilding:
                 if projection.loggedToday {
                     return "You're rebuilding this routine through recent behaviour."
                 }
@@ -263,22 +267,22 @@ private extension GreigInsightService {
 
     func status(for state: HabitIdentityState) -> InsightStatus {
         switch state {
-        case .holding:
+        case .strong:
             return .ahead
-        case .building:
+        case .steady, .building:
             return .onTrack
-        case .starting, .returning:
+        case .slipping, .gettingStarted, .rebuilding:
             return .atRisk
         }
     }
 
     func confidence(for state: HabitIdentityState) -> ConfidenceLevel {
         switch state {
-        case .holding:
+        case .strong:
             return .high
-        case .building:
+        case .steady, .building:
             return .medium
-        case .starting, .returning:
+        case .slipping, .gettingStarted, .rebuilding:
             return .low
         }
     }
@@ -475,11 +479,15 @@ private extension GreigInsightService {
     ) -> String? {
         guard !loggedToday else { return nil }
         switch state {
-        case .holding:
+        case .strong:
             return "Log today to keep this routine steady."
+        case .steady:
+            return "Log today to keep this consistency."
         case .building:
             return "Log today to reinforce this routine."
-        case .starting, .returning:
+        case .slipping:
+            return "Log today to regain momentum."
+        case .gettingStarted, .rebuilding:
             return nil
         }
     }

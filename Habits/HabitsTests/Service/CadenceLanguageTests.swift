@@ -6,7 +6,7 @@ final class CadenceLanguageTests: XCTestCase {
     func testStateResolution() {
         XCTAssertEqual(
             HabitIdentityStateResolver.resolve(completionRate: 0.8, hasRecentData: true),
-            .holding
+            .steady
         )
         XCTAssertEqual(
             HabitIdentityStateResolver.resolve(completionRate: 0.5, hasRecentData: true),
@@ -14,40 +14,58 @@ final class CadenceLanguageTests: XCTestCase {
         )
         XCTAssertEqual(
             HabitIdentityStateResolver.resolve(completionRate: 0.2, hasRecentData: true),
-            .returning
+            .rebuilding
         )
         XCTAssertEqual(
             HabitIdentityStateResolver.resolve(completionRate: nil, hasRecentData: false),
-            .starting
+            .gettingStarted
         )
     }
 
     func testCopyValidationForAllStates() {
-        XCTAssertEqual(CadenceLanguage.shortLabel(for: .starting), "Starting")
-        XCTAssertEqual(CadenceLanguage.identityLine(for: .starting), "This is where the habit begins to take shape")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .starting), "This habit is just getting started")
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: .gettingStarted), "Getting started")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: .gettingStarted), "Getting started")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .gettingStarted), "You're getting started with this habit")
 
-        XCTAssertEqual(CadenceLanguage.shortLabel(for: .building), "Building")
-        XCTAssertEqual(CadenceLanguage.identityLine(for: .building), "You’re building this identity")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .building), "You’re building consistency with this habit")
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: .building), "Building momentum")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: .building), "Building momentum")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .building), "This habit is building momentum")
 
-        XCTAssertEqual(CadenceLanguage.shortLabel(for: .holding), "Holding")
-        XCTAssertEqual(CadenceLanguage.identityLine(for: .holding), "This is becoming part of who you are")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .holding), "This habit is holding strong")
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: .steady), "Staying consistent")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: .steady), "Staying consistent")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .steady), "This habit is staying consistent")
 
-        XCTAssertEqual(CadenceLanguage.shortLabel(for: .returning), "Returning")
-        XCTAssertEqual(CadenceLanguage.identityLine(for: .returning), "Getting back to this keeps the identity intact")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .returning), "You’re in the process of returning to this habit")
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: .strong), "Strong rhythm")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: .strong), "Strong rhythm")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .strong), "This habit has a strong rhythm")
+
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: .slipping), "Losing momentum")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: .slipping), "Losing momentum")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .slipping), "This habit is losing momentum")
+
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: .rebuilding), "Getting back on track")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: .rebuilding), "Getting back on track")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .rebuilding), "This habit is getting back on track")
+
+        XCTAssertEqual(CadenceLanguage.stateTitle(.rebuilding), "Getting back on track")
     }
 
     func testBehaviourLineFormattingAndFallback() {
         XCTAssertEqual(
             CadenceLanguage.behaviourLine(completions: 3, window: 7),
-            "You’ve shown up 3 of the last 7 days"
+            "Shown up 3 of the last 7 days"
         )
         XCTAssertEqual(
             CadenceLanguage.behaviourLine(completions: nil, window: nil),
-            "This is where the habit begins"
+            "Shown up 0 of the last 7 days"
         )
+    }
+
+    func testIdentityCopyHelpers() {
+        XCTAssertEqual(CadenceLanguage.identityTitle(), "Identity")
+        XCTAssertEqual(CadenceLanguage.identityEmptyPrompt(), "Shape this into part of who you are")
+        XCTAssertEqual(CadenceLanguage.identityHelper(), "This helps turn habits into part of who you are")
+        XCTAssertEqual(CadenceLanguage.identityPlaceholder(), "e.g. Someone who moves daily")
+        XCTAssertEqual(CadenceLanguage.identityStat(days: 4, window: 7), "Shown up 4 of the last 7 days")
     }
 }

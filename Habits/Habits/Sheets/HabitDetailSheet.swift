@@ -23,7 +23,6 @@ private enum ActiveSheet: Identifiable {
 
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
@@ -37,9 +36,8 @@ struct HabitDetailSheet: View {
     @State private var snapshotRefreshTask: Task<Void, Never>?
     @State private var selectedDate: Date
     @State private var isHistoryPresented = false
-    @State private var isFlowPickerPresented = false
-    @State private var displayedIdentityNarrative: HabitIdentityOutput?
-    @State private var identityNarrativeUpdateWorkItem: DispatchWorkItem?
+    @State private var cueInsight: CueInsight?
+    @State private var prefersIdentityFocusOnEdit = false
     private let onDeleted: (() -> Void)?
 
     let habit: Habit
@@ -130,10 +128,12 @@ struct HabitDetailSheet: View {
                 .buttonStyle(TactileButtonStyle())
 
                 Button {
+                    prefersIdentityFocusOnEdit = false
                     activeSheet = .edit
                 } label: {
                     Image(systemName: "pencil")
                         .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
                         .frame(width: 34, height: 34)
                         .padding(.horizontal, 4)
                         .cadenceControlChrome()
@@ -145,7 +145,10 @@ struct HabitDetailSheet: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .edit:
-                EditHabitSheet(habit: habit) {
+                EditHabitSheet(
+                    habit: habit,
+                    focusIdentityOnAppear: prefersIdentityFocusOnEdit
+                ) {
                     activeSheet = nil
                     dismiss()
                     onDeleted?()
@@ -198,7 +201,6 @@ struct HabitDetailSheet: View {
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
-            syncIdentityNarrative(animated: false)
 
             guard purchaseService.premiumStatus == .free else { return }
 
@@ -227,26 +229,13 @@ struct HabitDetailSheet: View {
         }
         .onChange(of: progressRevision) { _, _ in
             scheduleProgressSnapshotRefresh()
-            syncIdentityNarrative(animated: true, delay: 0.3)
+            Task { await refreshCueInsight() }
         }
         .onReceive(uiStateStore.$progressByHabitAndDate) { _ in
             scheduleProgressSnapshotRefresh()
         }
-        .onDisappear {
-            identityNarrativeUpdateWorkItem?.cancel()
-        }
-        .sheet(isPresented: $isFlowPickerPresented) {
-            FlowPickerSheet(
-                options: eligibleFlowParents,
-                selectedParentID: parentHabit?.id,
-                onSelect: { selectedID in
-                    applyInlineFlowSelection(selectedID)
-                    isFlowPickerPresented = false
-                }
-            )
-            .presentationDetents([.height(340)])
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(24)
+        .task(id: habit.id) {
+            await refreshCueInsight()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
             historyTabContent(
@@ -324,19 +313,14 @@ struct HabitDetailSheet: View {
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
         let heroSupportingText = heroSupportingInsightText(identityState: identityState)
-        let computedIdentityNarrative = identityNarrative(
-            logCount: logCount,
-            activeDays: identityState.activeDays
-        )
-        let identityNarrative = displayedIdentityNarrative ?? computedIdentityNarrative
-        let identityStrength = identityStrength(
-            logCount: logCount,
-            activeDays: identityState.activeDays
-        )
+        let identityText = userDefinedIdentityText
+        let identityStatText = identityText == nil
+            ? nil
+            : CadenceLanguage.identityStat(days: identityState.activeDays, window: identityState.windowDays)
 
         ScrollView {
             VStack(alignment: .leading, spacing: sectionSpacing) {
-                VStack(alignment: .leading, spacing: CadenceTokens.Space.lg) {
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                     HeroTopRow(
                         habitName: habit.name,
                         categoryLabel: habit.category.rawValue,
@@ -345,12 +329,13 @@ struct HabitDetailSheet: View {
                     )
 
                     Text(heroStatus)
-                        .font(CadenceTokens.Typography.title)
-                        .foregroundStyle(CadenceTokens.Color.Text.primary)
-                        .lineLimit(1)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(.primary.opacity(0.9))
+                        .lineLimit(2)
                         .minimumScaleFactor(0.92)
+                        .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, CadenceTokens.Space.xs)
+                        .padding(.top, 3)
 
                     if showsProgressSummary {
                         EquatableView(
@@ -365,12 +350,30 @@ struct HabitDetailSheet: View {
                         )
                     }
 
-                    if let heroSupportingText {
-                        Text(heroSupportingText)
-                            .font(CadenceTokens.Typography.supporting)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                    if let userCueText = userDefinedCueText {
+                        CueInsightView(text: userCueText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
+                    } else if let detectedCueText {
+                        CueInsightView(text: detectedCueText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
                     }
+
+                    if let heroSupportingText {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary.opacity(0.7))
+
+                            Text(heroSupportingText)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(.secondary.opacity(0.9))
+                        }
+                        .padding(.top, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                 }
                 .padding(CadenceTokens.Space.lg)
                 .frame(minHeight: 206, alignment: .topLeading)
@@ -378,25 +381,15 @@ struct HabitDetailSheet: View {
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
 
-                if let identityNarrative {
-                    HabitIdentityCard(
-                        output: identityNarrative,
-                        strength: identityStrength,
-                        accent: CadenceTokens.Color.accent(for: habit)
-                    )
-                    .padding(.top, 6)
-                    .padding(.horizontal, sectionPadding)
+                HabitIdentityCard(
+                    identityText: identityText,
+                    statText: identityStatText,
+                    accent: CadenceTokens.Color.accent(for: habit)
+                ) {
+                    prefersIdentityFocusOnEdit = true
+                    activeSheet = .edit
                 }
-
-                FlowCard(
-                    isInteractive: canEditFlowInline,
-                    parentName: parentHabit?.name,
-                    childSummaryText: childSummaryText,
-                    onTapRow: {
-                        guard canEditFlowInline else { return }
-                        isFlowPickerPresented = true
-                    }
-                )
+                .padding(.top, 6)
                 .padding(.horizontal, sectionPadding)
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
@@ -647,10 +640,10 @@ struct HabitDetailSheet: View {
         identityState: HabitIdentityStateSnapshot
     ) -> String? {
         if habit.logs.isEmpty {
-            return CadenceLanguage.insightLine(for: .starting)
+            return CadenceLanguage.insightLine(for: .gettingStarted)
         }
 
-        return "\(identityState.activeDays) of last \(identityState.windowDays) days"
+        return "Logged on \(identityState.activeDays) of the last \(identityState.windowDays) days"
     }
 
     private func presentManualEntry(for date: Date) {
@@ -801,68 +794,6 @@ struct HabitDetailSheet: View {
         }
     }
 
-    private func identityNarrative(
-        logCount: Int,
-        activeDays: Int
-    ) -> HabitIdentityOutput? {
-        HabitIdentityEngine.build(
-            habit: habit,
-            metrics: HabitIdentityMetrics(
-                completionRate: logCount > 0 ? Double(activeDays) / 7.0 : nil,
-                recentCompletions: logCount > 0 ? activeDays : nil,
-                window: logCount > 0 ? 7 : nil
-            )
-        )
-    }
-
-    private func identityStrength(
-        logCount: Int,
-        activeDays: Int
-    ) -> HabitIdentityCard.Strength {
-        guard logCount > 0 else { return .neutral }
-
-        let state = HabitIdentityStateResolver.resolve(
-            completionRate: Double(activeDays) / 7.0,
-            hasRecentData: activeDays > 0
-        )
-        switch state {
-        case .holding:
-            return .strong
-        case .building:
-            return .neutral
-        case .returning, .starting:
-            return .weak
-        }
-    }
-
-    private func syncIdentityNarrative(animated: Bool, delay: TimeInterval = 0) {
-        identityNarrativeUpdateWorkItem?.cancel()
-
-        let workItem = DispatchWorkItem {
-            let identityState = identityStateSummary()
-            let output = identityNarrative(
-                logCount: habit.logs.count,
-                activeDays: identityState.activeDays
-            )
-
-            if animated {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    displayedIdentityNarrative = output
-                }
-            } else {
-                displayedIdentityNarrative = output
-            }
-        }
-
-        identityNarrativeUpdateWorkItem = workItem
-
-        if delay <= 0 {
-            DispatchQueue.main.async(execute: workItem)
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
-        }
-    }
-
     private var isCompleteForSelectedDate: Bool {
         if let optimistic = uiStateStore.isComplete(habitId: habit.id, date: selectedDate) {
             return optimistic
@@ -875,73 +806,32 @@ struct HabitDetailSheet: View {
         )
     }
 
-    private var stackingSnapshot: HabitStackingSnapshot {
-        HabitStackingOrder.resolve(baseHabits: allHabits)
+    private var userDefinedCueText: String? {
+        let trimmed = habit.cueText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
-    private var parentHabit: Habit? {
-        guard let parentID = stackingSnapshot.parentByChildID[habit.id] else {
+    private var userDefinedIdentityText: String? {
+        let trimmed = habit.identity?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private func cueSourceHabitName(for insight: CueInsight) -> String? {
+        allHabits.first(where: { $0.id == insight.sourceHabitId })?.name
+    }
+
+    private func refreshCueInsight() async {
+        cueInsight = await habitLogService.detectCue(for: habit.id)
+    }
+
+    private var detectedCueText: String? {
+        guard let cueInsight,
+              let sourceHabitName = cueSourceHabitName(for: cueInsight) else {
             return nil
         }
-
-        return allHabits.first(where: { $0.id == parentID })
-    }
-
-    private var childHabits: [Habit] {
-        stackingSnapshot.childrenByParentID[habit.id] ?? []
-    }
-
-    private var childSummaryText: String? {
-        guard !childHabits.isEmpty else { return nil }
-
-        let visibleNames = childHabits.prefix(2).map(\.name)
-        let overflowCount = max(0, childHabits.count - visibleNames.count)
-
-        if overflowCount > 0 {
-            return "\(visibleNames.joined(separator: ", ")) +\(overflowCount) more"
-        }
-
-        return visibleNames.joined(separator: ", ")
-    }
-
-    private var canEditFlowInline: Bool {
-        habit.goalType == .frequency
-    }
-
-    private var eligibleFlowParents: [Habit] {
-        guard canEditFlowInline else { return [] }
-
-        return allHabits.filter { candidate in
-            guard candidate.id != habit.id else { return false }
-            guard candidate.goalType == .frequency else { return false }
-
-            return HabitStackingRules.canAssignTrigger(
-                childID: habit.id,
-                childGoalType: habit.goalType,
-                triggerID: candidate.id,
-                habits: allHabits,
-                parentOverrideByChildID: [habit.id: candidate.id]
-            )
-        }
-    }
-
-    private func applyInlineFlowSelection(_ triggerID: UUID?) {
-        guard canEditFlowInline else { return }
-        guard habit.triggerHabitID != triggerID else { return }
-
-        if let triggerID {
-            let isValid = HabitStackingRules.canAssignTrigger(
-                childID: habit.id,
-                childGoalType: habit.goalType,
-                triggerID: triggerID,
-                habits: allHabits,
-                parentOverrideByChildID: [habit.id: triggerID]
-            )
-            guard isValid else { return }
-        }
-
-        habit.triggerHabitID = triggerID
-        _ = modelContext.saveAndSyncWidgetData()
+        return "You tend to \(habit.name.lowercased()) after \(sourceHabitName.lowercased())"
     }
 
 }
@@ -973,6 +863,29 @@ private struct InsightsInlineNudgeRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel(text)
         .accessibilityHint("Open insights")
+    }
+}
+
+struct CueInsightView: View {
+    let text: String
+    @State private var isVisible = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "link")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary.opacity(0.7))
+
+            Text(text)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(.primary.opacity(0.85))
+                .multilineTextAlignment(.leading)
+                .lineSpacing(2)
+        }
+        .opacity(isVisible ? 1 : 0)
+        .animation(.easeIn(duration: 0.2), value: isVisible)
+        .onAppear { isVisible = true }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1019,75 +932,77 @@ private struct HeroTopRow: View {
 }
 
 private struct HabitIdentityCard: View {
-    enum Strength {
-        case strong
-        case neutral
-        case weak
-    }
-
-    let output: HabitIdentityOutput
-    let strength: Strength
+    let identityText: String?
+    let statText: String?
     let accent: CadenceAccentTokens
+    let onTap: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(accent.primary.opacity(0.72))
-                .frame(width: 3)
+        Button(action: onTap) {
+            HStack(alignment: .top, spacing: 12) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(accent.primary.opacity(0.72))
+                    .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Identity")
-                    .font(CadenceTokens.Typography.sectionHeader)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(CadenceLanguage.identityTitle())
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
 
-                Text(output.identityLine)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-                    .lineLimit(2)
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if let identityText {
+                                Text(identityText)
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .lineSpacing(2)
+                                    .lineLimit(2)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(output.behaviourLine)
-                        .font(.subheadline)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                        .lineLimit(2)
+                                if let statText {
+                                    Text(statText)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            } else {
+                                Text(CadenceLanguage.identityEmptyPrompt())
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .lineLimit(2)
+                            }
+                        }
 
-                    if let emotionalLine = output.emotionalLine {
-                        Text(emotionalLine)
-                            .font(CadenceTokens.Typography.microCopy)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.85))
-                            .lineLimit(2)
+                        Spacer(minLength: CadenceTokens.Space.sm)
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary.opacity(0.6))
                     }
                 }
-                .id(narrativeKey)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(CadenceTokens.Space.lg)
+            .background(
+                RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                    .fill(tintColor.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
+            .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(CadenceTokens.Space.lg)
-        .background(
-            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .fill(tintColor.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
-        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
-    }
-
-    private var narrativeKey: String {
-        "\(output.behaviourLine)|\(output.emotionalLine ?? "")"
+        .buttonStyle(.plain)
     }
 
     private var tintColor: Color {
-        switch strength {
-        case .strong:
+        if identityText != nil {
             return accent.primary
-        case .neutral:
-            return CadenceTokens.Color.Background.secondary
-        case .weak:
-            return CadenceTokens.Color.Text.secondary
         }
+
+        return CadenceTokens.Color.Background.secondary
     }
 }
 
@@ -1236,205 +1151,6 @@ private struct TodaySummarySection: View {
                 .font(CadenceTokens.Typography.body)
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
         }
-    }
-}
-
-private struct FlowCard: View {
-    let isInteractive: Bool
-    let parentName: String?
-    let childSummaryText: String?
-    let onTapRow: () -> Void
-    @State private var didAppear = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.62))
-
-                Text("Flow")
-                    .font(CadenceTokens.Typography.sectionHeader)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-            }
-
-            Button(action: onTapRow) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(parentName == nil ? "When" : "After")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-                    Image(systemName: "arrow.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.45))
-
-                    Text(parentName.map { "\($0) completes" } ?? "No sequence set")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(
-                            parentName == nil
-                                ? CadenceTokens.Color.Text.secondary
-                                : CadenceTokens.Color.Text.primary
-                        )
-                        .lineLimit(1)
-                        .id("flow-parent-\(parentName ?? "none")")
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(CadenceTokens.Color.Background.tertiary.opacity(isInteractive ? 0.58 : 0.42))
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(FlowSectionButtonStyle(isEnabled: isInteractive))
-            .disabled(!isInteractive)
-            .animation(.easeInOut(duration: 0.2), value: parentName)
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    guard isInteractive else { return }
-                    Haptics.impactLight()
-                }
-            )
-
-            if let childSummaryText {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Then")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-                    Image(systemName: "arrow.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.45))
-
-                    Text(childSummaryText)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(CadenceTokens.Color.Text.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .id("flow-children-\(childSummaryText)")
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-                .padding(.top, 4)
-                .animation(.easeInOut(duration: 0.2), value: childSummaryText)
-            } else if parentName == nil {
-                Text("No sequence set")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
-        .overlay {
-            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.03), lineWidth: 0.8)
-                .blendMode(.screen)
-        }
-        .background {
-            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.04),
-                            .clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        }
-        .opacity(didAppear ? 1 : 0.94)
-        .animation(.easeInOut(duration: 0.2), value: didAppear)
-        .onAppear {
-            didAppear = true
-        }
-    }
-}
-
-private struct FlowSectionButtonStyle: ButtonStyle {
-    let isEnabled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed && isEnabled ? 0.06 : 0))
-            }
-            .animation(AppMotion.press, value: configuration.isPressed)
-    }
-}
-
-private struct FlowPickerSheet: View {
-    let options: [Habit]
-    let selectedParentID: UUID?
-    let onSelect: (UUID?) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Do after")
-                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                .foregroundStyle(CadenceTokens.Color.Text.primary)
-
-            VStack(spacing: 10) {
-                flowOptionRow(
-                    title: "None",
-                    isSelected: selectedParentID == nil
-                ) {
-                    onSelect(nil)
-                }
-
-                ForEach(options) { habit in
-                    flowOptionRow(
-                        title: habit.name,
-                        isSelected: selectedParentID == habit.id
-                    ) {
-                        onSelect(habit.id)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(CadenceTokens.Color.Background.primary)
-    }
-
-    @ViewBuilder
-    private func flowOptionRow(
-        title: String,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Text(title)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 48)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(CadenceTokens.Color.Background.secondary)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            }
-        }
-        .buttonStyle(TactileButtonStyle(pressedScale: 0.985, pressedOpacity: 0.96))
     }
 }
 

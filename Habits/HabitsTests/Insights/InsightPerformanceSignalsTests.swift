@@ -5,7 +5,7 @@ import XCTest
 final class InsightPerformanceSignalsTests: XCTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
-    func testIdentityStateIsHoldingForStrongRecentStreak() {
+    func testIdentityStateIsStrongForStrongRecentStreak() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
@@ -18,11 +18,11 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(state, .holding)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is holding strong")
+        XCTAssertEqual(state, .strong)
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit has a strong rhythm")
     }
 
-    func testIdentityStateIsReturningWhenPatternIsBroken() {
+    func testIdentityStateIsRebuildingWhenPatternIsBroken() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
@@ -35,8 +35,8 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(state, .returning)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "You’re in the process of returning to this habit")
+        XCTAssertEqual(state, .rebuilding)
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is getting back on track")
     }
 
     func testIdentityStateIsBuildingForModerateRecentConsistency() {
@@ -52,8 +52,8 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(state, .building)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "You’re building consistency with this habit")
+        XCTAssertEqual(state, .steady)
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is staying consistent")
     }
 
     func testHabitRiskIsLowWithRecentLogsAndHighCompletion() {

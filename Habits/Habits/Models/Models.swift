@@ -184,6 +184,14 @@ enum HabitLogKind: String, Codable {
     case entry
 }
 
+enum CueType: String, Codable, CaseIterable, Identifiable {
+    case none
+    case userDefined
+    case systemDetected
+
+    var id: String { rawValue }
+}
+
 @Model
 final class HabitReminder: Identifiable {
     @Attribute(.unique) var id: UUID
@@ -226,6 +234,10 @@ final class Habit: Identifiable {
     var createdAt: Date
     var orderIndex: Int
     var triggerHabitID: UUID?
+    var cueText: String?
+    // Legacy field: system-detected cues are computed ephemerally and not persisted.
+    var cueSourceHabitId: UUID?
+    var cueType: String = CueType.none.rawValue
 
     @Relationship(deleteRule: .cascade)
     var reminders: [HabitReminder] = []
@@ -256,6 +268,14 @@ final class Habit: Identifiable {
         set { categoryRaw = newValue.rawValue }
     }
 
+    var cueTypeValue: CueType {
+        get { CueType(rawValue: cueType) ?? .none }
+        set {
+            // System-detected cues are computed ephemerally and must never persist.
+            cueType = (newValue == .systemDetected ? CueType.none : newValue).rawValue
+        }
+    }
+
     // MARK: - Init
 
     init(
@@ -274,7 +294,10 @@ final class Habit: Identifiable {
         allowsDecimals: Bool = false,
         createdAt: Date = .now,
         orderIndex: Int = 0,
-        triggerHabitID: UUID? = nil
+        triggerHabitID: UUID? = nil,
+        cueText: String? = nil,
+        cueSourceHabitId: UUID? = nil,
+        cueType: CueType = .none
     ) {
         self.id = UUID()
         self.name = name
@@ -295,6 +318,9 @@ final class Habit: Identifiable {
         self.createdAt = createdAt
         self.orderIndex = orderIndex
         self.triggerHabitID = triggerHabitID
+        self.cueText = cueText
+        self.cueSourceHabitId = cueSourceHabitId
+        self.cueType = cueType.rawValue
     }
 }
 

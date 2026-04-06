@@ -40,18 +40,13 @@ struct HabitIdentityEngine {
             return nil
         }
 
-        let state = HabitIdentityStateResolver.resolve(
-            completionRate: metrics.completionRate,
-            hasRecentData: (metrics.recentCompletions ?? 0) > 0
-        )
-
         return HabitIdentityOutput(
             identityLine: rawIdentity,
             behaviourLine: CadenceLanguage.behaviourLine(
                 completions: metrics.recentCompletions,
                 window: metrics.window
             ),
-            emotionalLine: CadenceLanguage.identityLine(for: state)
+            emotionalLine: nil
         )
     }
 

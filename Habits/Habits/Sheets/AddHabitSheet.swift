@@ -4,11 +4,11 @@ import SwiftData
 struct AddHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Habit.orderIndex) private var existingHabits: [Habit]
 
     @State private var name: String = ""
     @State private var identity: String = ""
     @State private var subtitle: String = ""
+    @State private var cueText: String = ""
     @State private var selectedHex: String = HabitColor.default.hex
     @State private var iconName: String? = nil
     @State private var category: HabitCategory = .general
@@ -20,8 +20,6 @@ struct AddHabitSheet: View {
     @State private var unit: String = ""
     @State private var allowsDecimals = false
     @State private var nextIndex: Int = 0
-    @State private var triggerHabitID: UUID? = nil
-    @State private var draftHabitID: UUID = UUID()
 
     @State private var reminders: [HabitReminderDraft] = []
 
@@ -37,6 +35,7 @@ struct AddHabitSheet: View {
                 name: $name,
                 identity: $identity,
                 subtitle: $subtitle,
+                cueText: $cueText,
                 selectedHex: $selectedHex,
                 iconName: $iconName,
                 category: $category,
@@ -47,9 +46,7 @@ struct AddHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
-                triggerHabitID: $triggerHabitID,
-                reminders: $reminders,
-                flowCandidates: flowCandidates
+                reminders: $reminders
             )
             .navigationTitle("Add Habit")
             .toolbar {
@@ -78,10 +75,7 @@ struct AddHabitSheet: View {
     private var canSave: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }
-
-        guard isFlowSelectionValid else { return false }
-
-        guard hasStreakGoal else { return goalType == .frequency || triggerHabitID == nil }
+        guard hasStreakGoal else { return true }
 
         switch goalType {
         case .frequency:
@@ -89,19 +83,6 @@ struct AddHabitSheet: View {
         case .cumulative:
             return targetValue > 0 && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-    }
-
-    private var flowCandidates: [Habit] {
-        existingHabits.filter { $0.goalType == .frequency }
-    }
-
-    private var isFlowSelectionValid: Bool {
-        HabitStackingRules.canAssignTrigger(
-            childID: draftHabitID,
-            childGoalType: goalType,
-            triggerID: triggerHabitID,
-            habits: existingHabits
-        )
     }
 
     private func addHabit() {
@@ -113,6 +94,9 @@ struct AddHabitSheet: View {
 
         let trimmedIdentity = identity.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalIdentity = trimmedIdentity.isEmpty ? nil : trimmedIdentity
+
+        let trimmedCueText = cueText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalCueText = trimmedCueText.isEmpty ? nil : trimmedCueText
 
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
@@ -135,7 +119,8 @@ struct AddHabitSheet: View {
             unit: finalUnit,
             allowsDecimals: allowsDecimals,
             orderIndex: nextIndex,
-            triggerHabitID: goalType == .frequency ? triggerHabitID : nil
+            cueText: finalCueText,
+            cueType: finalCueText == nil ? .none : .userDefined
         )
 
         habit.reminders = reminders.map { $0.makeReminder() }

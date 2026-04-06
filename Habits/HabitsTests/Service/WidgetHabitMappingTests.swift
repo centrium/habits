@@ -145,7 +145,7 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertEqual(widgetHabit.goalType, .goal)
         XCTAssertEqual(widgetHabit.progress, 0)
         XCTAssertEqual(widgetHabit.goalProgress, 0)
-        XCTAssertEqual(widgetHabit.identityState, .starting)
+        XCTAssertEqual(widgetHabit.identityState, .gettingStarted)
     }
 
     func testOpenEndedHabitUsesExplicitOpenEndedTypeWhenLoggedToday() throws {
@@ -245,7 +245,7 @@ final class WidgetHabitMappingTests: XCTestCase {
         XCTAssertEqual(widgetHabit.goalType, .binary)
         XCTAssertNil(widgetHabit.progress)
         XCTAssertFalse(widgetHabit.hasActivityToday)
-        XCTAssertEqual(widgetHabit.identityState, .starting)
+        XCTAssertEqual(widgetHabit.identityState, .gettingStarted)
         XCTAssertEqual(widgetHabit.name, "Read")
     }
 

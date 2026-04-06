@@ -23,10 +23,10 @@ final class HabitStateServiceTests: XCTestCase {
 
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        XCTAssertEqual(breakdown.state, .holding)
+        XCTAssertEqual(breakdown.state, .strong)
     }
 
-    func testReturningStateForLowRateWithRecentData() {
+    func testGettingStartedStateForDayOneLikeHistory() {
         let now = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.frequency(
             target: 1,
@@ -40,7 +40,7 @@ final class HabitStateServiceTests: XCTestCase {
 
         let breakdown = service.breakdown(for: habit, now: now, windowDays: 7)
 
-        XCTAssertEqual(breakdown.state, .returning)
+        XCTAssertEqual(breakdown.state, .gettingStarted)
     }
 
     func testOpenGoalBreakdownUsesBinaryCompletion() {

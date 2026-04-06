@@ -134,11 +134,11 @@ struct HabitInsightsEngine {
             statusText: statusText,
             now: now
         )
-        let recentCompletionRate = foundation.achievement.completionRatio
-            ?? foundation.consistency.activeDayRatio
         let identityState = HabitIdentityStateResolver.resolve(
-            completionRate: recentCompletionRate,
-            hasRecentData: (foundation.activitySummary?.entriesThisWeek ?? 0) > 0
+            for: habit,
+            calendar: calendar,
+            now: now,
+            windowDays: 7
         )
         let weeklyRhythmBlock = weeklyRhythmBlock(
             for: habit,

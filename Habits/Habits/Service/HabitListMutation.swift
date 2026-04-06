@@ -206,14 +206,18 @@ enum WidgetDataSync {
 
 private func widgetIdentityState(from state: HabitIdentityState) -> WidgetHabitIdentityState {
     switch state {
-    case .starting:
-        return .starting
+    case .gettingStarted:
+        return .gettingStarted
     case .building:
         return .building
-    case .holding:
-        return .holding
-    case .returning:
-        return .returning
+    case .steady:
+        return .steady
+    case .strong:
+        return .strong
+    case .slipping:
+        return .slipping
+    case .rebuilding:
+        return .rebuilding
     }
 }
 

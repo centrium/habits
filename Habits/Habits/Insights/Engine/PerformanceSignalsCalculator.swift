@@ -2,10 +2,12 @@ import Foundation
 
 enum PerformanceSignalsCalculator {
     private static let identityStateLabels: [String] = [
-        CadenceLanguage.shortLabel(for: .starting),
+        CadenceLanguage.shortLabel(for: .gettingStarted),
         CadenceLanguage.shortLabel(for: .building),
-        CadenceLanguage.shortLabel(for: .holding),
-        CadenceLanguage.shortLabel(for: .returning),
+        CadenceLanguage.shortLabel(for: .steady),
+        CadenceLanguage.shortLabel(for: .strong),
+        CadenceLanguage.shortLabel(for: .slipping),
+        CadenceLanguage.shortLabel(for: .rebuilding),
     ]
     private static let riskLabels = ["Low", "Moderate", "High", "Critical"]
     private static let strengthLabels = ["Weak", "Developing", "Strong", "Automatic"]
@@ -270,40 +272,41 @@ private extension PerformanceSignalsCalculator {
         calendar: Calendar,
         now: Date
     ) -> HabitIdentityState {
-        let windows = signalWindows(calendar: calendar, now: now)
-        let trackingStart = calendar.startOfDay(for: habit.createdAt)
-        let activity = activitySummary(logs: logs, windowEnd: windows.windowEnd)
-        let recentInterval = windows.recent
-        let recentCompletionRate = completionRate(
-            in: recentInterval,
-            trackingStart: trackingStart,
-            activeDays: activity.activeDays,
-            calendar: calendar
-        )
-        let recentAvailableDays = availableDays(
-            in: recentInterval,
-            trackingStart: trackingStart,
-            calendar: calendar
-        )
-        let hasRecentData = activity.activeDays.contains { day in
-            day >= recentInterval.start && day < recentInterval.end
-        }
+        _ = habit
+        let today = calendar.startOfDay(for: now)
+        let recentStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let pastOrTodayLogs = logs.filter { $0.dayStart <= today }
+        let recentCompletedDays = Set(
+            pastOrTodayLogs
+                .map(\.dayStart)
+                .filter { $0 >= recentStart && $0 <= today }
+        ).count
+        let totalLogCount = pastOrTodayLogs.count
+        let lastActivityDay = pastOrTodayLogs.map(\.dayStart).max()
 
         return HabitIdentityStateResolver.resolve(
-            completionRate: recentAvailableDays > 0 ? recentCompletionRate : nil,
-            hasRecentData: hasRecentData
+            recentCompletedDays: recentCompletedDays,
+            windowDays: 7,
+            totalLogCount: totalLogCount,
+            lastActivityDay: lastActivityDay,
+            now: now,
+            calendar: calendar,
         )
     }
 
     static func identitySignalValue(for state: HabitIdentityState) -> Double {
         switch state {
-        case .starting:
+        case .gettingStarted:
             return 0
+        case .slipping:
+            return 0.2
+        case .rebuilding:
+            return 0.35
         case .building:
-            return 0.33
-        case .holding:
-            return 0.66
-        case .returning:
+            return 0.55
+        case .steady:
+            return 0.75
+        case .strong:
             return 1
         }
     }

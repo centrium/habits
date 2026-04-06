@@ -41,8 +41,10 @@ struct HabitStateScoreService {
             completedDays: completedDays,
             totalDays: totalDays,
             state: HabitIdentityStateResolver.resolve(
-                completionRate: completionRate,
-                hasRecentData: completedDays > 0
+                for: habit,
+                calendar: calendar,
+                now: now,
+                windowDays: totalDays
             )
         )
     }

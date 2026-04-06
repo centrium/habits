@@ -18,7 +18,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         XCTAssertNil(result)
     }
 
-    func testNoDataReturnsStartingStateLines() throws {
+    func testNoDataReturnsIdentityAndStatOnly() throws {
         // GIVEN
         let identity = "Someone who trains daily"
 
@@ -33,11 +33,11 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // THEN
         XCTAssertEqual(output.identityLine, "Someone who trains daily")
-        XCTAssertEqual(output.behaviourLine, "This is where the habit begins")
-        XCTAssertEqual(output.emotionalLine, "This is where the habit begins to take shape")
+        XCTAssertEqual(output.behaviourLine, "Shown up 0 of the last 7 days")
+        XCTAssertNil(output.emotionalLine)
     }
 
-    func testStrongRateReturnsStrongEmotionalLine() throws {
+    func testStrongRateReturnsStatOnly() throws {
         // GIVEN
         let completionRate = 0.8
 
@@ -51,11 +51,11 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.behaviourLine, "You’ve shown up 5 of the last 7 days")
-        XCTAssertEqual(output.emotionalLine, "This is becoming part of who you are")
+        XCTAssertEqual(output.behaviourLine, "Shown up 5 of the last 7 days")
+        XCTAssertNil(output.emotionalLine)
     }
 
-    func testMediumRateReturnsMediumEmotionalLine() throws {
+    func testMediumRateReturnsStatOnly() throws {
         // GIVEN
         let completionRate = 0.5
 
@@ -69,11 +69,11 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.behaviourLine, "You’ve shown up 4 of the last 7 days")
-        XCTAssertEqual(output.emotionalLine, "You’re building this identity")
+        XCTAssertEqual(output.behaviourLine, "Shown up 4 of the last 7 days")
+        XCTAssertNil(output.emotionalLine)
     }
 
-    func testLowRateReturnsLowEmotionalLine() throws {
+    func testLowRateReturnsStatOnly() throws {
         // GIVEN
         let completionRate = 0.2
 
@@ -87,8 +87,8 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.behaviourLine, "You’ve shown up 1 of the last 7 days")
-        XCTAssertEqual(output.emotionalLine, "Getting back to this keeps the identity intact")
+        XCTAssertEqual(output.behaviourLine, "Shown up 1 of the last 7 days")
+        XCTAssertNil(output.emotionalLine)
     }
 
     func testCompletionRateExactlyPointSevenMapsToStrong() throws {
@@ -105,7 +105,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.emotionalLine, "This is becoming part of who you are")
+        XCTAssertNil(output.emotionalLine)
     }
 
     func testCompletionRateExactlyPointFourMapsToMedium() throws {
@@ -122,7 +122,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.emotionalLine, "You’re building this identity")
+        XCTAssertNil(output.emotionalLine)
     }
 
     func testNarrativeIsDeterministicForSameInputs() throws {

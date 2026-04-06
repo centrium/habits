@@ -285,15 +285,7 @@ struct HabitHeatmap: View {
     }
 
     private func identityStateColor(for state: HabitIdentityState) -> Color {
-        switch state {
-        case .holding:
-            return baseAccent.opacity(0.9)
-        case .building:
-            return CadenceTokens.Color.Text.secondary
-        case .returning:
-            return CadenceTokens.Color.Text.secondary.opacity(0.72)
-        case .starting:
-            return CadenceTokens.Color.Text.tertiary
-        }
+        _ = state
+        return CadenceTokens.Color.Text.secondary
     }
 }

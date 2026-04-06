@@ -60,7 +60,7 @@ struct HabitIdentityStateWidgetEntryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Identity")
+                Text(CadenceCopyCatalog.identityTitle())
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.systemAccent)
 
@@ -167,7 +167,7 @@ struct HabitIdentityStateWidget: Widget {
             HabitIdentityStateWidgetEntryView(entry: entry)
                 .widgetSurface()
         }
-        .configurationDisplayName("Identity")
+        .configurationDisplayName(CadenceCopyCatalog.identityTitle())
         .description("A quick identity signal.")
         .supportedFamilies([.systemMedium])
     }

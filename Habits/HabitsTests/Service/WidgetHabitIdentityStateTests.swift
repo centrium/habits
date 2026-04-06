@@ -5,24 +5,24 @@ import XCTest
 final class WidgetHabitIdentityStateTests: XCTestCase {
     func testIdentitySummaryUsesStateLabelAndRecentCompletionText() {
         let habit = makeHabit(
-            identityState: .holding,
+            identityState: .strong,
             recentActivity: samples(values: [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1])
         )
 
         let summary = habit.identityStateSummary
 
-        XCTAssertEqual(summary.state, .holding)
-        XCTAssertEqual(summary.shortLabel, "Holding")
+        XCTAssertEqual(summary.state, .strong)
+        XCTAssertEqual(summary.shortLabel, "Strong rhythm")
         XCTAssertEqual(summary.recentCompletionText, "5 of last 7 days")
-        XCTAssertEqual(summary.insightLine, "This habit is holding strong")
+        XCTAssertEqual(summary.insightLine, "This habit has a strong rhythm")
     }
 
-    func testIdentitySummaryUsesReturningInsightCopy() {
-        let habit = makeHabit(identityState: .returning, recentActivity: [])
+    func testIdentitySummaryUsesRebuildingInsightCopy() {
+        let habit = makeHabit(identityState: .rebuilding, recentActivity: [])
 
         let summary = habit.identityStateSummary
 
-        XCTAssertEqual(summary.insightLine, "You’re in the process of returning to this habit")
+        XCTAssertEqual(summary.insightLine, "This habit is getting back on track")
     }
 
     func testDecodingWithoutIdentityStateDefaultsToStarting() throws {
@@ -37,7 +37,7 @@ final class WidgetHabitIdentityStateTests: XCTestCase {
         """.data(using: .utf8)!
 
         let decoded = try JSONDecoder().decode(WidgetHabit.self, from: json)
-        XCTAssertEqual(decoded.identityState, .starting)
+        XCTAssertEqual(decoded.identityState, .gettingStarted)
     }
 
     private func makeHabit(

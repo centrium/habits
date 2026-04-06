@@ -86,7 +86,7 @@ struct GlobalInsightsService {
         let rankedHabits = rankedHabitRows(from: metricsByHabit)
         let greig = greigSummary(from: metricsByHabit, now: now)
         let stripSummary = PremiumInsightsStripSummary(
-            primaryLabel: "Identity ",
+            primaryLabel: "\(CadenceLanguage.identityTitle()) ",
             primaryValue: CadenceLanguage.shortLabel(for: dominantState),
             secondaryLabel: "Consistency ",
             secondaryValue: "\(consistency)%",
@@ -139,10 +139,7 @@ private extension GlobalInsightsService {
 
         return HabitMetrics(
             habit: habit,
-            identityState: HabitIdentityStateResolver.resolve(
-                completionRate: progressRatio,
-                hasRecentData: hasRecentData(completedDays: completedDays, now: now)
-            ),
+            identityState: HabitIdentityStateResolver.resolve(for: habit, calendar: calendar, now: now),
             consistency: insightsService.snapshot(for: habit, now: now).consistency,
             riskScore: PerformanceSignalsCalculator.habitRiskScore(
                 for: habit,
@@ -168,8 +165,8 @@ private extension GlobalInsightsService {
     ) -> String {
         _ = consistency
         _ = atRiskCount
-        let dominantInsight = CadenceLanguage.insightLine(for: dominantState).lowercased()
-        return "Most of your habits are \(dominantInsight)."
+        let dominantTitle = CadenceLanguage.stateTitle(dominantState).lowercased()
+        return "Most of your habits are \(dominantTitle)."
     }
 
     func bestDayOfWeek(
@@ -342,7 +339,7 @@ private extension GlobalInsightsService {
     }
 
     func dominantIdentityState(from metrics: [HabitMetrics]) -> HabitIdentityState {
-        guard !metrics.isEmpty else { return .starting }
+        guard !metrics.isEmpty else { return .gettingStarted }
 
         let grouped = Dictionary(grouping: metrics, by: \.identityState)
         let ranked = grouped.sorted { lhs, rhs in
@@ -351,7 +348,7 @@ private extension GlobalInsightsService {
             }
             return stateRank(lhs.key) > stateRank(rhs.key)
         }
-        return ranked.first?.key ?? .starting
+        return ranked.first?.key ?? .gettingStarted
     }
 
     func hasRecentData(
@@ -367,13 +364,17 @@ private extension GlobalInsightsService {
 
     func stateRank(_ state: HabitIdentityState) -> Int {
         switch state {
-        case .holding:
-            return 4
+        case .strong:
+            return 6
+        case .steady:
+            return 5
         case .building:
+            return 4
+        case .rebuilding:
             return 3
-        case .returning:
+        case .slipping:
             return 2
-        case .starting:
+        case .gettingStarted:
             return 1
         }
     }

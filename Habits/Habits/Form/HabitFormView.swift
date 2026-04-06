@@ -75,12 +75,18 @@ private struct HabitReminderEditorItem: Identifiable, Equatable {
 }
 
 struct HabitFormView: View {
+    enum InitialFocus {
+        case name
+        case identity
+    }
+
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var purchaseService: PurchaseService
 
     @Binding var name: String
     @Binding var identity: String
     @Binding var subtitle: String
+    @Binding var cueText: String
     @Binding var selectedHex: String
     @Binding var iconName: String?
     @Binding var category: HabitCategory
@@ -91,9 +97,8 @@ struct HabitFormView: View {
     @Binding var targetValue: Double
     @Binding var unit: String
     @Binding var allowsDecimals: Bool
-    @Binding var triggerHabitID: UUID?
     @Binding var reminders: [HabitReminderDraft]
-    var flowCandidates: [Habit] = []
+    var initialFocus: InitialFocus = .name
     var showsDelete: Bool = false
     var onDelete: (() -> Void)? = nil
 
@@ -115,7 +120,10 @@ struct HabitFormView: View {
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
-    private static let identityCharacterLimit = 80
+    private static let titleCharacterLimit = 20
+    private static let subtitleCharacterLimit = 25
+    private static let intentCharacterLimit = 50
+    private static let cueCharacterLimit = 50
 
     var body: some View {
         Form {
@@ -130,9 +138,15 @@ struct HabitFormView: View {
                                 .font(.title3.weight(.semibold))
                                 .textInputAutocapitalization(.words)
                                 .focused($focusedField, equals: .name)
+                                .onChange(of: name) { _, newValue in
+                                    name = String(newValue.prefix(Self.titleCharacterLimit))
+                                }
 
                             TextField("Subtitle (optional)", text: $subtitle)
                                 .font(.subheadline)
+                                .onChange(of: subtitle) { _, newValue in
+                                    subtitle = String(newValue.prefix(Self.subtitleCharacterLimit))
+                                }
 
                             HStack(spacing: 12) {
                                 Text("Category")
@@ -156,32 +170,47 @@ struct HabitFormView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Identity")
+                        Text(CadenceLanguage.identityTitle())
                             .font(.headline)
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Who does this habit help you become?")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-
-                            ZStack(alignment: .leading) {
-                                if identity.isEmpty {
-                                    Text("Someone who builds long-term wealth")
-                                        .font(.body)
-                                        .foregroundStyle(.tertiary)
-                                        .transition(.opacity)
+                            TextField(CadenceLanguage.identityPlaceholder(), text: $identity)
+                                .font(.body)
+                                .textInputAutocapitalization(.sentences)
+                                .focused($focusedField, equals: .identity)
+                                .lineLimit(1)
+                                .onChange(of: identity) { _, newValue in
+                                    identity = String(newValue.prefix(Self.intentCharacterLimit))
                                 }
 
-                                TextField("", text: $identity)
-                                    .font(.body)
-                                    .textInputAutocapitalization(.sentences)
-                                    .focused($focusedField, equals: .identity)
-                                    .lineLimit(1)
+                            if identity.isEmpty || focusedField == .identity {
+                                Text(CadenceLanguage.identityHelper())
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
                             }
-                            .animation(.easeOut(duration: 0.18), value: identity.isEmpty)
 
                             Divider()
                                 .opacity(0.25)
+                        }
+                        .padding(16)
+                        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Cue")
+                            .font(.headline)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("After I…, I will…", text: $cueText)
+                                .font(.body)
+                                .textInputAutocapitalization(.sentences)
+                                .onChange(of: cueText) { _, newValue in
+                                    cueText = String(newValue.prefix(Self.cueCharacterLimit))
+                                }
+
+                            Text("e.g. After I walk, I stretch • After coffee, I journal")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                         .padding(16)
                         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
@@ -328,32 +357,6 @@ struct HabitFormView: View {
                 }
             }
 
-            Section("Flow") {
-                if goalType == .frequency {
-                    Picker("After", selection: $triggerHabitID) {
-                        Text("None").tag(Optional<UUID>.none)
-                        ForEach(flowCandidates) { habit in
-                            Text(habit.name).tag(Optional(habit.id))
-                        }
-                    }
-
-                    if let triggerHabitID,
-                       let selectedParent = flowCandidates.first(where: { $0.id == triggerHabitID }) {
-                        Text("Runs after \(selectedParent.name).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Optional. Keep this nil for standalone habits.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Flow applies to frequency habits only.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             if showsDelete {
                 Section {
                     Button(role: .destructive) {
@@ -368,17 +371,12 @@ struct HabitFormView: View {
         }
         .onAppear {
             selectedHex = HabitColor.from(hex: selectedHex).hex
+            name = String(name.prefix(Self.titleCharacterLimit))
+            subtitle = String(subtitle.prefix(Self.subtitleCharacterLimit))
+            identity = String(identity.prefix(Self.intentCharacterLimit))
+            cueText = String(cueText.prefix(Self.cueCharacterLimit))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                focusedField = .name
-            }
-        }
-        .onChange(of: identity) { _, newValue in
-            guard newValue.count > Self.identityCharacterLimit else { return }
-            identity = String(newValue.prefix(Self.identityCharacterLimit))
-        }
-        .onChange(of: goalType) { _, newValue in
-            if newValue != .frequency {
-                triggerHabitID = nil
+                focusedField = (initialFocus == .identity) ? .identity : .name
             }
         }
         .transaction { transaction in

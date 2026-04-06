@@ -4,14 +4,15 @@ import SwiftData
 struct EditHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
 
     @Bindable var habit: Habit
     private let onDeleted: (() -> Void)?
+    private let focusIdentityOnAppear: Bool
 
     @State private var name: String
     @State private var identity: String
     @State private var subtitle: String
+    @State private var cueText: String
     @State private var selectedHex: String
     @State private var iconName: String?
     @State private var category: HabitCategory
@@ -22,18 +23,23 @@ struct EditHabitSheet: View {
     @State private var targetValue: Double
     @State private var unit: String
     @State private var allowsDecimals: Bool
-    @State private var triggerHabitID: UUID?
 
     @State private var reminders: [HabitReminderDraft]
     @State private var showDeleteConfirmation: Bool = false
 
-    init(habit: Habit, onDeleted: (() -> Void)? = nil) {
+    init(
+        habit: Habit,
+        focusIdentityOnAppear: Bool = false,
+        onDeleted: (() -> Void)? = nil
+    ) {
         self.habit = habit
+        self.focusIdentityOnAppear = focusIdentityOnAppear
         self.onDeleted = onDeleted
 
         _name = State(initialValue: habit.name)
         _identity = State(initialValue: habit.identity ?? "")
         _subtitle = State(initialValue: habit.subtitle ?? "")
+        _cueText = State(initialValue: habit.cueText ?? "")
         _selectedHex = State(initialValue: HabitColor.from(hex: habit.colorHex).hex)
         _iconName = State(initialValue: habit.iconName)
         _category = State(initialValue: habit.category)
@@ -45,7 +51,6 @@ struct EditHabitSheet: View {
         _targetValue = State(initialValue: habit.targetValue ?? 1)
         _unit = State(initialValue: habit.unit ?? "")
         _allowsDecimals = State(initialValue: habit.allowsDecimals)
-        _triggerHabitID = State(initialValue: habit.triggerHabitID)
         _reminders = State(initialValue: HabitReminderDraft.makeDrafts(from: habit.reminders))
     }
 
@@ -55,6 +60,7 @@ struct EditHabitSheet: View {
                 name: $name,
                 identity: $identity,
                 subtitle: $subtitle,
+                cueText: $cueText,
                 selectedHex: $selectedHex,
                 iconName: $iconName,
                 category: $category,
@@ -65,9 +71,8 @@ struct EditHabitSheet: View {
                 targetValue: $targetValue,
                 unit: $unit,
                 allowsDecimals: $allowsDecimals,
-                triggerHabitID: $triggerHabitID,
                 reminders: $reminders,
-                flowCandidates: flowCandidates,
+                initialFocus: focusIdentityOnAppear ? .identity : .name,
                 showsDelete: true,
                 onDelete: {
                     showDeleteConfirmation = true
@@ -115,10 +120,12 @@ struct EditHabitSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedIdentity = identity.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCueText = cueText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return trimmedName == habit.name &&
                (trimmedIdentity.isEmpty ? nil : trimmedIdentity) == habit.identity &&
                (trimmedSubtitle.isEmpty ? nil : trimmedSubtitle) == habit.subtitle &&
+               (trimmedCueText.isEmpty ? nil : trimmedCueText) == habit.cueText &&
                HabitColor.from(hex: selectedHex).hex == HabitColor.from(hex: habit.colorHex).hex &&
                iconName == habit.iconName &&
                category == habit.category &&
@@ -129,16 +136,13 @@ struct EditHabitSheet: View {
                targetValue == (habit.targetValue ?? 1) &&
                unit == (habit.unit ?? "") &&
                allowsDecimals == habit.allowsDecimals &&
-               triggerHabitID == habit.triggerHabitID &&
                reminders == HabitReminderDraft.makeDrafts(from: habit.reminders)
     }
 
     private var canSave: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }
-        guard isFlowSelectionValid else { return false }
-
-        guard hasStreakGoal else { return goalType == .frequency || triggerHabitID == nil }
+        guard hasStreakGoal else { return true }
 
         switch goalType {
         case .frequency:
@@ -147,21 +151,6 @@ struct EditHabitSheet: View {
             return targetValue > 0 &&
                    !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-    }
-
-    private var flowCandidates: [Habit] {
-        allHabits.filter { $0.id != habit.id && $0.goalType == .frequency }
-    }
-
-    private var isFlowSelectionValid: Bool {
-        HabitStackingRules.canAssignTrigger(
-            childID: habit.id,
-            childGoalType: goalType,
-            triggerID: triggerHabitID,
-            habits: allHabits,
-            parentOverrideByChildID: [habit.id: triggerHabitID],
-            goalTypeOverrideByHabitID: [habit.id: goalType]
-        )
     }
 
     private func saveChanges() {
@@ -174,6 +163,9 @@ struct EditHabitSheet: View {
         let trimmedIdentity = identity.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalIdentity = trimmedIdentity.isEmpty ? nil : trimmedIdentity
 
+        let trimmedCueText = cueText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalCueText = trimmedCueText.isEmpty ? nil : trimmedCueText
+
         let trimmedIcon = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let finalIcon = trimmedIcon.isEmpty ? nil : trimmedIcon
 
@@ -183,6 +175,8 @@ struct EditHabitSheet: View {
         habit.name = trimmedName
         habit.identity = finalIdentity
         habit.subtitle = finalSubtitle
+        habit.cueText = finalCueText
+        habit.cueTypeValue = finalCueText == nil ? .none : .userDefined
         habit.iconName = finalIcon
         habit.colorHex = HabitColor.from(hex: selectedHex).hex
         habit.category = category
@@ -194,13 +188,6 @@ struct EditHabitSheet: View {
         habit.targetValue = finalUnit == nil ? nil : targetValue
         habit.unit = finalUnit
         habit.allowsDecimals = allowsDecimals
-        habit.triggerHabitID = goalType == .frequency ? triggerHabitID : nil
-
-        if goalType != .frequency {
-            for child in allHabits where child.triggerHabitID == habit.id {
-                child.triggerHabitID = nil
-            }
-        }
 
         applyReminderDrafts()
 

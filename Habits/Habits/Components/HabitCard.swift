@@ -18,10 +18,6 @@ struct HabitCard: View {
     @State private var showHeatmapPaywall = false
     @State private var displayedStreak: Int = 0
     private let isReordering: Bool
-    private let relationText: String?
-    private let flowRootColorHex: String?
-    private let shouldNudgeFlow: Bool
-    private let onFrequencyCompletion: ((Habit) -> Void)?
     private let trailingAccessory: AnyView?
     private let onTap: (() -> Void)?
 
@@ -43,19 +39,11 @@ struct HabitCard: View {
     init(
         habit: Habit,
         isReordering: Bool = false,
-        relationText: String? = nil,
-        flowRootColorHex: String? = nil,
-        shouldNudgeFlow: Bool = false,
-        onFrequencyCompletion: ((Habit) -> Void)? = nil,
         trailingAccessory: AnyView? = nil,
         onTap: (() -> Void)? = nil
     ) {
         self.habit = habit
         self.isReordering = isReordering
-        self.relationText = relationText
-        self.flowRootColorHex = flowRootColorHex
-        self.shouldNudgeFlow = shouldNudgeFlow
-        self.onFrequencyCompletion = onFrequencyCompletion
         self.trailingAccessory = trailingAccessory
         self.onTap = onTap
     }
@@ -77,12 +65,7 @@ struct HabitCard: View {
                     let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)
                     selectedDate = currentDay
                     if habit.goalType == .frequency {
-                        let wasComplete = habit.isComplete(for: currentDay, calendar: calculationCalendar)
                         _ = habitLogService.quickLog(for: habit, on: currentDay)
-                        let isNowComplete = habit.isComplete(for: currentDay, calendar: calculationCalendar)
-                        if !wasComplete && isNowComplete {
-                            onFrequencyCompletion?(habit)
-                        }
                     } else {
                         showQuickEntry = true
                     }
@@ -91,21 +74,8 @@ struct HabitCard: View {
             )
             .frame(height: headerHeight)
 
-            Group {
-                if let relationText {
-                    Text(relationText)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
-                        .lineLimit(1)
-                        .transition(.opacity)
-                } else {
-                    Text(" ")
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                        .opacity(0)
-                }
-            }
-            .frame(height: 18, alignment: .leading)
+            Color.clear
+                .frame(height: 18)
 
                 HabitHeatmap(
                     habit: habit,
@@ -128,13 +98,6 @@ struct HabitCard: View {
         .padding(.vertical, CadenceTokens.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
-        .overlay {
-            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .stroke(
-                    shouldNudgeFlow ? flowTintColor.opacity(0.55) : .clear,
-                    lineWidth: shouldNudgeFlow ? 1.5 : 0
-                )
-        }
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isReordering else { return }
@@ -182,7 +145,6 @@ struct HabitCard: View {
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
             updateDisplayedStreak()
         }
-        .animation(.easeInOut(duration: 0.22), value: shouldNudgeFlow)
     }
 
     private var weekLayoutStrategy: WeekLayoutStrategy {
@@ -197,8 +159,4 @@ struct HabitCard: View {
         weekLayoutStrategy.calendarProviderForHeatmap()
     }
 
-    private var flowTintColor: Color {
-        let resolvedHex = flowRootColorHex ?? habit.colorHex
-        return CadenceTokens.Color.accent(from: resolvedHex).primary
-    }
 }

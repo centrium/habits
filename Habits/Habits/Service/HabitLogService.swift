@@ -10,6 +10,192 @@ import Foundation
 import QuartzCore
 import SwiftData
 
+struct CueInsight: Equatable, Sendable {
+    let sourceHabitId: UUID
+    let confidence: Double
+    let occurrenceCount: Int
+}
+
+final class CueInsightService {
+    private struct SourceEvent: Sendable {
+        let habitID: UUID
+        let timestamp: Date
+    }
+
+    private struct CueComputationSnapshot: Sendable {
+        let targetTimestamps: [Date]
+        let sourceEvents: [SourceEvent]
+    }
+
+    private let modelContext: ModelContext
+    private let minimumInterval: TimeInterval = 0
+    private let maximumInterval: TimeInterval = 30 * 60
+    private let minimumOccurrenceCount: Int = 3
+    private let minimumDominantRatio: Double = 0.6
+    private var cacheByHabitID: [UUID: CueInsight?] = [:]
+
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+
+    func detectCue(for habitId: UUID) async -> CueInsight? {
+        if let cached = cacheByHabitID[habitId] {
+            return cached
+        }
+
+        guard let snapshot = buildSnapshot(for: habitId) else {
+            cacheByHabitID[habitId] = nil
+            return nil
+        }
+
+        let minimumInterval = self.minimumInterval
+        let maximumInterval = self.maximumInterval
+        let minimumOccurrenceCount = self.minimumOccurrenceCount
+        let minimumDominantRatio = self.minimumDominantRatio
+
+        let insight = await Task.detached(priority: .utility) {
+            Self.computeCue(
+                from: snapshot,
+                minimumInterval: minimumInterval,
+                maximumInterval: maximumInterval,
+                minimumOccurrenceCount: minimumOccurrenceCount,
+                minimumDominantRatio: minimumDominantRatio
+            )
+        }.value
+
+        cacheByHabitID[habitId] = insight
+        return insight
+    }
+
+    func resetCache() {
+        cacheByHabitID.removeAll()
+    }
+
+    private func buildSnapshot(for habitId: UUID) -> CueComputationSnapshot? {
+        let descriptor = FetchDescriptor<Habit>()
+        guard let habits = try? modelContext.fetch(descriptor),
+              let targetHabit = habits.first(where: { $0.id == habitId }) else {
+            return nil
+        }
+
+        let targetTimestamps = relevantTimestamps(from: targetHabit.logs)
+        guard targetTimestamps.count >= minimumOccurrenceCount else { return nil }
+
+        let sourceEvents: [SourceEvent] = habits
+            .filter { $0.id != habitId }
+            .flatMap { habit in
+                relevantTimestamps(from: habit.logs).map {
+                    SourceEvent(habitID: habit.id, timestamp: $0)
+                }
+            }
+            .sorted { $0.timestamp < $1.timestamp }
+
+        guard !sourceEvents.isEmpty else { return nil }
+
+        return CueComputationSnapshot(
+            targetTimestamps: targetTimestamps,
+            sourceEvents: sourceEvents
+        )
+    }
+
+    private static func computeCue(
+        from snapshot: CueComputationSnapshot,
+        minimumInterval: TimeInterval,
+        maximumInterval: TimeInterval,
+        minimumOccurrenceCount: Int,
+        minimumDominantRatio: Double
+    ) -> CueInsight? {
+        var occurrenceBySourceHabitID: [UUID: Int] = [:]
+        occurrenceBySourceHabitID.reserveCapacity(8)
+
+        for targetTimestamp in snapshot.targetTimestamps {
+            guard let match = nearestPriorSourceEvent(
+                before: targetTimestamp,
+                events: snapshot.sourceEvents,
+                minimumInterval: minimumInterval,
+                maximumInterval: maximumInterval
+            ) else {
+                continue
+            }
+
+            occurrenceBySourceHabitID[match, default: 0] += 1
+        }
+
+        guard let dominant = occurrenceBySourceHabitID.max(by: { lhs, rhs in
+            lhs.value < rhs.value
+        }) else {
+            return nil
+        }
+
+        let totalMatches = occurrenceBySourceHabitID.values.reduce(0, +)
+        guard totalMatches > 0 else { return nil }
+
+        let dominantCount = dominant.value
+        let dominantRatio = Double(dominantCount) / Double(totalMatches)
+
+        guard dominantCount >= minimumOccurrenceCount,
+              dominantRatio >= minimumDominantRatio else {
+            return nil
+        }
+
+        return CueInsight(
+            sourceHabitId: dominant.key,
+            confidence: dominantRatio,
+            occurrenceCount: dominantCount
+        )
+    }
+
+    private func relevantTimestamps(from logs: [HabitLog]) -> [Date] {
+        logs
+            .filter { $0.kind == .entry && $0.numericValue > 0 }
+            .map(\.effectiveTimestamp)
+            .sorted()
+    }
+
+    private static func nearestPriorSourceEvent(
+        before targetTimestamp: Date,
+        events: [SourceEvent],
+        minimumInterval: TimeInterval,
+        maximumInterval: TimeInterval
+    ) -> UUID? {
+        var low = 0
+        var high = events.count
+        let targetInterval = targetTimestamp.timeIntervalSinceReferenceDate
+
+        while low < high {
+            let mid = (low + high) / 2
+            if events[mid].timestamp.timeIntervalSinceReferenceDate < targetInterval {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+
+        var index = low - 1
+        while index >= 0 {
+            let event = events[index]
+            let interval = targetTimestamp.timeIntervalSince(event.timestamp)
+
+            guard interval > 0 else {
+                index -= 1
+                continue
+            }
+
+            if interval > maximumInterval {
+                break
+            }
+
+            if interval >= minimumInterval {
+                return event.habitID
+            }
+
+            index -= 1
+        }
+
+        return nil
+    }
+}
+
 final class HabitLogService: ObservableObject {
     private struct CachedDayMetrics {
         let revision: Int
@@ -38,6 +224,7 @@ final class HabitLogService: ObservableObject {
     private var metricsRevisions: [UUID: Int] = [:]
     private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
     private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
+    private let cueInsightService: CueInsightService
 
     init(
         modelContext: ModelContext,
@@ -49,11 +236,13 @@ final class HabitLogService: ObservableObject {
         self.calendar = calendar
         self.lastValueStore = lastValueStore
         self.uiStateStore = uiStateStore
+        self.cueInsightService = CueInsightService(modelContext: modelContext)
     }
 
     func updateCalendar(_ calendar: Calendar) {
         self.calendar = calendar
         dayMetricsCache.removeAll()
+        cueInsightService.resetCache()
     }
 
     private func playHaptic(becameComplete: Bool) {
@@ -124,6 +313,7 @@ final class HabitLogService: ObservableObject {
         objectWillChange.send()
         metricsRevisions[habitID, default: 0] += 1
         dayMetricsCache.removeValue(forKey: habitID)
+        cueInsightService.resetCache()
     }
 
     private func dayKey(habitID: UUID, day: Date) -> String {
@@ -425,6 +615,10 @@ extension HabitLogService {
     func quickLogAmount(for habit: Habit) -> Double {
         1
     }
+
+    func detectCue(for habitId: UUID) async -> CueInsight? {
+        await cueInsightService.detectCue(for: habitId)
+    }
 }
 
 private extension HabitLogService {
@@ -446,9 +640,29 @@ extension HabitLogService {
 }
 
 extension HabitLogService {
+    private func resolvedEntryTimestamp(for day: Date) -> Date {
+        let normalizedDay = calendar.startOfDay(for: day)
+
+        // Preserve explicit caller-provided time when present.
+        if day != normalizedDay {
+            return day
+        }
+
+        // Day-only logging for today should use current time so sequence insights
+        // are based on real behavior, not midnight artifacts.
+        if calendar.isDateInToday(normalizedDay) {
+            return Date()
+        }
+
+        // Historical backfills typically do not carry reliable time-of-day context.
+        // Pin to midday to avoid implying a precise sequence.
+        return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: normalizedDay) ?? normalizedDay
+    }
+
     @discardableResult
     func addLog(for habit: Habit, on day: Date, value: Double) -> Double {
         let normalizedDay = calendar.startOfDay(for: day)
+        let entryTimestamp = resolvedEntryTimestamp(for: day)
         let amount = max(0, value)
         guard amount > 0 else { return 0 }
 
@@ -504,7 +718,7 @@ extension HabitLogService {
         playHaptic(becameComplete: !wasComplete && willBeComplete)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            habit.logs.append(HabitLog(timestamp: day, value: amount, calendar: self.calendar))
+            habit.logs.append(HabitLog(timestamp: entryTimestamp, value: amount, calendar: self.calendar))
             self.invalidateMetricsCache(for: habit.id)
             self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
             self.uiStateStore.clear(habitId: habit.id, date: normalizedDay)

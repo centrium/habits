@@ -15,6 +15,6 @@ final class WidgetHabitIdentityFallbackTests: XCTestCase {
         """.data(using: .utf8)!
 
         let decoded = try JSONDecoder().decode(WidgetHabit.self, from: json)
-        XCTAssertEqual(decoded.identityState, .starting)
+        XCTAssertEqual(decoded.identityState, .gettingStarted)
     }
 }
