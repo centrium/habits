@@ -23,6 +23,7 @@ private enum ActiveSheet: Identifiable {
 
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
@@ -84,17 +85,21 @@ struct HabitDetailSheet: View {
             return progressSnapshot?.visibleMonthText
         }()
 
-        detailContent(
-            progressSnapshot: progressSnapshot,
-            displayedStreak: displayedStreak,
-            progressRevision: progressRevision,
-            earliestCalendarDate: earliestCalendarDate
-        )
-        .cadenceSurface(
-            accent: CadenceTokens.Color.accent(for: habit).primary,
-            accentKey: "detail-\(habit.colorHex)",
-            motionEnabled: userSettings.ambientSurfaceMotionEnabled
-        )
+        ZStack(alignment: .top) {
+            backgroundColor
+                .ignoresSafeArea()
+
+            TopAmbientGradient(accent: CadenceTokens.Color.accent(for: habit).primary)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .ignoresSafeArea()
+
+            detailContent(
+                progressSnapshot: progressSnapshot,
+                displayedStreak: displayedStreak,
+                progressRevision: progressRevision,
+                earliestCalendarDate: earliestCalendarDate
+            )
+        }
         .navigationBarTitleDisplayMode(.large)
         .navigationTitle(habit.name)
         .toolbar {
@@ -238,18 +243,22 @@ struct HabitDetailSheet: View {
             await refreshCueInsight()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
-            historyTabContent(
-                progressRevision: progressRevision,
-                calendarMonthSummaryText: calendarMonthSummaryText,
-                earliestCalendarDate: earliestCalendarDate,
-                premiumHistoryGate: premiumHistoryGate,
-                calendar: calendar
-            )
-            .cadenceSurface(
-                accent: CadenceTokens.Color.accent(for: habit).primary,
-                accentKey: "history-\(habit.colorHex)",
-                motionEnabled: userSettings.ambientSurfaceMotionEnabled
-            )
+            ZStack(alignment: .top) {
+                backgroundColor
+                    .ignoresSafeArea()
+
+                TopAmbientGradient(accent: CadenceTokens.Color.accent(for: habit).primary)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+
+                historyTabContent(
+                    progressRevision: progressRevision,
+                    calendarMonthSummaryText: calendarMonthSummaryText,
+                    earliestCalendarDate: earliestCalendarDate,
+                    premiumHistoryGate: premiumHistoryGate,
+                    calendar: calendar
+                )
+            }
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("")
             .toolbar {
@@ -491,6 +500,12 @@ struct HabitDetailSheet: View {
             .padding(.bottom, CadenceTokens.Space.md)
         }
         .scrollContentBackground(.hidden)
+    }
+
+    private var backgroundColor: Color {
+        colorScheme == .light
+            ? Color(white: 0.96)
+            : Color.black
     }
 
     @ViewBuilder

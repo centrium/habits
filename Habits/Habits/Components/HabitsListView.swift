@@ -27,6 +27,7 @@ private enum ActiveSheet: Identifiable {
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var deepLinkManager: DeepLinkManager
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
@@ -47,20 +48,22 @@ struct HabitsListView: View {
     @State private var frames: [Habit.ID: CGRect] = [:]
     @State private var initialFrame: CGRect = .zero
     @State private var isFABPressed: Bool = false
-    private let cardLeading: CGFloat = HabitRowGrid.cardLeadingInList
-    private let cardTrailing: CGFloat = HabitRowGrid.cardTrailingInList
 
     init() {}
 
     var body: some View {
         NavigationStack {
-            listContent
-                .cadenceSurface(
-                    accent: activeSurfaceAccent,
-                    accentKey: activeSurfaceAccentKey,
-                    motionEnabled: userSettings.ambientSurfaceMotionEnabled
-                )
-                .alert(
+            ZStack(alignment: .top) {
+                backgroundColor
+                    .ignoresSafeArea()
+
+                TopAmbientGradient(accent: headerAccentColor)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+
+                listContent
+            }
+            .alert(
                 "Delete Habit?",
                 isPresented: HabitDeletionConfirmationState.isPresentedBinding(
                     for: $habitPendingDeletion
@@ -77,10 +80,10 @@ struct HabitsListView: View {
             } message: { habit in
                 Text(HabitDeletionConfirmationState.message(for: habit))
             }
-                .contentMargins(.top, 12, for: .scrollContent)
-                .navigationBarTitleDisplayMode(.inline)
-                .navigationTitle("")
-                .toolbar {
+            .contentMargins(.top, 12, for: .scrollContent)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("")
+            .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         if !isReordering {
@@ -109,9 +112,9 @@ struct HabitsListView: View {
                         openGlobalInsights()
                     } label: {
                         HStack(spacing: 4) {
-                                Image(systemName: "sparkles")
-                                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                                    .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
+                            Image(systemName: "sparkles")
+                                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                                .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
 
                             if purchaseService.premiumStatus == .free {
                                 Image(systemName: "lock.fill")
@@ -173,17 +176,17 @@ struct HabitsListView: View {
                     Spacer()
                 }
             }
-                .sheet(item: $activeSheet) { sheet in
-                    switch sheet {
-                    case .addHabit:
-                        AddHabitSheet()
-                            .presentationDetents([.large])
-                            .presentationDragIndicator(.visible)
-                            .presentationCornerRadius(24)
-                    case .paywall(let feature):
-                        PaywallView(feature: feature)
-                    }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .addHabit:
+                    AddHabitSheet()
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationCornerRadius(24)
+                case .paywall(let feature):
+                    PaywallView(feature: feature)
                 }
+            }
         }
         .environmentObject(userSettings)
         .onAppear {
@@ -275,8 +278,7 @@ struct HabitsListView: View {
                     EmptyState()
                 }
             }
-            .padding(.leading, cardLeading)
-            .padding(.trailing, cardTrailing)
+            .padding(.horizontal, CadenceTokens.Space.lg)
             .padding(.top, CadenceTokens.Space.sm)
             .padding(.bottom, 4)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
@@ -398,24 +400,8 @@ struct HabitsListView: View {
         return .systemAccent
     }
 
-    private var headerAccentKey: String {
-        firstVisibleHabitForAmbient?.colorHex ?? "system-accent"
-    }
-
     private var firstVisibleHabitForAmbient: Habit? {
         visibleHabits.first
-    }
-
-    private var activeSurfaceAccent: Color {
-        showsHomeAmbientSurface ? headerAccentColor : .clear
-    }
-
-    private var activeSurfaceAccentKey: String {
-        showsHomeAmbientSurface ? headerAccentKey : "home-ambient-hidden"
-    }
-
-    private var showsHomeAmbientSurface: Bool {
-        selectedHabitID == nil && !showGlobalInsights
     }
 
     private var lockedHabitSlot: some View {
@@ -622,6 +608,12 @@ struct HabitsListView: View {
 
     private var visibleHabits: [Habit] {
         habits
+    }
+
+    private var backgroundColor: Color {
+        colorScheme == .light
+            ? Color(white: 0.96)
+            : Color.black
     }
 
     private func scheduleReorderPersistence() {

@@ -50,15 +50,16 @@ private struct CadenceSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(surfaceFill)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(surfaceBorder, lineWidth: borderWidth)
-                    }
-                    .overlay(alignment: .top) {
-                        topEdgeHighlight
-                    }
+                ZStack {
+                       // Border layer (outer)
+                       RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                           .fill(surfaceBorder)
+
+                       // Fill layer (inner, slightly inset)
+                       RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                           .inset(by: 1) // 👈 KEY
+                           .fill(surfaceFill)
+                   }
             }
     }
 
@@ -74,12 +75,12 @@ private struct CadenceSurfaceModifier: ViewModifier {
 
     private var surfaceBorder: Color {
         colorScheme == .light
-        ? Color.black.opacity(0.06)
-        : Color.white.opacity(0.06)
+        ? Color.black.opacity(0.04)   // was 0.06
+        : Color.white.opacity(0.05)
     }
     
     private var borderWidth: CGFloat {
-        0.8
+        1
     }
 
     // MARK: - Top Edge Light (this is the "Apple polish")
@@ -88,16 +89,16 @@ private struct CadenceSurfaceModifier: ViewModifier {
         LinearGradient(
             colors: [
                 colorScheme == .light
-                    ? Color.white.opacity(0.5)
-                    : Color.white.opacity(0.04),
-                .clear
+                    ? Color.white.opacity(0.25)
+                    : Color.white.opacity(0.04)
             ],
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(height: colorScheme == .light ? 4 : 2) 
-        .clipShape(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .frame(height: 3)
+        .padding(.horizontal, 2) // 👈 keep it away from corners
+        .mask(
+            Rectangle() // 👈 IMPORTANT: no rounded mask
         )
         .allowsHitTesting(false)
     }

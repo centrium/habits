@@ -69,6 +69,12 @@ struct SettingsView: View {
         colorScheme == .light ? 0.06 : 0.18
     }
 
+    private var backgroundColor: Color {
+        colorScheme == .light
+            ? Color(white: 0.96)
+            : Color.black
+    }
+
     var body: some View {
         Form {
             Section {
@@ -205,7 +211,7 @@ struct SettingsView: View {
         }
         .listSectionSpacing(22)
         .scrollContentBackground(.hidden)
-        .background(CadenceTokens.Color.Background.primary)
+        .background(backgroundColor.ignoresSafeArea())
         .environment(\.defaultMinListRowHeight, 54)
         .navigationTitle("Settings")
         .sheet(item: $sharePayload) { payload in
