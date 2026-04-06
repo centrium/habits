@@ -134,12 +134,13 @@ struct HabitInsightsEngine {
             statusText: statusText,
             now: now
         )
-        let identityState = HabitIdentityStateResolver.resolve(
+        let identitySnapshot = HabitIdentityStateResolver.recentSnapshot(
             for: habit,
             calendar: calendar,
             now: now,
             windowDays: 7
         )
+        let identityState = identitySnapshot.state
         let weeklyRhythmBlock = weeklyRhythmBlock(
             for: habit,
             calendar: calendar,
@@ -148,6 +149,7 @@ struct HabitInsightsEngine {
         let greigModeBlock = greigModeBlock(
             for: habit,
             foundation: foundation,
+            identityState: identityState,
             calendar: calendar,
             weekStartPreference: weekStartPreference,
             now: now
@@ -158,6 +160,8 @@ struct HabitInsightsEngine {
         )
         let performanceSignals = PerformanceSignalsCalculator.calculate(
             for: habit,
+            logs: InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar),
+            identityState: identityState,
             calendar: calendar,
             now: now
         )
@@ -834,6 +838,7 @@ struct HabitInsightsEngine {
     private static func greigModeBlock(
         for habit: Habit,
         foundation: HabitInsightSnapshot,
+        identityState: HabitIdentityState,
         calendar: Calendar,
         weekStartPreference _: WeekStartPreference,
         now: Date
@@ -860,7 +865,11 @@ struct HabitInsightsEngine {
         )
 
         let service = GreigInsightService(calendar: calendar)
-        guard let insight = service.generateInsight(for: goal, progress: progress) else {
+        guard let insight = service.generateInsight(
+            for: goal,
+            progress: progress,
+            identityState: identityState
+        ) else {
             return nil
         }
 

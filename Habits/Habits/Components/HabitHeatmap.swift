@@ -60,6 +60,15 @@ struct HabitHeatmap: View {
         habit.curatedColorVariants.soft
     }
 
+    private struct IdentityStateVisualStyle {
+        let foreground: Color
+        let background: Color
+        let border: Color
+        let heatmapSaturation: Double
+        let heatmapContrast: Double
+        let heatmapBrightness: Double
+    }
+
     private var gridHeight: CGFloat {
         (style.cellSize * 7) + (style.verticalSpacing * 6)
     }
@@ -203,6 +212,9 @@ struct HabitHeatmap: View {
         .id(revision)
         .padding(.top, 6)
         .padding(.bottom, 4)
+        .saturation(identityStateVisualStyle.heatmapSaturation)
+        .contrast(identityStateVisualStyle.heatmapContrast)
+        .brightness(identityStateVisualStyle.heatmapBrightness)
         .frame(height: 40)
     }
     
@@ -221,12 +233,14 @@ struct HabitHeatmap: View {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(cellColor(intensity: raw))
                     .frame(height: 14)
+                    .opacity(raw > 0.001 ? 1 : 0.9)
+                    .scaleEffect(calendar.isDateInToday(day) ? 1.04 : (raw > 0.001 ? 1 : 0.975))
                     .overlay {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(
                                 raw > 0.001
-                                    ? softAccent.opacity(0.35)
-                                    : Color.primary.opacity(0.1),
+                                    ? softAccent.opacity(colorScheme == .dark ? 0.46 : 0.38)
+                                    : Color.primary.opacity(colorScheme == .dark ? 0.09 : 0.06),
                                 lineWidth: 1
                             )
                     }
@@ -240,9 +254,13 @@ struct HabitHeatmap: View {
                     .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(softAccent, lineWidth: 2)
+                                .stroke(
+                                    Color.primary.opacity(colorScheme == .dark ? 0.52 : 0.28),
+                                    lineWidth: colorScheme == .dark ? 1.5 : 1.25
+                                )
                         }
                     }
+                    .animation(.easeOut(duration: 0.14), value: raw)
             }
         }
     }
@@ -251,24 +269,33 @@ struct HabitHeatmap: View {
         let clamped = clamp(intensity)
 
         if clamped <= 0.001 {
-            return Color.primary.opacity(0.08)
+            return Color.primary.opacity(colorScheme == .dark ? 0.065 : 0.045)
         }
 
         if clamped >= 0.999 {
-            return softAccent.opacity(0.9)
+            return softAccent.opacity(colorScheme == .dark ? 0.95 : 0.9)
         }
 
-        return softAccent.opacity(colorScheme == .dark ? 0.78 : 0.72)
+        return softAccent.opacity(colorScheme == .dark ? 0.85 : 0.8)
     }
     
     private var identityStateBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             compactHeatmap
 
             HStack {
                 Text(CadenceLanguage.shortLabel(for: identityStateSummary.state))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(identityStateColor(for: identityStateSummary.state))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(identityStateVisualStyle.foreground)
+                    .padding(.horizontal, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(identityStateVisualStyle.background)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(identityStateVisualStyle.border, lineWidth: 0.75)
+                    }
 
                 Spacer()
             }
@@ -284,8 +311,46 @@ struct HabitHeatmap: View {
         )
     }
 
-    private func identityStateColor(for state: HabitIdentityState) -> Color {
-        _ = state
-        return CadenceTokens.Color.Text.secondary
+    private var identityStateVisualStyle: IdentityStateVisualStyle {
+        let state = identityStateSummary.state
+
+        switch state {
+        case .gettingStarted:
+            return IdentityStateVisualStyle(
+                foreground: Color.primary.opacity(colorScheme == .dark ? 0.83 : 0.8),
+                background: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.09),
+                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                heatmapSaturation: 1,
+                heatmapContrast: 1,
+                heatmapBrightness: 0
+            )
+        case .building:
+            return IdentityStateVisualStyle(
+                foreground: Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.84),
+                background: softAccent.opacity(colorScheme == .dark ? 0.28 : 0.2),
+                border: accent.opacity(colorScheme == .dark ? 0.2 : 0.14),
+                heatmapSaturation: 1.03,
+                heatmapContrast: 1.02,
+                heatmapBrightness: 0.01
+            )
+        case .steady, .strong:
+            return IdentityStateVisualStyle(
+                foreground: Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.84),
+                background: softAccent.opacity(colorScheme == .dark ? 0.24 : 0.18),
+                border: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.1),
+                heatmapSaturation: 1,
+                heatmapContrast: 1.04,
+                heatmapBrightness: 0
+            )
+        case .slipping, .rebuilding:
+            return IdentityStateVisualStyle(
+                foreground: Color.primary.opacity(colorScheme == .dark ? 0.84 : 0.8),
+                background: softAccent.opacity(colorScheme == .dark ? 0.16 : 0.11),
+                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                heatmapSaturation: 0.92,
+                heatmapContrast: 0.98,
+                heatmapBrightness: 0
+            )
+        }
     }
 }

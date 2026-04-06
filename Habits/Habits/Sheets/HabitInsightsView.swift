@@ -352,10 +352,15 @@ private struct PerformanceSignalsCardView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
+                        if !signal.displayValue.isEmpty {
+                            Text(signal.displayValue)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+
                         GradientGaugeView(
                             value: signal.gauge.value,
-                            labels: signal.gauge.labels,
-                            valueText: signal.displayValue
+                            labels: signal.gauge.labels
                         )
 
                         Text(signal.gauge.explanation)

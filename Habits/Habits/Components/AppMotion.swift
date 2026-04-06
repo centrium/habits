@@ -51,65 +51,55 @@ private struct CadenceSurfaceModifier: ViewModifier {
         content
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(backgroundColor)
+                    .fill(surfaceFill)
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(borderColor, lineWidth: 1)
+                            .strokeBorder(surfaceBorder, lineWidth: borderWidth)
                     }
-                    .overlay {
-                        if colorScheme == .dark {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .stroke(Color.white.opacity(0.04), lineWidth: 0.8)
-                                .blendMode(.screen)
-                        }
+                    .overlay(alignment: .top) {
+                        topEdgeHighlight
                     }
-                    .shadow(
-                        color: shadowColor,
-                        radius: shadowRadius,
-                        x: 0,
-                        y: shadowYOffset
-                    )
-                    .shadow(
-                        color: topHighlightShadowColor,
-                        radius: topHighlightShadowRadius,
-                        x: 0,
-                        y: topHighlightShadowYOffset
-                    )
             }
     }
 
-    private var backgroundColor: Color {
-        CadenceTokens.Color.Background.secondary
-    }
+    // MARK: - Surface Fill (this is EVERYTHING)
 
-    private var borderColor: Color {
+    private var surfaceFill: Color {
         colorScheme == .light
-            ? Color.black.opacity(0.08)
-            : Color.white.opacity(0.14)
+        ? Color.white
+        : Color(white: 0.12) // lifted from pure black
     }
 
-    private var shadowColor: Color {
-        Color.black.opacity(colorScheme == .light ? 0.07 : 0.24)
+    // MARK: - Border (barely visible, but critical)
+
+    private var surfaceBorder: Color {
+        colorScheme == .light
+        ? Color.black.opacity(0.06)
+        : Color.white.opacity(0.06)
+    }
+    
+    private var borderWidth: CGFloat {
+        0.8
     }
 
-    private var shadowRadius: CGFloat {
-        colorScheme == .light ? 6 : 8
-    }
+    // MARK: - Top Edge Light (this is the "Apple polish")
 
-    private var shadowYOffset: CGFloat {
-        colorScheme == .light ? 3 : 4
-    }
-
-    private var topHighlightShadowColor: Color {
-        colorScheme == .dark ? .clear : Color.white.opacity(0.6)
-    }
-
-    private var topHighlightShadowRadius: CGFloat {
-        colorScheme == .dark ? 0 : 1
-    }
-
-    private var topHighlightShadowYOffset: CGFloat {
-        colorScheme == .dark ? 0 : -1
+    private var topEdgeHighlight: some View {
+        LinearGradient(
+            colors: [
+                colorScheme == .light
+                    ? Color.white.opacity(0.5)
+                    : Color.white.opacity(0.04),
+                .clear
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: colorScheme == .light ? 4 : 2) 
+        .clipShape(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+        .allowsHitTesting(false)
     }
 }
 

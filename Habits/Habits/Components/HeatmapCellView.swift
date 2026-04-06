@@ -34,22 +34,22 @@ struct HeatmapCellView: View, Equatable {
 
     private var cellColor: Color {
         if intensity <= 0 {
-            return Color.primary.opacity(0.08)
+            return Color.primary.opacity(colorScheme == .dark ? 0.065 : 0.046)
         }
 
         let clamped = min(max(intensity, 0), 1)
-        return accent.opacity(0.4 + (clamped * 0.5))
+        return accent.opacity(colorScheme == .dark ? (0.46 + (clamped * 0.5)) : (0.44 + (clamped * 0.48)))
     }
 
     @ViewBuilder
     private var cellBorderOverlay: some View {
         if isActive {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(accent.opacity(0.35), lineWidth: 1)
+                .stroke(accent.opacity(colorScheme == .dark ? 0.46 : 0.36), lineWidth: 1)
         } else {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .stroke(
-                    Color.primary.opacity(0.1),
+                    Color.primary.opacity(colorScheme == .dark ? 0.09 : 0.06),
                     lineWidth: 1
                 )
         }
@@ -59,7 +59,11 @@ struct HeatmapCellView: View, Equatable {
     private func todayOverlay(today: Bool) -> some View {
         if today {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(accent, lineWidth: 2)
+                .stroke(
+                    Color.primary.opacity(colorScheme == .dark ? 0.52 : 0.3),
+                    lineWidth: colorScheme == .dark ? 1.4 : 1.2
+                )
+                .scaleEffect(1.04)
         }
     }
 

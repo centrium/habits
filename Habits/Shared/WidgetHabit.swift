@@ -25,7 +25,7 @@ enum CadenceCopyCatalog {
     }
 
     static func identityEmptyPrompt() -> String {
-        "Shape this into part of who you are"
+        "Make this part of who you are"
     }
 
     static func identityHelper() -> String {
@@ -89,6 +89,10 @@ enum CadenceCopyCatalog {
         case .rebuilding:
             return "This habit is getting back on track"
         }
+    }
+
+    static func riskEarlyStage() -> String {
+        "You’re still building this habit"
     }
 }
 

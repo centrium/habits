@@ -1,14 +1,15 @@
 import Foundation
 
+enum HabitRiskState: Equatable {
+    case earlyStage
+    case low
+    case moderate
+    case high
+    case critical
+}
+
 enum PerformanceSignalsCalculator {
-    private static let identityStateLabels: [String] = [
-        CadenceLanguage.shortLabel(for: .gettingStarted),
-        CadenceLanguage.shortLabel(for: .building),
-        CadenceLanguage.shortLabel(for: .steady),
-        CadenceLanguage.shortLabel(for: .strong),
-        CadenceLanguage.shortLabel(for: .slipping),
-        CadenceLanguage.shortLabel(for: .rebuilding),
-    ]
+    private static let identityStateLabels = ["Start", "Build", "Steady", "Strong", "Slip", "Rebuild"]
     private static let riskLabels = ["Low", "Moderate", "High", "Critical"]
     private static let strengthLabels = ["Weak", "Developing", "Strong", "Automatic"]
 
@@ -18,7 +19,19 @@ enum PerformanceSignalsCalculator {
         now: Date
     ) -> [HabitInsightsPerformanceSignal] {
         let logs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
-        return calculate(for: habit, logs: logs, calendar: calendar, now: now)
+        let identityState = HabitIdentityStateResolver.recentSnapshot(
+            for: habit,
+            calendar: calendar,
+            now: now,
+            windowDays: 7
+        ).state
+        return calculate(
+            for: habit,
+            logs: logs,
+            identityState: identityState,
+            calendar: calendar,
+            now: now
+        )
     }
 
     static func identityState(
@@ -33,11 +46,17 @@ enum PerformanceSignalsCalculator {
     static func calculate(
         for habit: Habit,
         logs: [InsightLog],
+        identityState: HabitIdentityState,
         calendar: Calendar,
         now: Date
     ) -> [HabitInsightsPerformanceSignal] {
-        let identityState = identityState(for: habit, logs: logs, calendar: calendar, now: now)
-        let risk = habitRiskScore(for: habit, logs: logs, calendar: calendar, now: now)
+        let risk = habitRiskAssessment(
+            for: habit,
+            logs: logs,
+            identityState: identityState,
+            calendar: calendar,
+            now: now
+        )
         let strength = habitStrengthScore(for: habit, logs: logs, calendar: calendar, now: now)
 
         return [
@@ -53,11 +72,11 @@ enum PerformanceSignalsCalculator {
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
                     title: "Habit Risk",
-                    value: clamp(risk, lower: 0, upper: 1),
+                    value: clamp(risk.score, lower: 0, upper: 1),
                     labels: riskLabels,
-                    explanation: riskExplanation(for: risk)
+                    explanation: risk.explanation
                 ),
-                displayValue: unsignedDisplayValue(risk)
+                displayValue: risk.displayValue
             ),
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
@@ -156,15 +175,50 @@ enum PerformanceSignalsCalculator {
     }
 
     static func riskExplanation(for score: Double) -> String {
+        riskExplanation(
+            for: riskState(for: score, totalLogs: 3),
+            showsDecline: false
+        )
+    }
+
+    static func riskExplanation(
+        for state: HabitRiskState,
+        showsDecline: Bool
+    ) -> String {
+        switch state {
+        case .earlyStage:
+            return CadenceLanguage.riskEarlyStage()
+        case .low:
+            return "This habit is currently stable with very low drop-off risk."
+        case .moderate:
+            return "Your habit is holding steady but could benefit from continued consistency."
+        case .high:
+            if showsDecline {
+                return "Consistency has dropped recently. Logging today would help stabilise the routine."
+            }
+            return "Recent consistency is uneven. Logging today would help stabilise the routine."
+        case .critical:
+            return "This habit is at risk of fading. A small action today can support a return."
+        }
+    }
+
+    static func riskState(
+        for score: Double,
+        totalLogs: Int
+    ) -> HabitRiskState {
+        if totalLogs < 3 {
+            return .earlyStage
+        }
+
         switch score {
         case ..<0.25:
-            return "This habit is currently stable with very low drop-off risk."
+            return .low
         case ..<0.5:
-            return "Your habit is holding steady but could benefit from continued consistency."
+            return .moderate
         case ..<0.75:
-            return "Your activity has declined recently. Logging today would help stabilise the routine."
+            return .high
         default:
-            return "This habit is at risk of fading. A small action today can support a return."
+            return .critical
         }
     }
 
@@ -183,6 +237,13 @@ enum PerformanceSignalsCalculator {
 }
 
 private extension PerformanceSignalsCalculator {
+    struct HabitRiskAssessment {
+        let state: HabitRiskState
+        let score: Double
+        let explanation: String
+        let displayValue: String
+    }
+
     struct SignalWindows {
         let previous: DateInterval
         let recent: DateInterval
@@ -266,32 +327,100 @@ private extension PerformanceSignalsCalculator {
         return Double(total) / Double(streakLengths.count)
     }
 
+    static func habitRiskAssessment(
+        for habit: Habit,
+        logs: [InsightLog],
+        identityState: HabitIdentityState,
+        calendar: Calendar,
+        now: Date
+    ) -> HabitRiskAssessment {
+        let today = calendar.startOfDay(for: now)
+        let pastOrTodayLogs = logs.filter { $0.dayStart <= today }
+        let totalLogs = pastOrTodayLogs.count
+        let score = habitRiskScore(
+            for: habit,
+            logs: logs,
+            calendar: calendar,
+            now: now
+        )
+        let state = riskState(for: score, totalLogs: totalLogs)
+        let declineDetected = hasRecentDecline(
+            for: habit,
+            logs: pastOrTodayLogs,
+            calendar: calendar,
+            now: now
+        ) && identityState != .gettingStarted && state != .earlyStage
+        let explanation = riskExplanation(
+            for: state,
+            showsDecline: declineDetected
+        )
+        let displayValue: String = {
+            if state == .earlyStage {
+                return ""
+            }
+            return unsignedDisplayValue(score)
+        }()
+
+        return HabitRiskAssessment(
+            state: state,
+            score: score,
+            explanation: explanation,
+            displayValue: displayValue
+        )
+    }
+
+    static func hasRecentDecline(
+        for habit: Habit,
+        logs: [InsightLog],
+        calendar: Calendar,
+        now: Date
+    ) -> Bool {
+        guard logs.count >= 6 else { return false }
+
+        let windows = signalWindows(calendar: calendar, now: now)
+        let trackingStart = calendar.startOfDay(for: habit.createdAt)
+        let activity = activitySummary(logs: logs, windowEnd: windows.windowEnd)
+
+        let previousRate = completionRate(
+            in: windows.previous,
+            trackingStart: trackingStart,
+            activeDays: activity.activeDays,
+            calendar: calendar
+        )
+        let recentRate = completionRate(
+            in: windows.recent,
+            trackingStart: trackingStart,
+            activeDays: activity.activeDays,
+            calendar: calendar
+        )
+        let previousDays = availableDays(
+            in: windows.previous,
+            trackingStart: trackingStart,
+            calendar: calendar
+        )
+        let recentDays = availableDays(
+            in: windows.recent,
+            trackingStart: trackingStart,
+            calendar: calendar
+        )
+        guard previousDays > 0, recentDays > 0 else { return false }
+
+        return (previousRate - recentRate) >= 0.2 && previousRate >= 0.4
+    }
+
     static func identityState(
         for habit: Habit,
         logs: [InsightLog],
         calendar: Calendar,
         now: Date
     ) -> HabitIdentityState {
-        _ = habit
-        let today = calendar.startOfDay(for: now)
-        let recentStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
-        let pastOrTodayLogs = logs.filter { $0.dayStart <= today }
-        let recentCompletedDays = Set(
-            pastOrTodayLogs
-                .map(\.dayStart)
-                .filter { $0 >= recentStart && $0 <= today }
-        ).count
-        let totalLogCount = pastOrTodayLogs.count
-        let lastActivityDay = pastOrTodayLogs.map(\.dayStart).max()
-
-        return HabitIdentityStateResolver.resolve(
-            recentCompletedDays: recentCompletedDays,
-            windowDays: 7,
-            totalLogCount: totalLogCount,
-            lastActivityDay: lastActivityDay,
-            now: now,
+        _ = logs
+        return HabitIdentityStateResolver.recentSnapshot(
+            for: habit,
             calendar: calendar,
-        )
+            now: now,
+            windowDays: 7
+        ).state
     }
 
     static func identitySignalValue(for state: HabitIdentityState) -> Double {

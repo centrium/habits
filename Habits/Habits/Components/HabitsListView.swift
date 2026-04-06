@@ -680,19 +680,6 @@ private struct DraggableHabitRow: View {
         )
             .frame(maxWidth: .infinity)
             .scaleEffect(isPressing ? 0.98 : (isDragging ? 1.038 : (isReordering ? 0.995 : 1.0)))
-            .shadow(
-                color: .black.opacity(
-                    isDragging
-                        ? (colorScheme == .dark ? 0.14 : 0.2)
-                        : 0.28
-                ),
-                radius: isDragging
-                    ? (colorScheme == .dark ? 16 : 20)
-                    : 12,
-                y: isDragging
-                    ? (colorScheme == .dark ? 7 : 10)
-                    : 6
-            )
             .zIndex(isDragging ? 1 : 0)
             .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDragging)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)

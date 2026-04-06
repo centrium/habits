@@ -4,15 +4,12 @@ struct GradientGaugeView: View {
     @Environment(\.colorScheme) private var colorScheme
     let value: Double
     let labels: [String]
-    let valueText: String
 
     @State private var displayedValue = 0.0
+    @State private var isActiveMarker = false
 
-    private let bubbleWidth: CGFloat = 58
-    private let bubbleHeight: CGFloat = 32
     private let barHeight: CGFloat = 12
-    private let indicatorSpacing: CGFloat = 7
-    private let indicatorSize: CGFloat = 8
+    private let indicatorSize: CGFloat = 10
 
     private var clampedValue: Double {
         min(max(value, 0), 1)
@@ -39,34 +36,28 @@ struct GradientGaugeView: View {
 
                 ZStack(alignment: .topLeading) {
                     bar(width: width)
-                        .offset(y: bubbleHeight + indicatorSpacing + 2)
+                        .offset(y: indicatorSize + 6)
 
-                    VStack(spacing: indicatorSpacing) {
-                        Text(valueText)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: bubbleWidth, height: bubbleHeight)
-                            .background(
-                                colorScheme == .light
-                                    ? AnyShapeStyle(Color.appBackground)
-                                    : AnyShapeStyle(.ultraThinMaterial)
-                            )
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.22 : 0.1))
-                            )
-                            .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 10, y: 5)
-
-                        Circle()
-                            .fill(Color.appBackground.opacity(colorScheme == .dark ? 0.96 : 0.98))
-                            .frame(width: indicatorSize, height: indicatorSize)
-                            .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.07), radius: 4, y: 2)
-                    }
-                    .offset(x: indicatorX - (bubbleWidth / 2))
+                    Circle()
+                        .fill(Color.primary)
+                        .frame(width: indicatorSize, height: indicatorSize)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    Color.white.opacity(colorScheme == .dark ? 0.9 : 0.7),
+                                    lineWidth: 2
+                                )
+                        )
+                        .shadow(
+                            color: Color.black.opacity(colorScheme == .dark ? 0.6 : 0.2),
+                            radius: 2,
+                            y: 1
+                        )
+                        .scaleEffect(isActiveMarker ? 1.1 : 1.0)
+                        .offset(x: indicatorX - (indicatorSize / 2))
                 }
             }
-            .frame(height: bubbleHeight + indicatorSpacing + indicatorSize + 18)
+            .frame(height: indicatorSize + barHeight + 14)
 
             HStack(alignment: .top, spacing: 8) {
                 ForEach(labels, id: \.self) { label in
@@ -81,8 +72,10 @@ struct GradientGaugeView: View {
         }
         .onAppear {
             displayedValue = 0
+            isActiveMarker = false
             withAnimation(.spring(response: 0.55, dampingFraction: 0.82, blendDuration: 0.2)) {
                 displayedValue = clampedValue
+                isActiveMarker = true
             }
         }
         .onChange(of: clampedValue) { _, newValue in
@@ -116,6 +109,6 @@ struct GradientGaugeView: View {
 
     private func indicatorPosition(in width: CGFloat) -> CGFloat {
         let rawPosition = CGFloat(displayedValue) * width
-        return min(max(rawPosition, bubbleWidth / 2), width - (bubbleWidth / 2))
+        return min(max(rawPosition, indicatorSize / 2), width - (indicatorSize / 2))
     }
 }

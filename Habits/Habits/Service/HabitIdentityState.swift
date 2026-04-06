@@ -56,6 +56,10 @@ struct CadenceLanguage {
         CadenceCopyCatalog.insightLine(for: state.cadenceStateKey)
     }
 
+    static func riskEarlyStage() -> String {
+        CadenceCopyCatalog.riskEarlyStage()
+    }
+
     static func behaviourLine(
         completions: Int?,
         window: Int?

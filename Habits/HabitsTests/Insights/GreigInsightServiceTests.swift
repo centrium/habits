@@ -28,7 +28,8 @@ final class GreigInsightServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(insight?.confidence, .medium)
-        XCTAssertTrue(insight?.title.contains("Current pace points to about") ?? false)
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .building))
+        XCTAssertTrue(insight?.body?.contains("Current pace points to about") ?? false)
         XCTAssertTrue(insight?.body?.contains("/day") ?? false)
     }
 
@@ -55,7 +56,8 @@ final class GreigInsightServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(insight?.confidence, .low)
-        XCTAssertTrue(insight?.title.contains("could reach around") ?? false)
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .gettingStarted))
+        XCTAssertTrue(insight?.body?.contains("could reach around") ?? false)
         XCTAssertTrue(insight?.body?.contains("early estimate") ?? false)
     }
 
@@ -108,7 +110,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, CadenceLanguage.insightLine(for: .strong))
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .strong))
         XCTAssertTrue(insight?.body?.contains("7 of the last 8 days") ?? false)
         XCTAssertTrue(insight?.body?.contains("7-day streak") ?? false)
         XCTAssertTrue(insight?.body?.contains("Log today to keep this routine steady.") ?? false)
@@ -137,7 +139,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, CadenceLanguage.insightLine(for: .strong))
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .strong))
         XCTAssertEqual(insight?.confidence, .high)
     }
 
@@ -162,7 +164,8 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(insight?.title.contains("Current pace points to") ?? false)
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .building))
+        XCTAssertTrue(insight?.body?.contains("Current pace points to") ?? false)
         XCTAssertNotNil(insight?.body)
         XCTAssertTrue(insight?.body?.contains("/day") ?? false)
     }
@@ -185,7 +188,8 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(insight?.title.contains("Projection needs more data") ?? false)
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .gettingStarted))
+        XCTAssertTrue(insight?.body?.contains("Projection needs more data") ?? false)
         XCTAssertTrue(insight?.body?.contains("of the last") ?? false)
         XCTAssertFalse(insight?.title.contains(CadenceLanguage.insightLine(for: .building)) ?? true)
     }
@@ -214,6 +218,35 @@ final class GreigInsightServiceTests: XCTestCase {
         goal: GreigInsightGoal,
         progress: GreigInsightProgress
     ) -> GreigInsight? {
-        GreigInsightService(calendar: calendar).generateInsight(for: goal, progress: progress)
+        GreigInsightService(calendar: calendar).generateInsight(
+            for: goal,
+            progress: progress,
+            identityState: canonicalIdentityState(from: progress)
+        )
+    }
+
+    private func canonicalIdentityState(from progress: GreigInsightProgress) -> HabitIdentityState {
+        let today = calendar.startOfDay(for: progress.now)
+        let recentStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let qualifyingDays = progress.logs.compactMap { log -> Date? in
+            guard log.frequencyContribution > 0 else { return nil }
+            let day = calendar.startOfDay(for: log.effectiveTimestamp)
+            guard day <= today else { return nil }
+            return day
+        }
+        let recentCompletedDays = Set(
+            qualifyingDays.filter { $0 >= recentStart && $0 <= today }
+        ).count
+        let totalLogCount = qualifyingDays.count
+        let lastActivityDay = qualifyingDays.max()
+
+        return HabitIdentityStateResolver.resolve(
+            recentCompletedDays: recentCompletedDays,
+            windowDays: 7,
+            totalLogCount: totalLogCount,
+            lastActivityDay: lastActivityDay,
+            now: progress.now,
+            calendar: calendar
+        )
     }
 }

@@ -675,6 +675,53 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(greig.supportText.contains("3-day streak"))
     }
 
+    func testIdentityStateIsConsistentAcrossIdentityPerformanceSignalsAndGreig() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 1,
+            entries: [
+                .init(timestamp: TestDateFactory.addingDays(-1, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-9, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-10, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-12, to: now, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.addingDays(-14, to: now, calendar: calendar), value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            greigModeEnabled: true,
+            now: now
+        )
+        let canonicalState = HabitIdentityStateResolver.resolve(
+            for: habit,
+            calendar: calendar,
+            now: now,
+            windowDays: 7
+        )
+        let canonicalLabel = CadenceLanguage.shortLabel(for: canonicalState)
+
+        // Then
+        guard let identity = identityStateBlock(from: viewModel) else {
+            return XCTFail("Expected identity state card")
+        }
+        guard let performance = performanceSignalsBlock(from: viewModel)?.signals.first else {
+            return XCTFail("Expected identity performance signal")
+        }
+        guard let greig = greigBlock(from: viewModel) else {
+            return XCTFail("Expected Greig mode block")
+        }
+
+        XCTAssertEqual(identity.state, canonicalState)
+        XCTAssertEqual(performance.displayValue, canonicalLabel)
+        XCTAssertEqual(greig.headline, canonicalLabel)
+    }
+
     func testNoPeriodStreakTerminology() {
         // Given
         let now = TestDateFactory.date(2026, 3, 19, hour: 12, calendar: calendar)
@@ -808,6 +855,15 @@ final class InsightEngineTests: XCTestCase {
     private func greigBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsGreigModeBlock? {
         for card in viewModel.cards {
             if case .greigMode(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private func performanceSignalsBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsPerformanceSignalsBlock? {
+        for card in viewModel.cards {
+            if case .performanceSignals(let block) = card {
                 return block
             }
         }

@@ -96,6 +96,75 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         )
     }
 
+    func testHabitRiskEarlyStageUsesInsufficientDataCopyAndHidesScore() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -2,
+            offsets: [0, -1]
+        )
+
+        let signals = PerformanceSignalsCalculator.calculate(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+        guard let riskSignal = signals.first(where: { $0.gauge.title == "Habit Risk" }) else {
+            return XCTFail("Expected Habit Risk signal")
+        }
+
+        XCTAssertEqual(riskSignal.gauge.explanation, CadenceLanguage.riskEarlyStage())
+        XCTAssertEqual(riskSignal.displayValue, "")
+    }
+
+    func testHabitRiskHighWithoutDetectedDeclineUsesNonDeclineCopy() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -30,
+            offsets: [-2, -4, -6]
+        )
+
+        let signals = PerformanceSignalsCalculator.calculate(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+        guard let riskSignal = signals.first(where: { $0.gauge.title == "Habit Risk" }) else {
+            return XCTFail("Expected Habit Risk signal")
+        }
+
+        XCTAssertEqual(
+            riskSignal.gauge.explanation,
+            "Recent consistency is uneven. Logging today would help stabilise the routine."
+        )
+    }
+
+    func testHabitRiskHighWithDetectedDeclineUsesDeclineCopy() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let recent = [-2]
+        let previous = [-8, -9, -10, -11, -12, -13, -14]
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -45,
+            offsets: recent + previous
+        )
+
+        let signals = PerformanceSignalsCalculator.calculate(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+        guard let riskSignal = signals.first(where: { $0.gauge.title == "Habit Risk" }) else {
+            return XCTFail("Expected Habit Risk signal")
+        }
+
+        XCTAssertEqual(
+            riskSignal.gauge.explanation,
+            "Consistency has dropped recently. Logging today would help stabilise the routine."
+        )
+    }
+
     func testHabitStrengthIsWeakForNewHabitWithFewLogs() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
@@ -207,6 +276,75 @@ final class InsightPerformanceSignalsTests: XCTestCase {
 
         XCTAssertEqual(block?.heading, "Performance Signals")
         XCTAssertEqual(block?.signals.map(\.gauge.title), ["Identity Signal", "Habit Risk", "Habit Strength"])
+        XCTAssertEqual(block?.signals.first?.gauge.labels, ["Start", "Build", "Steady", "Strong", "Slip", "Rebuild"])
+    }
+
+    func testIdentityStateForNewHabitWithFirstLogTodayIsGettingStarted() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: 0,
+            offsets: [0]
+        )
+
+        let state = PerformanceSignalsCalculator.identityState(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+
+        XCTAssertEqual(state, .gettingStarted)
+    }
+
+    func testIdentityStateForOneOfLastSevenDaysIsRebuilding() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -45,
+            offsets: [0, -9, -11, -13, -15, -17, -19]
+        )
+
+        let state = PerformanceSignalsCalculator.identityState(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+
+        XCTAssertEqual(state, .rebuilding)
+    }
+
+    func testIdentityStateForRecentDeclineIsSlipping() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -45,
+            offsets: [-1, -10, -11, -12, -13, -14, -15, -16, -17]
+        )
+
+        let state = PerformanceSignalsCalculator.identityState(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+
+        XCTAssertEqual(state, .slipping)
+    }
+
+    func testIdentityStateForStrongConsistencyIsStrong() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -45,
+            offsets: [0, -1, -2, -3, -4, -5, -6]
+        )
+
+        let state = PerformanceSignalsCalculator.identityState(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+
+        XCTAssertEqual(state, .strong)
     }
 
     private func makeHabit(

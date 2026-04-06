@@ -82,7 +82,8 @@ struct GreigInsightService {
 
     func generateInsight(
         for goal: GreigInsightGoal,
-        progress: GreigInsightProgress
+        progress: GreigInsightProgress,
+        identityState: HabitIdentityState
     ) -> GreigInsight? {
         guard let projection = projectionService.projection(for: goal, progress: progress) else {
             return nil
@@ -92,6 +93,7 @@ struct GreigInsightService {
         case .open:
             return generateOpenInsight(
                 goal: goal,
+                identityState: identityState,
                 projection: projection
             )
         case .frequency(let target):
@@ -99,6 +101,7 @@ struct GreigInsightService {
             return generateFrequencyInsight(
                 goal: goal,
                 target: target,
+                identityState: identityState,
                 progress: progress,
                 projection: projection
             )
@@ -107,6 +110,7 @@ struct GreigInsightService {
             return generateCumulativeInsight(
                 goal: goal,
                 target: target,
+                identityState: identityState,
                 progress: progress,
                 projection: projection
             )
@@ -118,9 +122,11 @@ private extension GreigInsightService {
     func generateCumulativeInsight(
         goal: GreigInsightGoal,
         target: Double,
+        identityState: HabitIdentityState,
         progress: GreigInsightProgress,
         projection: GreigProjectionResult
     ) -> GreigInsight {
+        let title = CadenceLanguage.shortLabel(for: identityState)
         let status = goalStatus(
             target: target,
             projection: projection,
@@ -129,11 +135,11 @@ private extension GreigInsightService {
 
         guard let projectedTotal = projection.projectedTotal,
               let dailyAverage = projection.dailyAverage else {
-            let title = "Projection needs more data for \(goal.period.relativeLabel)"
+            let projectionContext = "Projection needs more data for \(goal.period.relativeLabel)"
             let body = "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, so there's not enough behaviour to project yet."
             return GreigInsight(
                 title: title,
-                body: body,
+                body: joinedSentences(projectionContext, body),
                 confidence: .low,
                 status: .neutral
             )
@@ -141,12 +147,13 @@ private extension GreigInsightService {
 
         let projectedText = progress.formatValue(projectedTotal)
         let averageText = "~\(progress.formatValue(dailyAverage))/day"
-        let title = cumulativeHeadline(
+        let projectionHeadline = cumulativeHeadline(
             projectedText: projectedText,
             periodLabel: goal.period.relativeLabel,
             confidence: projection.confidence
         )
         let body = cumulativeBody(
+            projectionHeadline: projectionHeadline,
             confidence: projection.confidence,
             completedDays: projection.behaviourCompletedDays,
             windowDays: projection.behaviourWindowDays,
@@ -169,9 +176,11 @@ private extension GreigInsightService {
     func generateFrequencyInsight(
         goal: GreigInsightGoal,
         target: Double,
+        identityState: HabitIdentityState,
         progress: GreigInsightProgress,
         projection: GreigProjectionResult
     ) -> GreigInsight {
+        let title = CadenceLanguage.shortLabel(for: identityState)
         let status = goalStatus(
             target: target,
             projection: projection,
@@ -180,11 +189,11 @@ private extension GreigInsightService {
 
         guard let projectedTotal = projection.projectedTotal,
               let dailyAverage = projection.dailyAverage else {
-            let title = "Projection needs more data for \(goal.period.relativeLabel)"
+            let projectionContext = "Projection needs more data for \(goal.period.relativeLabel)"
             let body = "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, so there's not enough behaviour to project yet."
             return GreigInsight(
                 title: title,
-                body: body,
+                body: joinedSentences(projectionContext, body),
                 confidence: .low,
                 status: .neutral
             )
@@ -192,12 +201,13 @@ private extension GreigInsightService {
 
         let projectedText = formattedCount(projectedTotal)
         let averageText = "~\(formattedRate(dailyAverage))/day"
-        let title = frequencyHeadline(
+        let projectionHeadline = frequencyHeadline(
             projectedText: projectedText,
             periodLabel: goal.period.relativeLabel,
             confidence: projection.confidence
         )
         let body = frequencyBody(
+            projectionHeadline: projectionHeadline,
             confidence: projection.confidence,
             completedDays: projection.behaviourCompletedDays,
             windowDays: projection.behaviourWindowDays,
@@ -218,16 +228,14 @@ private extension GreigInsightService {
 
     func generateOpenInsight(
         goal _: GreigInsightGoal,
+        identityState: HabitIdentityState,
         projection: GreigProjectionResult
     ) -> GreigInsight {
-        let state = HabitIdentityStateResolver.resolve(
-            completionRate: projection.behaviourCompletionRate,
-            hasRecentData: projection.behaviourCompletedDays > 0
-        )
+        let state = identityState
         let status = status(for: state)
         let confidence = confidence(for: state)
         let streak = max(projection.currentStreak, projection.recentStreak)
-        let title = CadenceLanguage.insightLine(for: state)
+        let title = CadenceLanguage.shortLabel(for: state)
 
         let evidence: String = {
             switch state {
@@ -337,6 +345,7 @@ private extension GreigInsightService {
     }
 
     func cumulativeBody(
+        projectionHeadline: String,
         confidence: ConfidenceLevel,
         completedDays: Int,
         windowDays: Int,
@@ -366,8 +375,11 @@ private extension GreigInsightService {
         }
 
         return joinedSentences(
-            evidence,
-            genericNudge(loggedToday: loggedToday)
+            projectionHeadline,
+            joinedSentences(
+                evidence,
+                genericNudge(loggedToday: loggedToday)
+            )
         ) ?? evidence
     }
 
@@ -399,6 +411,7 @@ private extension GreigInsightService {
     }
 
     func frequencyBody(
+        projectionHeadline: String,
         confidence: ConfidenceLevel,
         completedDays: Int,
         windowDays: Int,
@@ -426,8 +439,11 @@ private extension GreigInsightService {
         }
 
         return joinedSentences(
-            evidence,
-            genericNudge(loggedToday: loggedToday)
+            projectionHeadline,
+            joinedSentences(
+                evidence,
+                genericNudge(loggedToday: loggedToday)
+            )
         ) ?? evidence
     }
 
