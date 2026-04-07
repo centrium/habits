@@ -12,6 +12,7 @@ struct PremiumHistoryGate {
     struct Context {
         let calendar: Calendar
         let premiumStatus: PremiumStatus
+        let today: Date
         let freeLimitDate: Date
         let earliestVisibleDate: Date
         let premiumBoundaryWeekCount: Int = 13
@@ -24,6 +25,7 @@ struct PremiumHistoryGate {
             let normalizedNow = calendar.startOfDay(for: now)
             self.calendar = calendar
             self.premiumStatus = premiumStatus
+            self.today = normalizedNow
             self.freeLimitDate = calendar.date(
                 byAdding: .day,
                 value: -PremiumHistoryGate.freeHistoryLimitDays,
@@ -41,7 +43,11 @@ struct PremiumHistoryGate {
             case .unknown, .premium:
                 return false
             case .free:
-                return calendar.startOfDay(for: date) < freeLimitDate
+                return PremiumHistoryGate.isDateLocked(
+                    date,
+                    today: today,
+                    calendar: calendar
+                )
             }
         }
 
@@ -60,10 +66,26 @@ struct PremiumHistoryGate {
         calendar: Calendar = .current,
         now: Date = Date()
     ) -> Bool {
-        Context(
-            calendar: calendar,
-            premiumStatus: premiumStatus,
-            now: now
-        ).isLocked(date: date)
+        switch premiumStatus {
+        case .unknown, .premium:
+            return false
+        case .free:
+            return isDateLocked(date, today: now, calendar: calendar)
+        }
+    }
+
+    static func isDateLocked(
+        _ date: Date,
+        today: Date,
+        calendar: Calendar
+    ) -> Bool {
+        let normalized = calendar.startOfDay(for: date)
+        let normalizedToday = calendar.startOfDay(for: today)
+        let cutoff = calendar.date(
+            byAdding: .day,
+            value: -freeHistoryLimitDays,
+            to: normalizedToday
+        ) ?? normalizedToday
+        return normalized < cutoff
     }
 }

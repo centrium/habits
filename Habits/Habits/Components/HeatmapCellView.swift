@@ -34,12 +34,20 @@ struct HeatmapCellView: View, Equatable {
     }
 
     private var cellColor: Color {
-        if intensity <= 0 {
-            return Color.primary.opacity(colorScheme == .dark ? 0.065 : 0.046)
+        let clamped = clampedIntensity
+
+        guard clamped > 0 else {
+            return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06)
         }
 
-        let clamped = min(max(intensity, 0), 1)
-        return accent.opacity(colorScheme == .dark ? (0.46 + (clamped * 0.5)) : (0.44 + (clamped * 0.48)))
+        let base = colorScheme == .dark ? 0.58 : 0.54
+        let range = colorScheme == .dark ? 0.36 : 0.42
+        let opacity = min(base + (clamped * range), 1)
+        return accent.opacity(opacity)
+    }
+
+    private var clampedIntensity: Double {
+        min(max(intensity, 0), 1)
     }
 
     @ViewBuilder

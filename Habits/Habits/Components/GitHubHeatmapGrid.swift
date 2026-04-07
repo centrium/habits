@@ -16,12 +16,19 @@ struct GitHubHeatmapGrid: View {
     let weeks: [Week]
     let selectedDate: Date
     let isInteractive: Bool
+    let isDateLocked: (Date) -> Bool
     private let intensityByDate: [Date: Double]
     private let lockedDates: Set<Date>
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
     private let rows: CGFloat = 7
+
+    private struct MonthMarker: Identifiable {
+        let id: Int
+        let label: String
+        let x: CGFloat
+    }
 
     init(
         accent: Color,
@@ -31,6 +38,7 @@ struct GitHubHeatmapGrid: View {
         weeks: [Week],
         selectedDate: Date,
         isInteractive: Bool,
+        isDateLocked: @escaping (Date) -> Bool,
         intensityByDate: [Date: Double],
         lockedDates: Set<Date>,
         onTapDay: @escaping (Date) -> Void,
@@ -43,6 +51,7 @@ struct GitHubHeatmapGrid: View {
         self.weeks = weeks
         self.selectedDate = selectedDate
         self.isInteractive = isInteractive
+        self.isDateLocked = isDateLocked
         self.intensityByDate = intensityByDate
         self.lockedDates = lockedDates
         self.onTapDay = onTapDay
@@ -54,6 +63,7 @@ struct GitHubHeatmapGrid: View {
             dayLabels
             scrollableGrid
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var dayLabels: some View {
@@ -81,49 +91,28 @@ struct GitHubHeatmapGrid: View {
     }
 
     private var monthLabels: some View {
-        LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
-            ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
-                let isMonthBoundary = index == 0 || week.month != weeks[index - 1].month
-
-                let shouldShowLabel: Bool = {
-                    guard isMonthBoundary else { return false }
-
-                    if let nextIndex = weeks.indices.dropFirst(index + 1).first(where: {
-                        weeks[$0].month != week.month
-                    }) {
-                        let distance = nextIndex - index
-                        return distance >= 3
-                    }
-
-                    return true
-                }()
-
-                Color.clear
-                    .frame(width: style.cellSize, height: style.monthLabelHeight)
-                    .overlay(alignment: .leading) {
-                        if shouldShowLabel {
-                            Text(monthLabel(for: week.id))
-                                .font(.caption2)
-                                .foregroundStyle(Color.secondary.opacity(style.monthLabelOpacity))
-                                .tracking(style.monthLabelTracking)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                    }
-                    .overlay(alignment: .center) {
-                        if premiumBoundaryWeekIndex == index {
-                            PremiumBoundaryIndicator()
-                                .offset(y: 8)
-                                .allowsHitTesting(false)
-                        }
-                    }
+        ZStack(alignment: .topLeading) {
+            ForEach(monthMarkers) { marker in
+                Text(marker.label)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary.opacity(style.monthLabelOpacity))
+                    .tracking(style.monthLabelTracking)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(
+                        width: max(0, gridWidth - marker.x),
+                        height: style.monthLabelHeight,
+                        alignment: .leading
+                    )
+                    .offset(x: marker.x)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: style.monthLabelHeight)
+        .frame(width: gridWidth, height: style.monthLabelHeight, alignment: .leading)
+        .clipped()
     }
 
     private var gridColumns: some View {
-        LazyHStack(alignment: .top, spacing: style.horizontalSpacing) {
+        HStack(alignment: .top, spacing: style.horizontalSpacing) {
             ForEach(Array(weeks.enumerated()), id: \.element.id) { index, week in
                 VStack(spacing: style.verticalSpacing) {
                     ForEach(week.days.indices, id: \.self) { i in
@@ -146,10 +135,12 @@ struct GitHubHeatmapGrid: View {
                             .frame(width: style.cellSize, height: style.cellSize)
                             .opacity(isLockedDay ? 0.35 : 1)
                             .contentShape(Rectangle())
-                            .allowsHitTesting(isInteractive || isLockedDay)
+                            .allowsHitTesting(true)
                             .highPriorityGesture(
                                 TapGesture().onEnded {
-                                    if isLockedDay {
+                                    let locked = isDateLocked(normalizedDay)
+
+                                    if locked {
                                         onTapLockedDay(normalizedDay)
                                     } else {
                                         onTapDay(normalizedDay)
@@ -162,34 +153,37 @@ struct GitHubHeatmapGrid: View {
                         }
                     }
                 }
-                .overlay {
-                    if premiumBoundaryWeekIndex == index,
-                       let premiumBoundaryDate {
-                        Rectangle()
-                            .fill(.clear)
-                            .contentShape(Rectangle())
-                            .highPriorityGesture(
-                                TapGesture().onEnded {
-                                    onTapLockedDay(premiumBoundaryDate)
-                                }
-                            )
-                    }
-                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: gridHeight)
+        .frame(width: gridWidth, height: gridHeight, alignment: .leading)
+        .clipped()
     }
 
     private var scrollableGrid: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: style.monthLabelToGridSpacing) {
-                monthLabels
-                gridColumns
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: style.monthLabelToGridSpacing) {
+                    monthLabels
+                    gridColumns
+                }
+                .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
+                .clipped()
+
+                if let premiumLockPosition {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: max(8, style.cellSize * 0.62), weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: style.cellSize, height: style.cellSize)
+                        .position(x: premiumLockPosition.x, y: premiumLockPosition.y)
+                        .allowsHitTesting(false)
+                }
             }
+            .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
             .padding(.trailing, style.rightEdgeFadeWidth)
+            .clipped()
         }
         .defaultScrollAnchor(.trailing)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .mask {
             HStack(spacing: 0) {
                 Rectangle().fill(.white)
@@ -220,46 +214,79 @@ struct GitHubHeatmapGrid: View {
         (style.cellSize * rows) + (style.verticalSpacing * (rows - 1))
     }
 
-    private var boundaryLockedDate: Date? {
-        weeks
-            .flatMap(\.days)
-            .compactMap { $0 }
-            .last(where: { lockedDates.contains(calendarProvider.calendar.startOfDay(for: $0)) })
+    private var contentHeight: CGFloat {
+        style.monthLabelHeight + style.monthLabelToGridSpacing + gridHeight
+    }
+
+    private var columnCount: Int {
+        weeks.count
+    }
+
+    private var gridWidth: CGFloat {
+        let columns = CGFloat(columnCount)
+        let spacingColumns = CGFloat(max(columnCount - 1, 0))
+        return (columns * style.cellSize) + (spacingColumns * style.horizontalSpacing)
+    }
+
+    private var monthMarkers: [MonthMarker] {
+        Array(weeks.enumerated()).compactMap { index, week in
+            let isMonthBoundary = index == 0 || week.month != weeks[index - 1].month
+            guard isMonthBoundary else { return nil }
+
+            if let nextIndex = weeks.indices.dropFirst(index + 1).first(where: {
+                weeks[$0].month != week.month
+            }) {
+                let distance = nextIndex - index
+                guard distance >= 3 else { return nil }
+            }
+
+            return MonthMarker(
+                id: index,
+                label: monthLabel(for: week.id),
+                x: xPosition(forColumn: index)
+            )
+        }
     }
 
     private var premiumBoundaryWeekIndex: Int? {
-        weeks.lastIndex { week in
+        guard let premiumBoundaryDate else { return nil }
+
+        return weeks.firstIndex { week in
             week.days
                 .compactMap { $0 }
-                .contains(where: { lockedDates.contains(calendarProvider.calendar.startOfDay(for: $0)) })
+                .map { calendarProvider.calendar.startOfDay(for: $0) }
+                .contains(premiumBoundaryDate)
         }
     }
 
     private var premiumBoundaryDate: Date? {
-        guard let premiumBoundaryWeekIndex else {
-            return boundaryLockedDate
-        }
-
-        let boundaryWeekDays = weeks[premiumBoundaryWeekIndex].days.compactMap { $0 }
-        return boundaryWeekDays.first(where: { !lockedDates.contains(calendarProvider.calendar.startOfDay(for: $0)) }) ?? boundaryLockedDate
+        allDates.last(where: { date in
+            isDateLocked(date)
+        })
     }
-}
 
-private struct PremiumBoundaryIndicator: View {
-    var body: some View {
-        VStack(spacing: 2) {
-            Image(systemName: "lock.fill")
-                .font(.caption2.weight(.semibold))
+    private var premiumLockPosition: CGPoint? {
+        guard let premiumBoundaryWeekIndex else { return nil }
+        guard let premiumBoundaryDate else { return nil }
 
-            Text("Premium")
-                .font(.caption2.weight(.medium))
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(.secondarySystemBackground).opacity(0.96))
-        )
+        let row = calendarProvider.rowIndex(for: premiumBoundaryDate)
+        let x = xPosition(forColumn: premiumBoundaryWeekIndex) + (style.cellSize / 2)
+        let y = style.monthLabelHeight + style.monthLabelToGridSpacing + yPosition(forRow: row) + (style.cellSize / 2)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func xPosition(forColumn column: Int) -> CGFloat {
+        CGFloat(column) * (style.cellSize + style.horizontalSpacing)
+    }
+
+    private func yPosition(forRow row: Int) -> CGFloat {
+        CGFloat(row) * (style.cellSize + style.verticalSpacing)
+    }
+
+    private var allDates: [Date] {
+        weeks
+            .flatMap(\.days)
+            .compactMap { $0 }
+            .map { calendarProvider.calendar.startOfDay(for: $0) }
     }
 }

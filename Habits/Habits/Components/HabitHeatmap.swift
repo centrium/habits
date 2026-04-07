@@ -104,25 +104,27 @@ struct HabitHeatmap: View {
     
     private var fullHeatmap: some View {
         let now = Date()
+        let calendar = calendarProvider.calendar
+        let normalizedNow = calendar.startOfDay(for: now)
         let timeline = HeatmapTimelineBuilder.yearTimeline(
             endingAt: now,
-            calendar: calendarProvider.calendar,
+            calendar: calendar,
         )
 
         let fullGridDays = buildFullHeatmapDays(from: timeline.weeks)
 
         let lockGate = PremiumHistoryGate.Context(
-            calendar: calendarProvider.calendar,
+            calendar: calendar,
             premiumStatus: purchaseService.premiumStatus,
-            now: now
+            now: normalizedNow
         )
 
         let cacheKey = HeatmapMetricsCacheKey(
             habitID: habit.id,
             revision: service.metricsRevision(for: habit.id),
-            calendarIdentifier: calendarProvider.calendar.identifier,
-            timeZoneIdentifier: calendarProvider.calendar.timeZone.identifier,
-            firstWeekday: calendarProvider.calendar.firstWeekday,
+            calendarIdentifier: calendar.identifier,
+            timeZoneIdentifier: calendar.timeZone.identifier,
+            firstWeekday: calendar.firstWeekday,
             earliestVisibleDate: earliestVisibleDate
         )
 
@@ -140,7 +142,11 @@ struct HabitHeatmap: View {
             )
         }
 
-        let lockedDates = Set(entry.days.filter { lockGate.isLocked(date: $0) })
+        let lockedDates = Set(entry.days.filter {
+            lockGate.isLocked(date: $0)
+        }.map {
+            calendar.startOfDay(for: $0)
+        })
 
         return GitHubHeatmapGrid(
             accent: softAccent,
@@ -150,6 +156,9 @@ struct HabitHeatmap: View {
             weeks: timeline.weeks,
             selectedDate: selectedDate,
             isInteractive: isInteractive,
+            isDateLocked: { day in
+                lockGate.isLocked(date: day)
+            },
             intensityByDate: entry.intensityMap,
             lockedDates: lockedDates,
             onTapDay: { day in
@@ -269,15 +278,14 @@ struct HabitHeatmap: View {
     private func cellColor(intensity: Double) -> Color {
         let clamped = clamp(intensity)
 
-        if clamped <= 0.001 {
-            return Color.primary.opacity(colorScheme == .dark ? 0.065 : 0.045)
+        guard clamped > 0.001 else {
+            return Color.primary.opacity(colorScheme == .dark ? 0.1 : 0.08)
         }
 
-        if clamped >= 0.999 {
-            return softAccent.opacity(colorScheme == .dark ? 0.95 : 0.9)
-        }
-
-        return softAccent.opacity(colorScheme == .dark ? 0.85 : 0.8)
+        let base = colorScheme == .dark ? 0.62 : 0.58
+        let range = colorScheme == .dark ? 0.36 : 0.42
+        let opacity = min(base + (clamped * range), 1)
+        return softAccent.opacity(opacity)
     }
     
     private var identityStateBlock: some View {
