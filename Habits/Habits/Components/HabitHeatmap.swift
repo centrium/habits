@@ -48,10 +48,6 @@ struct HabitHeatmap: View {
         self.showsIdentityStateSummary = showsIdentityStateSummary
     }
 
-    private var baseAccent: Color {
-        habit.curatedColorVariants.base
-    }
-
     private var accent: Color {
         habit.curatedColorVariants.accent
     }
@@ -149,7 +145,7 @@ struct HabitHeatmap: View {
         })
 
         return GitHubHeatmapGrid(
-            accent: softAccent,
+            accent: accent,
             selectionAccent: accent,
             style: style,
             calendarProvider: calendarProvider,
@@ -189,7 +185,8 @@ struct HabitHeatmap: View {
             return 0
         }
 
-        return clamp(dayMetrics[day]?.intensity ?? 0)
+        let metrics = dayMetrics[day] ?? .zero
+        return HeatmapRenderIntensity.value(for: metrics, habit: habit)
     }
 
     private func clamp(_ value: Double) -> Double {
@@ -234,32 +231,59 @@ struct HabitHeatmap: View {
     ) -> some View {
         let calendar = calendarProvider.calendar
         let columns = Array(repeating: GridItem(.flexible(), spacing: 2.5), count: 7)
-        let glow = max(0, Double(CadenceTokens.Intensity.heatmapGlow))
 
         return LazyVGrid(columns: columns, spacing: 2.5) {
             ForEach(days, id: \.self) { day in
-                let raw = clamp(dayMetrics[day]?.intensity ?? 0)
+                let raw = HeatmapRenderIntensity.value(
+                    for: dayMetrics[day] ?? .zero,
+                    habit: habit
+                )
+                let visuals = IntensityColorEngine.style(
+                    for: raw,
+                    baseColor: accent,
+                    colorScheme: colorScheme
+                )
 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(cellColor(intensity: raw))
+                    .fill(visuals.fill)
                     .frame(height: 14)
                     .opacity(raw > 0.001 ? 1 : 0.9)
-                    .scaleEffect(calendar.isDateInToday(day) ? 1.04 : (raw > 0.001 ? 1 : 0.975))
+                    .scaleEffect(visuals.peakScale)
+                    .overlay {
+                        if visuals.level > 0 {
+                            let overlayTint = IntensityColorEngine.adjustedForScheme(
+                                accent,
+                                level: visuals.level,
+                                scheme: colorScheme
+                            )
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            overlayTint.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                                            overlayTint.opacity(colorScheme == .dark ? 0.08 : 0.06),
+                                            .clear
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .opacity(visuals.highlightOpacity)
+                        }
+                    }
                     .overlay {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(
-                                raw > 0.001
-                                    ? softAccent.opacity(colorScheme == .dark ? 0.46 : 0.38)
+                                visuals.level > 0
+                                    ? visuals.border
                                     : Color.primary.opacity(colorScheme == .dark ? 0.09 : 0.06),
                                 lineWidth: 1
                             )
                     }
                     .shadow(
-                        color: raw > 0.001
-                            ? softAccent.opacity((colorScheme == .dark ? 0.1 : 0.12) * glow)
-                            : .clear,
-                        radius: raw > 0.001 ? 2 * glow : 0,
-                        y: raw > 0.001 ? 0.8 * glow : 0
+                        color: visuals.peakShadowColor.opacity(Double(CadenceTokens.Intensity.heatmapGlow)),
+                        radius: visuals.peakShadowRadius * max(0, CadenceTokens.Intensity.heatmapGlow),
+                        y: visuals.peakShadowYOffset * max(0, CadenceTokens.Intensity.heatmapGlow)
                     )
                     .overlay {
                         if calendar.isDateInToday(day) {
@@ -273,19 +297,6 @@ struct HabitHeatmap: View {
                     .animation(.easeOut(duration: 0.14), value: raw)
             }
         }
-    }
-
-    private func cellColor(intensity: Double) -> Color {
-        let clamped = clamp(intensity)
-
-        guard clamped > 0.001 else {
-            return Color.primary.opacity(colorScheme == .dark ? 0.1 : 0.08)
-        }
-
-        let base = colorScheme == .dark ? 0.62 : 0.58
-        let range = colorScheme == .dark ? 0.36 : 0.42
-        let opacity = min(base + (clamped * range), 1)
-        return softAccent.opacity(opacity)
     }
     
     private var identityStateBlock: some View {

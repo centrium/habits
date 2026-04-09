@@ -29,49 +29,135 @@ struct CadencePaletteTones {
     let strong: String
 }
 
+struct CadencePaletteRoles {
+    let primaryAccent: String
+    let secondaryAccent: String
+    let ambientSurface: String
+    let highlightPeak: String
+}
+
 enum CadenceColorPalette {
-    static func light(for token: CadencePaletteToken) -> CadencePaletteTones {
+    static func roles(for token: CadencePaletteToken) -> CadencePaletteRoles {
         switch token {
         case .fern:
-            return CadencePaletteTones(base: "#5FAF7A", soft: "#E6F2EB", strong: "#3F8F5C")
+            return CadencePaletteRoles(
+                primaryAccent: "#8BC34A",
+                secondaryAccent: "#AED581",
+                ambientSurface: "#AED581",
+                highlightPeak: "#FFD700"
+            )
         case .sage:
-            return CadencePaletteTones(base: "#7FBF95", soft: "#EDF6F1", strong: "#5C9F78")
+            return CadencePaletteRoles(
+                primaryAccent: "#388E3C",
+                secondaryAccent: "#43A047",
+                ambientSurface: "#2E7D32",
+                highlightPeak: "#8BC34A"
+            )
         case .cobalt:
-            return CadencePaletteTones(base: "#5B7DB8", soft: "#E7EDF7", strong: "#3E5F99")
+            return CadencePaletteRoles(
+                primaryAccent: "#1976D2",
+                secondaryAccent: "#42A5F5",
+                ambientSurface: "#90CAF9",
+                highlightPeak: "#039BE5"
+            )
         case .sky:
-            return CadencePaletteTones(base: "#6F95C8", soft: "#EDF3FB", strong: "#4E74A8")
+            return CadencePaletteRoles(
+                primaryAccent: "#0288D1",
+                secondaryAccent: "#039BE5",
+                ambientSurface: "#0277BD",
+                highlightPeak: "#42A5F5"
+            )
         case .iris:
-            return CadencePaletteTones(base: "#7A6FB2", soft: "#EEEAF7", strong: "#5A4F91")
+            return CadencePaletteRoles(
+                primaryAccent: "#009688",
+                secondaryAccent: "#26A69A",
+                ambientSurface: "#4DB6AC",
+                highlightPeak: "#FFEB3B"
+            )
         case .amethyst:
-            return CadencePaletteTones(base: "#8B80C2", soft: "#F3F0FA", strong: "#6A5FA1")
+            return CadencePaletteRoles(
+                primaryAccent: "#FF6347",
+                secondaryAccent: "#FF7F50",
+                ambientSurface: "#FF6F61",
+                highlightPeak: "#FF4500"
+            )
         case .apricot:
-            return CadencePaletteTones(base: "#C69C4F", soft: "#F4EBDD", strong: "#9E7A34")
+            return CadencePaletteRoles(
+                primaryAccent: "#FF9800",
+                secondaryAccent: "#FFA726",
+                ambientSurface: "#FFB74D",
+                highlightPeak: "#FFC107"
+            )
         case .amber:
-            return CadencePaletteTones(base: "#D2AE6A", soft: "#F7F1E4", strong: "#A88745")
+            return CadencePaletteRoles(
+                primaryAccent: "#FFB300",
+                secondaryAccent: "#FFC107",
+                ambientSurface: "#FFD700",
+                highlightPeak: "#FFEB3B"
+            )
         case .coral:
-            return CadencePaletteTones(base: "#C46A6A", soft: "#F6E8E8", strong: "#9F4E4E")
+            return CadencePaletteRoles(
+                primaryAccent: "#FF6F61",
+                secondaryAccent: "#FFB997",
+                ambientSurface: "#FF7F50",
+                highlightPeak: "#FF4500"
+            )
         case .rose:
-            return CadencePaletteTones(base: "#C46A6A", soft: "#F6E8E8", strong: "#9F4E4E")
+            return CadencePaletteRoles(
+                primaryAccent: "#FF69B4",
+                secondaryAccent: "#FFB6C1",
+                ambientSurface: "#FFB6C1",
+                highlightPeak: "#FFD700"
+            )
         case .teal:
-            return CadencePaletteTones(base: "#5FA3A0", soft: "#E7F2F1", strong: "#417F7C")
+            return CadencePaletteRoles(
+                primaryAccent: "#009688",
+                secondaryAccent: "#26A69A",
+                ambientSurface: "#4DB6AC",
+                highlightPeak: "#039BE5"
+            )
         case .cyan:
-            return CadencePaletteTones(base: "#5FA3A0", soft: "#E7F2F1", strong: "#417F7C")
+            return CadencePaletteRoles(
+                primaryAccent: "#0288D1",
+                secondaryAccent: "#039BE5",
+                ambientSurface: "#42A5F5",
+                highlightPeak: "#90CAF9"
+            )
         }
     }
 
-    static func dark(for token: CadencePaletteToken) -> CadencePaletteTones {
-        let light = light(for: token)
+    static func light(for token: CadencePaletteToken) -> CadencePaletteTones {
+        let roles = roles(for: token)
         return CadencePaletteTones(
-            base: lighten(hex: light.base, by: 0.08),
-            soft: mix(hex: light.base, with: "#121212", towardSecond: 0.85),
-            strong: lighten(hex: light.strong, by: 0.10)
+            base: roles.primaryAccent,
+            soft: roles.ambientSurface,
+            strong: roles.secondaryAccent
+        )
+    }
+
+    static func dark(for token: CadencePaletteToken) -> CadencePaletteTones {
+        let roles = roles(for: token)
+        return CadencePaletteTones(
+            base: roles.secondaryAccent,
+            soft: mix(hex: roles.ambientSurface, with: "#121212", towardSecond: 0.70),
+            strong: roles.highlightPeak
+        )
+    }
+
+    static func highlight(for token: CadencePaletteToken) -> CadencePaletteTones {
+        let roles = roles(for: token)
+        return CadencePaletteTones(
+            base: roles.highlightPeak,
+            soft: roles.ambientSurface,
+            strong: roles.highlightPeak
         )
     }
 
     static func token(from baseHex: String) -> CadencePaletteToken? {
         let normalized = normalizeHex(baseHex)
         return CadencePaletteToken.allCases.first {
-            normalizeHex(light(for: $0).base) == normalized
+            normalizeHex(light(for: $0).base) == normalized ||
+            normalizeHex(legacyBaseHex(for: $0)) == normalized
         }
     }
 
@@ -89,6 +175,23 @@ enum CadenceColorPalette {
         let first = RGB(hex: hex)
         let second = RGB(hex: otherHex)
         return first.mixed(with: second, amount: amount).hex
+    }
+
+    private static func legacyBaseHex(for token: CadencePaletteToken) -> String {
+        switch token {
+        case .fern: return "#5FAF7A"
+        case .sage: return "#7FBF95"
+        case .cobalt: return "#5B7DB8"
+        case .sky: return "#6F95C8"
+        case .iris: return "#7A6FB2"
+        case .amethyst: return "#8B80C2"
+        case .apricot: return "#C69C4F"
+        case .amber: return "#D2AE6A"
+        case .coral: return "#C46A6A"
+        case .rose: return "#C46A6A"
+        case .teal: return "#5FA3A0"
+        case .cyan: return "#5FA3A0"
+        }
     }
 }
 

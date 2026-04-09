@@ -16,45 +16,38 @@ struct HeatmapCellView: View, Equatable {
     }
 
     var body: some View {
-        let glow = max(0, Double(CadenceTokens.Intensity.heatmapGlow))
         let today = Calendar.current.isDateInToday(date)
+        let visuals = IntensityColorEngine.style(
+            for: intensity,
+            baseColor: accent,
+            colorScheme: colorScheme
+        )
 
         RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(cellColor)
+            .fill(visuals.fill)
+            .overlay(luminanceOverlay(opacity: visuals.highlightOpacity))
             .overlay(cellBorderOverlay)
             .overlay(todayOverlay(today: today))
             .overlay(selectionOverlay)
             .shadow(
-                color: isActive
-                    ? accent.opacity((colorScheme == .dark ? 0.1 : 0.12) * glow)
-                    : .clear,
-                radius: isActive ? 1.8 * glow : 0,
-                y: isActive ? 0.8 * glow : 0
+                color: visuals.peakShadowColor.opacity(Double(CadenceTokens.Intensity.heatmapGlow)),
+                radius: visuals.peakShadowRadius * max(0, CadenceTokens.Intensity.heatmapGlow),
+                y: visuals.peakShadowYOffset * max(0, CadenceTokens.Intensity.heatmapGlow)
             )
-    }
-
-    private var cellColor: Color {
-        let clamped = clampedIntensity
-
-        guard clamped > 0 else {
-            return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06)
-        }
-
-        let base = colorScheme == .dark ? 0.58 : 0.54
-        let range = colorScheme == .dark ? 0.36 : 0.42
-        let opacity = min(base + (clamped * range), 1)
-        return accent.opacity(opacity)
-    }
-
-    private var clampedIntensity: Double {
-        min(max(intensity, 0), 1)
+            .scaleEffect(visuals.peakScale)
     }
 
     @ViewBuilder
     private var cellBorderOverlay: some View {
-        if isActive {
+        let visuals = IntensityColorEngine.style(
+            for: intensity,
+            baseColor: accent,
+            colorScheme: colorScheme
+        )
+
+        if visuals.level > 0 {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(accent.opacity(colorScheme == .dark ? 0.46 : 0.36), lineWidth: 1)
+                .stroke(visuals.border, lineWidth: 1)
         } else {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .stroke(
@@ -76,8 +69,28 @@ struct HeatmapCellView: View, Equatable {
         }
     }
 
-    private var isActive: Bool {
-        intensity > 0.001
+    @ViewBuilder
+    private func luminanceOverlay(opacity: Double) -> some View {
+        if opacity > 0 {
+            let overlayTint = IntensityColorEngine.adjustedForScheme(
+                accent,
+                level: max(1, IntensityColorEngine.level(for: intensity)),
+                scheme: colorScheme
+            )
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            overlayTint.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                            overlayTint.opacity(colorScheme == .dark ? 0.08 : 0.06),
+                            .clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .opacity(opacity)
+        }
     }
 
     @ViewBuilder

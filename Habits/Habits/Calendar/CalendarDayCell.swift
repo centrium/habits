@@ -55,7 +55,6 @@ struct CalendarDayCell: View {
     let intensity: Double
     let count: Int
     let indicatorText: String?
-    let softAccent: Color
     let selectedAccent: Color
     let isInDisplayedMonth: Bool
     let isDisabled: Bool
@@ -65,6 +64,14 @@ struct CalendarDayCell: View {
     let calendar: Calendar
     let onTap: () -> Void
     let onLongPress: () -> Void
+
+    private var intensityVisual: IntensityVisualStyle {
+        IntensityColorEngine.style(
+            for: intensity,
+            baseColor: selectedAccent,
+            colorScheme: colorScheme
+        )
+    }
     
     private var backgroundFill: Color {
         if isDisabled {
@@ -75,32 +82,15 @@ struct CalendarDayCell: View {
             return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
         }
 
-        return softAccent.opacity(backgroundOpacity)
-    }
-
-    private var backgroundOpacity: Double {
-        if isDisabled {
-            return 0
+        if isSelected {
+            return selectedAccent.opacity(Layout.selectedBackgroundOpacity)
         }
 
         if !isInDisplayedMonth {
-            return Layout.outOfMonthBackgroundOpacity
+            return Color.primary.opacity(Layout.outOfMonthBackgroundOpacity)
         }
 
-        if isSelected {
-            return Layout.selectedBackgroundOpacity
-        }
-
-        switch count {
-        case 3...:
-            return colorScheme == .light ? 0.18 : Layout.threePlusLogsBackgroundOpacity
-        case 2:
-            return colorScheme == .light ? 0.12 : Layout.twoLogsBackgroundOpacity
-        case 1:
-            return colorScheme == .light ? 0.085 : Layout.oneLogBackgroundOpacity
-        default:
-            return 0
-        }
+        return intensityVisual.fill
     }
 
     private var dayNumber: String {
@@ -174,7 +164,12 @@ struct CalendarDayCell: View {
         }
         .opacity(contentOpacity)
         .frame(width: Layout.cellWidth, height: Layout.cellHeight)
-        .scaleEffect(isPressed ? 1.025 : 1)
+        .scaleEffect((isPressed ? 1.025 : 1) * intensityVisual.peakScale)
+        .shadow(
+            color: intensityVisual.peakShadowColor,
+            radius: intensityVisual.peakShadowRadius,
+            y: intensityVisual.peakShadowYOffset
+        )
         .overlay(selectionOverlay)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -226,7 +221,9 @@ struct CalendarDayCell: View {
                 .strokeBorder(
                     isLocked
                     ? Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.14)
-                    : Color.primary.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
+                    : (intensityVisual.level > 0
+                       ? intensityVisual.border.opacity(colorScheme == .dark ? 0.9 : 0.82)
+                       : Color.primary.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity)),
                     lineWidth: Layout.baseStrokeWidth
                 )
 
@@ -293,7 +290,6 @@ struct CalendarDayCell: View {
                         .strokeBorder(Color.white.opacity(isSelected ? 0.32 : 0.22), lineWidth: 0.4)
                 }
             }
-            .brightness(colorScheme == .dark && !isSelected ? 0.08 : 0)
             .shadow(
                 color: colorScheme == .dark ? selectedAccent.opacity(isSelected ? 0.2 : 0.24) : .clear,
                 radius: colorScheme == .dark ? 1.6 : 0,
@@ -307,10 +303,16 @@ struct CalendarDayCell: View {
             if isSelected {
                 return AnyShapeStyle(Color.white.opacity(0.9))
             }
-
-            return AnyShapeStyle(selectedAccent.opacity(0.96))
+            let level = max(1, intensityVisual.level)
+            return AnyShapeStyle(
+                IntensityColorEngine.adjustedForScheme(
+                    selectedAccent,
+                    level: level,
+                    scheme: colorScheme
+                ).opacity(0.96)
+            )
         }
 
-        return AnyShapeStyle(selectedAccent)
+        return AnyShapeStyle(intensityVisual.fill)
     }
 }

@@ -1,14 +1,11 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#elseif canImport(AppKit)
-import AppKit
-#endif
 
 struct HabitColorVariants {
     let base: Color
     let strong: Color
     let soft: Color
+    let ambient: Color
+    let highlight: Color
 
     // Backward-compatible alias used by existing call sites.
     var accent: Color { strong }
@@ -54,11 +51,12 @@ enum HabitColor: String, CaseIterable, Identifiable {
 
     var variants: HabitColorVariants {
         let light = CadenceColorPalette.light(for: paletteToken)
-        let dark = CadenceColorPalette.dark(for: paletteToken)
         return HabitColorVariants(
-            base: Color.dynamic(lightHex: light.base, darkHex: dark.base),
-            strong: Color.dynamic(lightHex: light.strong, darkHex: dark.strong),
-            soft: Color.dynamic(lightHex: light.soft, darkHex: dark.soft)
+            base: Color(hex: light.base),
+            strong: Color(hex: light.strong),
+            soft: Color(hex: light.soft),
+            ambient: Color(hex: light.soft),
+            highlight: Color(hex: light.strong)
         )
     }
 
@@ -131,49 +129,3 @@ extension Habit {
         curatedColor.variants
     }
 }
-
-private extension Color {
-    static func dynamic(lightHex: String, darkHex: String) -> Color {
-        #if canImport(UIKit)
-        return Color(
-            UIColor { traits in
-                UIColor(hex: traits.userInterfaceStyle == .dark ? darkHex : lightHex)
-            }
-        )
-        #elseif canImport(AppKit)
-        let dynamic = NSColor(name: nil) { appearance in
-            let match = appearance.bestMatch(from: [.darkAqua, .aqua])
-            return NSColor(hex: match == .darkAqua ? darkHex : lightHex)
-        } ?? NSColor(hex: lightHex)
-        return Color(dynamic)
-        #else
-        return Color(hex: lightHex)
-        #endif
-    }
-}
-
-#if canImport(UIKit)
-private extension UIColor {
-    convenience init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r = CGFloat((int >> 16) & 255) / 255
-        let g = CGFloat((int >> 8) & 255) / 255
-        let b = CGFloat(int & 255) / 255
-        self.init(red: r, green: g, blue: b, alpha: 1)
-    }
-}
-#elseif canImport(AppKit)
-private extension NSColor {
-    convenience init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r = CGFloat((int >> 16) & 255) / 255
-        let g = CGFloat((int >> 8) & 255) / 255
-        let b = CGFloat(int & 255) / 255
-        self.init(red: r, green: g, blue: b, alpha: 1)
-    }
-}
-#endif

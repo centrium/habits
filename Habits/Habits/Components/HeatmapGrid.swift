@@ -27,17 +27,25 @@ struct HeatmapGrid: View {
         LazyVGrid(columns: columns, spacing: cellSpacing) {
             ForEach(days, id: \.self) { day in
                 let intensity = intensityFor(day)
+                let visuals = IntensityColorEngine.style(
+                    for: intensity,
+                    baseColor: accent,
+                    colorScheme: colorScheme
+                )
 
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(accent.opacity(intensity))
+                    .fill(visuals.fill)
                     .frame(width: cellSize, height: cellSize)
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
                             .strokeBorder(
-                                Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.07),
+                                visuals.level > 0
+                                    ? visuals.border
+                                    : Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.07),
                                 lineWidth: 1
                             )
                     )
+                    .scaleEffect(visuals.peakScale)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         onTapDay(day)

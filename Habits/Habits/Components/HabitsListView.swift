@@ -57,7 +57,10 @@ struct HabitsListView: View {
                 backgroundColor
                     .ignoresSafeArea()
 
-                TopAmbientGradient(accent: headerAccentColor)
+                TopAmbientGradient(
+                    accent: headerAmbientColor,
+                    highlight: headerHighlightColor
+                )
                     .frame(maxWidth: .infinity, alignment: .top)
                     .ignoresSafeArea()
 
@@ -393,9 +396,16 @@ struct HabitsListView: View {
         ).snapshot(for: habits, now: .now)?.stripSummary
     }
 
-    private var headerAccentColor: Color {
+    private var headerAmbientColor: Color {
         if let firstHabit = firstVisibleHabitForAmbient {
-            return CadenceTokens.Color.accent(for: firstHabit).primary
+            return CadenceTokens.Color.accent(for: firstHabit).ambient
+        }
+        return .systemAccent
+    }
+
+    private var headerHighlightColor: Color {
+        if let firstHabit = firstVisibleHabitForAmbient {
+            return CadenceTokens.Color.accent(for: firstHabit).highlight
         }
         return .systemAccent
     }

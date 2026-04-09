@@ -33,7 +33,7 @@ struct HeatCell: View {
                     .strokeBorder(borderColor, lineWidth: pixelLineWidth)
             )
             .overlay(selectionOverlay)
-            .scaleEffect(isActive ? 1 : 0.96)
+            .scaleEffect(intensityVisual.peakScale)
             .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
             .highPriorityGesture(
@@ -71,14 +71,12 @@ struct HeatCell: View {
         RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
     }
 
-    private var visualIntensity: Double {
-        let base = style.visualIntensity(forLevel: intensityLevel)
-        guard colorScheme == .light, intensityLevel > 0 else { return base }
-        return min(base * 1.12, 1)
-    }
-
-    private var isActive: Bool {
-        intensityLevel > 0
+    private var intensityVisual: IntensityVisualStyle {
+        IntensityColorEngine.style(
+            forLevel: intensityLevel,
+            baseColor: accent,
+            colorScheme: colorScheme
+        )
     }
 
     private var fillColor: Color {
@@ -86,14 +84,14 @@ struct HeatCell: View {
             return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
         }
 
-        guard isActive else {
+        guard intensityVisual.level > 0 else {
             let opacity = colorScheme == .light
                 ? max(0.06, min(style.inactiveFillOpacity * inactiveEmphasis, 1))
                 : min(style.inactiveFillOpacity * inactiveEmphasis, 1)
             return Color.primary.opacity(opacity)
         }
 
-        return accent.opacity(visualIntensity)
+        return intensityVisual.fill
     }
 
     private var borderColor: Color {
@@ -101,19 +99,14 @@ struct HeatCell: View {
             return Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.14)
         }
 
-        guard isActive else {
+        guard intensityVisual.level > 0 else {
             let opacity = colorScheme == .light
                 ? max(0.07, min(style.inactiveStrokeOpacity * inactiveEmphasis, 1))
                 : min(style.inactiveStrokeOpacity * inactiveEmphasis, 1)
             return Color.primary.opacity(opacity)
         }
 
-        return accent.opacity(
-            max(
-                style.activeBorderOpacity(forLevel: intensityLevel),
-                visualIntensity * (colorScheme == .light ? 0.28 : 0.22)
-            )
-        )
+        return intensityVisual.border
     }
 
     private var pixelLineWidth: CGFloat {

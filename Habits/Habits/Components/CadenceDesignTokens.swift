@@ -4,6 +4,8 @@ struct CadenceAccentTokens {
     let primary: Color
     let secondary: Color
     let tertiary: Color
+    let ambient: Color
+    let highlight: Color
 }
 
 enum CadenceTokens {
@@ -34,8 +36,10 @@ enum CadenceTokens {
             let variants = HabitColor.from(hex: hex).variants
             return CadenceAccentTokens(
                 primary: variants.strong,
-                secondary: variants.base.opacity(0.74),
-                tertiary: variants.soft
+                secondary: variants.base,
+                tertiary: variants.soft,
+                ambient: variants.ambient,
+                highlight: variants.highlight
             )
         }
     }

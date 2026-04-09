@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TopAmbientGradient: View {
     let accent: Color
+    let highlight: Color
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -31,14 +32,16 @@ struct TopAmbientGradient: View {
     private var gradientColors: [Color] {
         if colorScheme == .light {
             return [
-                accent.opacity(0.35),
-                accent.opacity(0.18),
+                highlight.opacity(0.22),
+                accent.opacity(0.28),
+                accent.opacity(0.14),
                 .clear
             ]
         } else {
             return [
-                accent.opacity(0.25),
-                accent.opacity(0.12),
+                highlight.opacity(0.24),
+                accent.opacity(0.20),
+                accent.opacity(0.10),
                 .clear
             ]
         }
