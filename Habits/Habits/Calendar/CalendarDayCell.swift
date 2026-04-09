@@ -21,15 +21,15 @@ struct CalendarDayCell: View {
         static let dayTopPadding: CGFloat = 4
         static let middleMinHeight: CGFloat = 6
 
-        static let indicatorAreaHeight: CGFloat = 18
-        static let indicatorCapsuleHeight: CGFloat = 12
+        static let indicatorAreaHeight: CGFloat = 19
+        static let indicatorCapsuleHeight: CGFloat = 13
         static let indicatorBottomPadding: CGFloat = 6
-        static let indicatorHorizontalPadding: CGFloat = 6
+        static let indicatorHorizontalPadding: CGFloat = 7
         static let indicatorVerticalPadding: CGFloat = 0
 
-        static let dotSize: CGFloat = 3
-        static let dotSpacing: CGFloat = 4
-        static let indicatorPlateOpacity: Double = 0.24
+        static let dotSize: CGFloat = 3.4
+        static let dotSpacing: CGFloat = 4.4
+        static let indicatorPlateOpacity: Double = 0.30
         static let indicatorPlateDarkStrokeOpacity: Double = 0.10
 
         static let selectedBackgroundOpacity: Double = 0.72
@@ -241,7 +241,7 @@ struct CalendarDayCell: View {
                 .padding(.vertical, Layout.indicatorVerticalPadding)
                 .background(
                     Capsule()
-                        .fill(Color.primary.opacity(Layout.indicatorPlateOpacity))
+                        .fill(indicatorPlateFill)
                         .overlay {
                             if colorScheme == .dark {
                                 Capsule()
@@ -259,7 +259,7 @@ struct CalendarDayCell: View {
             Text(indicatorText)
                 .id("value-\(indicatorText)")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(indicatorForegroundColor)
                 .lineLimit(1)
                 .allowsTightening(true)
                 .minimumScaleFactor(0.5)
@@ -276,7 +276,7 @@ struct CalendarDayCell: View {
 
                 Text("+\(count - 1)")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(indicatorForegroundColor)
             }
         }
     }
@@ -299,20 +299,58 @@ struct CalendarDayCell: View {
     }
 
     private var dotFill: some ShapeStyle {
-        if colorScheme == .dark {
-            if isSelected {
-                return AnyShapeStyle(Color.white.opacity(0.9))
-            }
-            let level = max(1, intensityVisual.level)
-            return AnyShapeStyle(
-                IntensityColorEngine.adjustedForScheme(
-                    selectedAccent,
-                    level: level,
-                    scheme: colorScheme
-                ).opacity(0.96)
-            )
+        AnyShapeStyle(indicatorDotColor)
+    }
+
+    private var indicatorForegroundColor: Color {
+        if isSelected || colorScheme == .dark {
+            return .white.opacity(0.95)
+        }
+        return intensityVisual.level >= 3
+            ? .white.opacity(0.94)
+            : Color.primary.opacity(0.92)
+    }
+
+    private var indicatorPlateFill: Color {
+        let level = max(1, intensityVisual.level)
+        let contrastedLevel = colorScheme == .dark
+            ? min(5, level + 1)
+            : max(1, level - 1)
+
+        let contrastedAccent = IntensityColorEngine.adjustedForScheme(
+            selectedAccent,
+            level: intensityVisual.level == 0 ? 3 : contrastedLevel,
+            scheme: colorScheme
+        )
+
+        return contrastedAccent.opacity(
+            intensityVisual.level == 0
+                ? (colorScheme == .dark ? 0.34 : 0.28)
+                : Layout.indicatorPlateOpacity
+        )
+    }
+
+    private var indicatorDotColor: Color {
+        if isSelected {
+            return Color.white.opacity(0.9)
         }
 
-        return AnyShapeStyle(intensityVisual.fill)
+        if intensityVisual.level == 0 {
+            return IntensityColorEngine.adjustedForScheme(
+                selectedAccent,
+                level: 2,
+                scheme: colorScheme
+            ).opacity(colorScheme == .dark ? 0.98 : 0.92)
+        }
+
+        let contrastedLevel = colorScheme == .dark
+            ? max(1, intensityVisual.level - 1)
+            : min(5, intensityVisual.level + 1)
+
+        return IntensityColorEngine.adjustedForScheme(
+            selectedAccent,
+            level: contrastedLevel,
+            scheme: colorScheme
+        ).opacity(colorScheme == .dark ? 0.98 : 0.95)
     }
 }

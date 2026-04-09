@@ -7,6 +7,9 @@
 
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct GitHubHeatmapGrid: View {
     let accent: Color
@@ -82,9 +85,9 @@ struct GitHubHeatmapGrid: View {
             }
         }
         .padding(.leading, style.rowLabelLeadingPadding)
-        .padding(.trailing, style.horizontalSpacing + 1)
+        .padding(.trailing, style.horizontalSpacing)
         .frame(
-            width: style.dayLabelWidth + style.rowLabelLeadingPadding + style.horizontalSpacing + 1,
+            width: style.dayLabelWidth + style.rowLabelLeadingPadding + style.horizontalSpacing,
             height: style.monthLabelHeight + style.monthLabelToGridSpacing + gridHeight,
             alignment: .bottomLeading
         )
@@ -97,13 +100,8 @@ struct GitHubHeatmapGrid: View {
                     .font(.caption2)
                     .foregroundStyle(Color.secondary.opacity(style.monthLabelOpacity))
                     .tracking(style.monthLabelTracking)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(
-                        width: max(0, gridWidth - marker.x),
-                        height: style.monthLabelHeight,
-                        alignment: .leading
-                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(height: style.monthLabelHeight, alignment: .leading)
                     .offset(x: marker.x)
             }
         }
@@ -156,31 +154,33 @@ struct GitHubHeatmapGrid: View {
             }
         }
         .frame(width: gridWidth, height: gridHeight, alignment: .leading)
-        .clipped()
     }
 
     private var scrollableGrid: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: style.monthLabelToGridSpacing) {
-                    monthLabels
-                    gridColumns
+            HStack(alignment: .top, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: style.monthLabelToGridSpacing) {
+                        monthLabels
+                        gridColumns
+                    }
+                    .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
+
+                    if let premiumLockPosition {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: max(8, style.cellSize * 0.62), weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: style.cellSize, height: style.cellSize)
+                            .position(x: premiumLockPosition.x, y: premiumLockPosition.y)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
-                .clipped()
 
-                if let premiumLockPosition {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: max(8, style.cellSize * 0.62), weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: style.cellSize, height: style.cellSize)
-                        .position(x: premiumLockPosition.x, y: premiumLockPosition.y)
-                        .allowsHitTesting(false)
-                }
+                Color.clear
+                    .frame(width: style.rightEdgeFadeWidth, height: contentHeight)
             }
-            .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
-            .padding(.trailing, style.rightEdgeFadeWidth)
-            .clipped()
+            .frame(width: scrollContentWidth, height: contentHeight, alignment: .leading)
         }
         .defaultScrollAnchor(.trailing)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,24 +228,51 @@ struct GitHubHeatmapGrid: View {
         return (columns * style.cellSize) + (spacingColumns * style.horizontalSpacing)
     }
 
+    private var scrollContentWidth: CGFloat {
+        gridWidth + style.rightEdgeFadeWidth
+    }
+
     private var monthMarkers: [MonthMarker] {
         Array(weeks.enumerated()).compactMap { index, week in
             let isMonthBoundary = index == 0 || week.month != weeks[index - 1].month
             guard isMonthBoundary else { return nil }
-
-            if let nextIndex = weeks.indices.dropFirst(index + 1).first(where: {
+            let label = monthLabel(for: week.id)
+            let startX = xPosition(forColumn: index)
+            let nextBoundaryIndex = weeks.indices.dropFirst(index + 1).first(where: {
                 weeks[$0].month != week.month
-            }) {
+            })
+            let nextBoundaryX = nextBoundaryIndex.map(xPosition(forColumn:)) ?? gridWidth
+            let availableWidth = max(0, nextBoundaryX - startX - style.horizontalSpacing)
+
+            if let nextIndex = nextBoundaryIndex {
                 let distance = nextIndex - index
                 guard distance >= 3 else { return nil }
             }
+            guard monthLabelFits(label, in: availableWidth) else { return nil }
 
             return MonthMarker(
                 id: index,
-                label: monthLabel(for: week.id),
-                x: xPosition(forColumn: index)
+                label: label,
+                x: startX
             )
         }
+    }
+
+    private func monthLabelFits(_ label: String, in availableWidth: CGFloat) -> Bool {
+        availableWidth >= monthLabelWidth(label)
+    }
+
+    private func monthLabelWidth(_ label: String) -> CGFloat {
+        #if canImport(UIKit)
+        let font = UIFont.preferredFont(forTextStyle: .caption2)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .kern: style.monthLabelTracking
+        ]
+        return ceil((label as NSString).size(withAttributes: attributes).width)
+        #else
+        return CGFloat(label.count) * 7
+        #endif
     }
 
     private var premiumBoundaryWeekIndex: Int? {
