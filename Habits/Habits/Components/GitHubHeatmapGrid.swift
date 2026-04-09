@@ -12,7 +12,7 @@ import UIKit
 #endif
 
 struct GitHubHeatmapGrid: View {
-    let accent: Color
+    let habitColor: HabitColor
     let selectionAccent: Color
     let style: HeatmapStyleConfiguration
     let calendarProvider: CalendarProvider
@@ -20,7 +20,7 @@ struct GitHubHeatmapGrid: View {
     let selectedDate: Date
     let isInteractive: Bool
     let isDateLocked: (Date) -> Bool
-    private let intensityByDate: [Date: Double]
+    private let logCountByDate: [Date: Int]
     private let lockedDates: Set<Date>
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
@@ -34,7 +34,7 @@ struct GitHubHeatmapGrid: View {
     }
 
     init(
-        accent: Color,
+        habitColor: HabitColor,
         selectionAccent: Color,
         style: HeatmapStyleConfiguration,
         calendarProvider: CalendarProvider,
@@ -42,12 +42,12 @@ struct GitHubHeatmapGrid: View {
         selectedDate: Date,
         isInteractive: Bool,
         isDateLocked: @escaping (Date) -> Bool,
-        intensityByDate: [Date: Double],
+        logCountByDate: [Date: Int],
         lockedDates: Set<Date>,
         onTapDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void
     ) {
-        self.accent = accent
+        self.habitColor = habitColor
         self.selectionAccent = selectionAccent
         self.style = style
         self.calendarProvider = calendarProvider
@@ -55,7 +55,7 @@ struct GitHubHeatmapGrid: View {
         self.selectedDate = selectedDate
         self.isInteractive = isInteractive
         self.isDateLocked = isDateLocked
-        self.intensityByDate = intensityByDate
+        self.logCountByDate = logCountByDate
         self.lockedDates = lockedDates
         self.onTapDay = onTapDay
         self.onTapLockedDay = onTapLockedDay
@@ -105,7 +105,7 @@ struct GitHubHeatmapGrid: View {
                     .offset(x: marker.x)
             }
         }
-        .frame(width: gridWidth, height: style.monthLabelHeight, alignment: .leading)
+        .frame(width: gridWidth + gridTrailingInset, height: style.monthLabelHeight, alignment: .leading)
         .clipped()
     }
 
@@ -119,14 +119,14 @@ struct GitHubHeatmapGrid: View {
                         if let day {
                             let normalizedDay = calendarProvider.calendar.startOfDay(for: day)
                             let isLockedDay = lockedDates.contains(normalizedDay)
-                            let intensity = intensityByDate[normalizedDay] ?? 0
+                            let logCount = logCountByDate[normalizedDay] ?? 0
 
                             EquatableView(
                                 content: HeatmapCellView(
                                     date: normalizedDay,
                                     isSelected: calendarProvider.calendar.isDate(normalizedDay, inSameDayAs: selectedDate),
-                                    intensity: intensity,
-                                    accent: accent,
+                                    logCount: logCount,
+                                    habitColor: habitColor,
                                     selectionAccent: selectionAccent
                                 )
                             )
@@ -164,7 +164,7 @@ struct GitHubHeatmapGrid: View {
                         monthLabels
                         gridColumns
                     }
-                    .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
+                    .frame(width: gridWidth + gridTrailingInset, height: contentHeight, alignment: .topLeading)
 
                     if let premiumLockPosition {
                         Image(systemName: "lock.fill")
@@ -175,7 +175,7 @@ struct GitHubHeatmapGrid: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .frame(width: gridWidth, height: contentHeight, alignment: .topLeading)
+                .frame(width: gridWidth + gridTrailingInset, height: contentHeight, alignment: .topLeading)
 
                 Color.clear
                     .frame(width: style.rightEdgeFadeWidth, height: contentHeight)
@@ -229,7 +229,11 @@ struct GitHubHeatmapGrid: View {
     }
 
     private var scrollContentWidth: CGFloat {
-        gridWidth + style.rightEdgeFadeWidth
+        gridWidth + gridTrailingInset + style.rightEdgeFadeWidth
+    }
+
+    private var gridTrailingInset: CGFloat {
+        3
     }
 
     private var monthMarkers: [MonthMarker] {
@@ -241,7 +245,7 @@ struct GitHubHeatmapGrid: View {
             let nextBoundaryIndex = weeks.indices.dropFirst(index + 1).first(where: {
                 weeks[$0].month != week.month
             })
-            let nextBoundaryX = nextBoundaryIndex.map(xPosition(forColumn:)) ?? gridWidth
+            let nextBoundaryX = nextBoundaryIndex.map(xPosition(forColumn:)) ?? (gridWidth + gridTrailingInset)
             let availableWidth = max(0, nextBoundaryX - startX - style.horizontalSpacing)
 
             if let nextIndex = nextBoundaryIndex {

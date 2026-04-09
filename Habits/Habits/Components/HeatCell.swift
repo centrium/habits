@@ -72,11 +72,7 @@ struct HeatCell: View {
     }
 
     private var intensityVisual: IntensityVisualStyle {
-        IntensityColorEngine.style(
-            forLevel: intensityLevel,
-            baseColor: accent,
-            colorScheme: colorScheme
-        )
+        IntensityColorEngine.style(forLevel: intensityLevel, colorScheme: colorScheme)
     }
 
     private var fillColor: Color {

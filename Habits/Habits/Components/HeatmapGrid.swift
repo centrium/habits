@@ -28,8 +28,7 @@ struct HeatmapGrid: View {
             ForEach(days, id: \.self) { day in
                 let intensity = intensityFor(day)
                 let visuals = IntensityColorEngine.style(
-                    for: intensity,
-                    baseColor: accent,
+                    forLevel: IntensityColorEngine.level(for: intensity),
                     colorScheme: colorScheme
                 )
 

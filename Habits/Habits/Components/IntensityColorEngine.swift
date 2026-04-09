@@ -1,235 +1,149 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
 struct IntensityVisualStyle {
     let level: Int
     let fill: Color
     let border: Color
-    let highlightOpacity: Double
     let peakScale: CGFloat
     let peakShadowColor: Color
     let peakShadowRadius: CGFloat
     let peakShadowYOffset: CGFloat
 }
 
+struct HeatmapPalette {
+    let levels: [Color]
+    let borders: [Color]
+}
+
 enum IntensityColorEngine {
-    static func color(for intensity: Double, baseColor: Color, colorScheme: ColorScheme) -> Color {
-        style(for: intensity, baseColor: baseColor, colorScheme: colorScheme).fill
+    private static let neutralLightFill = Color.black.opacity(0.055)
+    private static let neutralLightBorder = Color.black.opacity(0.12)
+    private static let neutralDarkFill = Color.white.opacity(0.08)
+    private static let neutralDarkBorder = Color.white.opacity(0.16)
+
+    static func color(forLogCount logCount: Int, habitColor: HabitColor, colorScheme: ColorScheme) -> Color {
+        style(forLogCount: logCount, habitColor: habitColor, colorScheme: colorScheme).fill
     }
 
-    static func style(for intensity: Double, baseColor: Color, colorScheme: ColorScheme) -> IntensityVisualStyle {
-        let level = level(for: intensity)
-        let peakOverflow = peakOverflowFactor(for: intensity)
-
-        guard level > 0 else {
-            return style(forLevel: 0, baseColor: baseColor, colorScheme: colorScheme)
-        }
-
-        let adjusted = tunedColor(
-            baseColor: baseColor,
-            level: level,
-            colorScheme: colorScheme,
-            peakOverflow: peakOverflow
-        )
-        let border = borderColor(
-            from: adjusted,
-            level: level,
-            colorScheme: colorScheme,
-            peakOverflow: peakOverflow
-        )
-        let highlight = highlightOpacity(
-            for: level,
-            colorScheme: colorScheme,
-            peakOverflow: peakOverflow
-        )
-        let isPeak = level == 5
-
-        return IntensityVisualStyle(
-            level: level,
-            fill: adjusted,
-            border: border,
-            highlightOpacity: highlight,
-            peakScale: isPeak ? (1.03 + (0.02 * peakOverflow)) : 1,
-            peakShadowColor: isPeak
-                ? adjusted.opacity((colorScheme == .dark ? 0.17 : 0.12) + (0.05 * peakOverflow))
-                : .clear,
-            peakShadowRadius: isPeak ? (2.0 + (0.8 * peakOverflow)) : 0,
-            peakShadowYOffset: isPeak ? (0.7 + (0.2 * peakOverflow)) : 0
-        )
+    static func style(forLogCount logCount: Int, habitColor: HabitColor, colorScheme: ColorScheme) -> IntensityVisualStyle {
+        style(forLevel: level(forLogCount: logCount), habitColor: habitColor, colorScheme: colorScheme)
     }
 
-    static func style(forLevel level: Int, baseColor: Color, colorScheme: ColorScheme) -> IntensityVisualStyle {
+    static func style(forLevel level: Int, habitColor: HabitColor, colorScheme: ColorScheme) -> IntensityVisualStyle {
         let normalizedLevel = max(0, min(level, 5))
-
-        guard normalizedLevel > 0 else {
-            let neutralFill = Color.primary.opacity(colorScheme == .dark ? 0.085 : 0.058)
-            let neutralBorder = Color.primary.opacity(colorScheme == .dark ? 0.115 : 0.074)
-            return IntensityVisualStyle(
-                level: 0,
-                fill: neutralFill,
-                border: neutralBorder,
-                highlightOpacity: 0,
-                peakScale: 1,
-                peakShadowColor: .clear,
-                peakShadowRadius: 0,
-                peakShadowYOffset: 0
-            )
-        }
-
-        let adjusted = tunedColor(baseColor: baseColor, level: normalizedLevel, colorScheme: colorScheme)
-        let border = borderColor(from: adjusted, level: normalizedLevel, colorScheme: colorScheme)
-        let highlight = highlightOpacity(for: normalizedLevel, colorScheme: colorScheme)
         let isPeak = normalizedLevel == 5
+        let palette = palette(for: habitColor, colorScheme: colorScheme)
 
         return IntensityVisualStyle(
             level: normalizedLevel,
-            fill: adjusted,
-            border: border,
-            highlightOpacity: highlight,
-            peakScale: isPeak ? 1.04 : 1,
-            peakShadowColor: isPeak ? adjusted.opacity(colorScheme == .dark ? 0.17 : 0.12) : .clear,
-            peakShadowRadius: isPeak ? 2.0 : 0,
-            peakShadowYOffset: isPeak ? 0.7 : 0
+            fill: palette.levels[normalizedLevel],
+            border: palette.borders[normalizedLevel],
+            peakScale: isPeak ? 1.03 : 1,
+            peakShadowColor: .clear,
+            peakShadowRadius: 0,
+            peakShadowYOffset: 0
         )
+    }
+
+    static func level(forLogCount logCount: Int) -> Int {
+        min(max(logCount, 0), 5)
+    }
+
+    static func style(forLevel level: Int, colorScheme: ColorScheme) -> IntensityVisualStyle {
+        style(forLevel: level, habitColor: .default, colorScheme: colorScheme)
     }
 
     static func level(for intensity: Double) -> Int {
-        let clamped = min(max(intensity, 0), 1.0)
-        guard clamped > 0.0001 else { return 0 }
-
-        switch clamped {
-        case ..<0.16: return 1
-        case ..<0.34: return 2
-        case ..<0.56: return 3
-        case ..<0.78: return 4
-        default: return 5
+        switch intensity {
+        case ..<0.001:
+            return 0
+        case ..<0.2:
+            return 1
+        case ..<0.4:
+            return 2
+        case ..<0.7:
+            return 3
+        case ..<1.0:
+            return 4
+        default:
+            return 5
         }
     }
 
-    private static func tunedColor(
-        baseColor: Color,
-        level: Int,
-        colorScheme: ColorScheme,
-        peakOverflow: Double = 0
-    ) -> Color {
-        #if canImport(UIKit)
-        var adjusted = adjustedForScheme(baseColor, level: level, scheme: colorScheme)
+    private static func palette(for habitColor: HabitColor, colorScheme: ColorScheme) -> HeatmapPalette {
+        let token = cadenceToken(for: habitColor)
+        let tones = CadenceColorPalette.light(for: token)
+        let base = tones.base
 
-        guard peakOverflow > 0 else {
-            return adjusted
-        }
+        if colorScheme == .dark {
+            // Monotonic dark-mode ramp: each level gets brighter and more chromatic.
+            let lv1 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.78)
+            let lv2 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.64)
+            let lv3 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.50)
+            let lv4 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.34)
+            let lv5 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.16)
 
-        let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
-        let resolved = UIColor(adjusted).resolvedColor(with: traits)
-
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        guard resolved.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
-            return adjusted
-        }
-
-        let overflow = CGFloat(max(0, min(peakOverflow, 1)))
-        saturation = clamp01(saturation + (colorScheme == .dark ? 0.04 : 0.03) * overflow)
-        brightness = clamp01(brightness + (colorScheme == .dark ? 0.08 : 0.06) * overflow)
-
-        adjusted = Color(
-            UIColor(
-                hue: hue,
-                saturation: saturation,
-                brightness: brightness,
-                alpha: alpha
+            return HeatmapPalette(
+                levels: [
+                    neutralDarkFill,
+                    Color(hex: lv1),
+                    Color(hex: lv2),
+                    Color(hex: lv3),
+                    Color(hex: lv4),
+                    Color(hex: lv5)
+                ],
+                borders: [
+                    neutralDarkBorder,
+                    Color(hex: CadenceColorPalette.mix(hex: lv1, with: "#FFFFFF", towardSecond: 0.14)),
+                    Color(hex: CadenceColorPalette.mix(hex: lv2, with: "#FFFFFF", towardSecond: 0.16)),
+                    Color(hex: CadenceColorPalette.mix(hex: lv3, with: "#FFFFFF", towardSecond: 0.18)),
+                    Color(hex: CadenceColorPalette.mix(hex: lv4, with: "#FFFFFF", towardSecond: 0.20)),
+                    Color(hex: CadenceColorPalette.mix(hex: lv5, with: "#FFFFFF", towardSecond: 0.24))
+                ]
             )
+        }
+
+        // Monotonic light-mode ramp: each level gets deeper and more chromatic.
+        let lv1 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.78)
+        let lv2 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.64)
+        let lv3 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.50)
+        let lv4 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.36)
+        let lv5 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.22)
+
+        return HeatmapPalette(
+            levels: [
+                neutralLightFill,
+                Color(hex: lv1),
+                Color(hex: lv2),
+                Color(hex: lv3),
+                Color(hex: lv4),
+                Color(hex: lv5)
+            ],
+            borders: [
+                neutralLightBorder,
+                Color(hex: CadenceColorPalette.mix(hex: lv1, with: "#000000", towardSecond: 0.10)),
+                Color(hex: CadenceColorPalette.mix(hex: lv2, with: "#000000", towardSecond: 0.12)),
+                Color(hex: CadenceColorPalette.mix(hex: lv3, with: "#000000", towardSecond: 0.14)),
+                Color(hex: CadenceColorPalette.mix(hex: lv4, with: "#000000", towardSecond: 0.16)),
+                Color(hex: CadenceColorPalette.mix(hex: lv5, with: "#000000", towardSecond: 0.18))
+            ]
         )
-        return adjusted
-        #else
-        return baseColor.opacity(defaultOpacity(for: level, colorScheme: colorScheme))
-        #endif
     }
 
-    static func adjustedForScheme(_ color: Color, level: Int, scheme: ColorScheme) -> Color {
-        #if canImport(UIKit)
-        let idx = max(1, min(level, 5))
-        let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
-        let resolved = UIColor(color).resolvedColor(with: traits)
-
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        guard resolved.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
-            return color.opacity(defaultOpacity(for: idx, colorScheme: scheme))
+    private static func cadenceToken(for habitColor: HabitColor) -> CadencePaletteToken {
+        switch habitColor {
+        case .fern: return .fern
+        case .sage: return .sage
+        case .cobalt: return .cobalt
+        case .sky: return .sky
+        case .iris: return .iris
+        case .amethyst: return .amethyst
+        case .apricot: return .apricot
+        case .amber: return .amber
+        case .coral: return .coral
+        case .rose: return .rose
+        case .teal: return .teal
+        case .cyan: return .cyan
         }
-
-        let darkBrightnessDelta: [CGFloat] = [0, -0.06, -0.03, 0.00, 0.04, 0.08]
-        let lightBrightnessDelta: [CGFloat] = [0, -0.05, -0.02, 0.00, 0.02, 0.04]
-        let darkSaturationScale: [CGFloat] = [0, 0.98, 1.00, 1.01, 1.02, 1.03]
-        let lightSaturationScale: [CGFloat] = [0, 0.99, 1.00, 1.00, 1.01, 1.02]
-
-        let brightnessDelta = (scheme == .dark ? darkBrightnessDelta : lightBrightnessDelta)[idx]
-        let saturationScale = (scheme == .dark ? darkSaturationScale : lightSaturationScale)[idx]
-
-        let outSaturation = clamp01(saturation * saturationScale)
-        let outBrightness = clamp01(brightness + brightnessDelta)
-        let outAlpha = CGFloat(defaultOpacity(for: idx, colorScheme: scheme))
-
-        return Color(
-            UIColor(
-                hue: hue,
-                saturation: outSaturation,
-                brightness: outBrightness,
-                alpha: outAlpha
-            )
-        )
-        #else
-        return color.opacity(defaultOpacity(for: max(1, min(level, 5)), colorScheme: scheme))
-        #endif
-    }
-
-    private static func defaultOpacity(for level: Int, colorScheme: ColorScheme) -> Double {
-        let light = [0.0, 0.62, 0.73, 0.84, 0.93, 1.0]
-        let dark = [0.0, 0.68, 0.79, 0.89, 0.95, 1.0]
-        return (colorScheme == .dark ? dark : light)[max(0, min(level, 5))]
-    }
-
-    private static func borderColor(
-        from fill: Color,
-        level: Int,
-        colorScheme: ColorScheme,
-        peakOverflow: Double = 0
-    ) -> Color {
-        let light = [0.0, 0.24, 0.32, 0.44, 0.58, 0.70]
-        let dark = [0.0, 0.30, 0.40, 0.52, 0.64, 0.78]
-        var opacity = (colorScheme == .dark ? dark : light)[max(0, min(level, 5))]
-        if level == 5 {
-            opacity += 0.08 * peakOverflow
-        }
-        return fill.opacity(min(opacity, 0.9))
-    }
-
-    private static func highlightOpacity(
-        for level: Int,
-        colorScheme: ColorScheme,
-        peakOverflow: Double = 0
-    ) -> Double {
-        let light = [0.0, 0.20, 0.28, 0.38, 0.50, 0.62]
-        let dark = [0.0, 0.14, 0.20, 0.28, 0.36, 0.48]
-        var opacity = (colorScheme == .dark ? dark : light)[max(0, min(level, 5))]
-        if level == 5 {
-            opacity += (colorScheme == .dark ? 0.10 : 0.08) * peakOverflow
-        }
-        return min(opacity, colorScheme == .dark ? 0.62 : 0.74)
-    }
-
-    private static func peakOverflowFactor(for intensity: Double) -> Double {
-        let overflow = max(0, intensity - 1)
-        return min(overflow / 0.55, 1)
-    }
-
-    private static func clamp01(_ value: CGFloat) -> CGFloat {
-        min(max(value, 0), 1)
     }
 }

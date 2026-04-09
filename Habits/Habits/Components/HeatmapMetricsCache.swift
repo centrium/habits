@@ -13,7 +13,7 @@ final class HeatmapMetricsCache {
 
     struct Entry {
         let dayMetrics: [Date: HabitDayMetrics]
-        let intensityMap: [Date: Double]
+        let logCountMap: [Date: Int]
         let days: [Date]
     }
 

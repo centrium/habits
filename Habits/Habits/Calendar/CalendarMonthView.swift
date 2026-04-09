@@ -116,11 +116,9 @@ struct CalendarMonthView: View {
 
                             CalendarDayCell(
                                 date: day,
-                                intensity: isLockedDay
-                                    ? 0
-                                    : HeatmapRenderIntensity.value(for: metrics, habit: habit),
                                 count: count,
                                 indicatorText: indicatorText,
+                                habitColor: habit.curatedColor,
                                 selectedAccent: habit.curatedColorVariants.strong,
                                 isInDisplayedMonth: isInDisplayedMonth,
                                 isDisabled: isDisabledDay,

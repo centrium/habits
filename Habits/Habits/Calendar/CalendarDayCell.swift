@@ -47,14 +47,14 @@ struct CalendarDayCell: View {
         static let selectedStrokeWidth: CGFloat = 1.5
         static let todayStrokeWidth: CGFloat = 1
         static let baseStrokeWidth: CGFloat = 0.8
-        static let baseStrokeDarkOpacity: Double = 0.10
-        static let baseStrokeLightOpacity: Double = 0.06
+        static let baseStrokeDarkOpacity: Double = 0.14
+        static let baseStrokeLightOpacity: Double = 0.09
     }
 
     let date: Date
-    let intensity: Double
     let count: Int
     let indicatorText: String?
+    let habitColor: HabitColor
     let selectedAccent: Color
     let isInDisplayedMonth: Bool
     let isDisabled: Bool
@@ -67,8 +67,8 @@ struct CalendarDayCell: View {
 
     private var intensityVisual: IntensityVisualStyle {
         IntensityColorEngine.style(
-            for: intensity,
-            baseColor: selectedAccent,
+            forLogCount: count,
+            habitColor: habitColor,
             colorScheme: colorScheme
         )
     }
@@ -110,11 +110,19 @@ struct CalendarDayCell: View {
             return .white.opacity(0.95)
         }
 
-        if isInDisplayedMonth {
-            return .primary
+        if intensityVisual.level >= 3 {
+            return Color.black.opacity(colorScheme == .dark ? 0.86 : 0.80)
         }
 
-        return Color.primary.opacity(0.42)
+        if intensityVisual.level > 0 {
+            return Color.black.opacity(colorScheme == .dark ? 0.90 : 0.84)
+        }
+
+        if isInDisplayedMonth {
+            return Color.primary.opacity(0.78)
+        }
+
+        return Color.primary.opacity(0.54)
     }
 
     private var contentOpacity: Double {
@@ -303,31 +311,27 @@ struct CalendarDayCell: View {
     }
 
     private var indicatorForegroundColor: Color {
-        if isSelected || colorScheme == .dark {
+        if isSelected {
             return .white.opacity(0.95)
         }
-        return intensityVisual.level >= 3
-            ? .white.opacity(0.94)
-            : Color.primary.opacity(0.92)
+
+        if intensityVisual.level > 0 {
+            return Color.black.opacity(colorScheme == .dark ? 0.78 : 0.72)
+        }
+
+        return colorScheme == .dark ? .white.opacity(0.90) : Color.primary.opacity(0.72)
     }
 
     private var indicatorPlateFill: Color {
-        let level = max(1, intensityVisual.level)
-        let contrastedLevel = colorScheme == .dark
-            ? min(5, level + 1)
-            : max(1, level - 1)
+        if isSelected {
+            return Color.white.opacity(colorScheme == .dark ? 0.30 : 0.26)
+        }
 
-        let contrastedAccent = IntensityColorEngine.adjustedForScheme(
-            selectedAccent,
-            level: intensityVisual.level == 0 ? 3 : contrastedLevel,
-            scheme: colorScheme
-        )
+        if intensityVisual.level > 0 {
+            return Color.white.opacity(colorScheme == .dark ? 0.30 : 0.26)
+        }
 
-        return contrastedAccent.opacity(
-            intensityVisual.level == 0
-                ? (colorScheme == .dark ? 0.34 : 0.28)
-                : Layout.indicatorPlateOpacity
-        )
+        return Color.white.opacity(colorScheme == .dark ? 0.14 : 0.20)
     }
 
     private var indicatorDotColor: Color {
@@ -335,22 +339,10 @@ struct CalendarDayCell: View {
             return Color.white.opacity(0.9)
         }
 
-        if intensityVisual.level == 0 {
-            return IntensityColorEngine.adjustedForScheme(
-                selectedAccent,
-                level: 2,
-                scheme: colorScheme
-            ).opacity(colorScheme == .dark ? 0.98 : 0.92)
+        if intensityVisual.level > 0 {
+            return Color.black.opacity(colorScheme == .dark ? 0.72 : 0.64)
         }
 
-        let contrastedLevel = colorScheme == .dark
-            ? max(1, intensityVisual.level - 1)
-            : min(5, intensityVisual.level + 1)
-
-        return IntensityColorEngine.adjustedForScheme(
-            selectedAccent,
-            level: contrastedLevel,
-            scheme: colorScheme
-        ).opacity(colorScheme == .dark ? 0.98 : 0.95)
+        return colorScheme == .dark ? .white.opacity(0.86) : Color.primary.opacity(0.62)
     }
 }

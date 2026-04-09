@@ -5,27 +5,27 @@ struct HeatmapCellView: View, Equatable {
 
     let date: Date
     let isSelected: Bool
-    let intensity: Double
-    let accent: Color
+    let logCount: Int
+    let habitColor: HabitColor
     let selectionAccent: Color
 
     static func == (lhs: HeatmapCellView, rhs: HeatmapCellView) -> Bool {
         lhs.date == rhs.date &&
         lhs.isSelected == rhs.isSelected &&
-        lhs.intensity == rhs.intensity
+        lhs.logCount == rhs.logCount &&
+        lhs.habitColor == rhs.habitColor
     }
 
     var body: some View {
         let today = Calendar.current.isDateInToday(date)
         let visuals = IntensityColorEngine.style(
-            for: intensity,
-            baseColor: accent,
+            forLogCount: logCount,
+            habitColor: habitColor,
             colorScheme: colorScheme
         )
 
         RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(visuals.fill)
-            .overlay(luminanceOverlay(opacity: visuals.highlightOpacity))
             .overlay(cellBorderOverlay)
             .overlay(todayOverlay(today: today))
             .overlay(selectionOverlay)
@@ -40,21 +40,13 @@ struct HeatmapCellView: View, Equatable {
     @ViewBuilder
     private var cellBorderOverlay: some View {
         let visuals = IntensityColorEngine.style(
-            for: intensity,
-            baseColor: accent,
+            forLogCount: logCount,
+            habitColor: habitColor,
             colorScheme: colorScheme
         )
 
-        if visuals.level > 0 {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(visuals.border, lineWidth: 1)
-        } else {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(
-                    Color.primary.opacity(colorScheme == .dark ? 0.09 : 0.06),
-                    lineWidth: 1
-                )
-        }
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .stroke(visuals.border, lineWidth: 1)
     }
 
     @ViewBuilder
@@ -66,30 +58,6 @@ struct HeatmapCellView: View, Equatable {
                     lineWidth: colorScheme == .dark ? 1.4 : 1.2
                 )
                 .scaleEffect(1.04)
-        }
-    }
-
-    @ViewBuilder
-    private func luminanceOverlay(opacity: Double) -> some View {
-        if opacity > 0 {
-            let overlayTint = IntensityColorEngine.adjustedForScheme(
-                accent,
-                level: max(1, IntensityColorEngine.level(for: intensity)),
-                scheme: colorScheme
-            )
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            overlayTint.opacity(colorScheme == .dark ? 0.22 : 0.16),
-                            overlayTint.opacity(colorScheme == .dark ? 0.08 : 0.06),
-                            .clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .opacity(opacity)
         }
     }
 

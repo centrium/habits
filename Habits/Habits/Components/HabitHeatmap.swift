@@ -60,9 +60,6 @@ struct HabitHeatmap: View {
         let foreground: Color
         let background: Color
         let border: Color
-        let heatmapSaturation: Double
-        let heatmapContrast: Double
-        let heatmapBrightness: Double
     }
 
     private var gridHeight: CGFloat {
@@ -127,13 +124,13 @@ struct HabitHeatmap: View {
         let entry = cache.entry(key: cacheKey) {
             let dayMetrics = service.dayMetrics(for: habit, on: fullGridDays)
 
-            let intensityMap = Dictionary(uniqueKeysWithValues: fullGridDays.map { day in
-                (day, computeIntensity(for: day, dayMetrics: dayMetrics, lockGate: lockGate))
+            let logCountMap = Dictionary(uniqueKeysWithValues: fullGridDays.map { day in
+                (day, computeLogCount(for: day, dayMetrics: dayMetrics, lockGate: lockGate))
             })
 
             return HeatmapMetricsCache.Entry(
                 dayMetrics: dayMetrics,
-                intensityMap: intensityMap,
+                logCountMap: logCountMap,
                 days: fullGridDays
             )
         }
@@ -145,7 +142,7 @@ struct HabitHeatmap: View {
         })
 
         return GitHubHeatmapGrid(
-            accent: accent,
+            habitColor: habit.curatedColor,
             selectionAccent: accent,
             style: style,
             calendarProvider: calendarProvider,
@@ -155,7 +152,7 @@ struct HabitHeatmap: View {
             isDateLocked: { day in
                 lockGate.isLocked(date: day)
             },
-            intensityByDate: entry.intensityMap,
+            logCountByDate: entry.logCountMap,
             lockedDates: lockedDates,
             onTapDay: { day in
                 onSelectDay(day)
@@ -176,21 +173,17 @@ struct HabitHeatmap: View {
             .map { calendarProvider.calendar.startOfDay(for: $0) }
     }
 
-    private func computeIntensity(
+    private func computeLogCount(
         for day: Date,
         dayMetrics: [Date: HabitDayMetrics],
         lockGate: PremiumHistoryGate.Context
-    ) -> Double {
+    ) -> Int {
         if lockGate.isLocked(date: day) {
             return 0
         }
 
         let metrics = dayMetrics[day] ?? .zero
-        return HeatmapRenderIntensity.value(for: metrics, habit: habit)
-    }
-
-    private func clamp(_ value: Double) -> Double {
-        min(max(value, 0), 1)
+        return metrics.count
     }
     
     private var compactHeatmap: some View {
@@ -219,9 +212,6 @@ struct HabitHeatmap: View {
         .id(revision)
         .padding(.top, 6)
         .padding(.bottom, 4)
-        .saturation(identityStateVisualStyle.heatmapSaturation)
-        .contrast(identityStateVisualStyle.heatmapContrast)
-        .brightness(identityStateVisualStyle.heatmapBrightness)
         .frame(height: 40)
     }
     
@@ -234,57 +224,16 @@ struct HabitHeatmap: View {
 
         return LazyVGrid(columns: columns, spacing: 2.5) {
             ForEach(days, id: \.self) { day in
-                let raw = HeatmapRenderIntensity.value(
-                    for: dayMetrics[day] ?? .zero,
-                    habit: habit
-                )
-                let visuals = IntensityColorEngine.style(
-                    for: raw,
-                    baseColor: accent,
-                    colorScheme: colorScheme
-                )
+                let metrics = dayMetrics[day] ?? .zero
 
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(visuals.fill)
+                HeatmapCellView(
+                    date: day,
+                    isSelected: false,
+                    logCount: metrics.count,
+                    habitColor: habit.curatedColor,
+                    selectionAccent: accent
+                )
                     .frame(height: 14)
-                    .opacity(raw > 0.001 ? 1 : 0.9)
-                    .scaleEffect(visuals.peakScale)
-                    .overlay {
-                        if visuals.level > 0 {
-                            let overlayTint = IntensityColorEngine.adjustedForScheme(
-                                accent,
-                                level: visuals.level,
-                                scheme: colorScheme
-                            )
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            overlayTint.opacity(colorScheme == .dark ? 0.22 : 0.16),
-                                            overlayTint.opacity(colorScheme == .dark ? 0.08 : 0.06),
-                                            .clear
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .opacity(visuals.highlightOpacity)
-                        }
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(
-                                visuals.level > 0
-                                    ? visuals.border
-                                    : Color.primary.opacity(colorScheme == .dark ? 0.09 : 0.06),
-                                lineWidth: 1
-                            )
-                    }
-                    .shadow(
-                        color: visuals.peakShadowColor.opacity(Double(CadenceTokens.Intensity.heatmapGlow)),
-                        radius: visuals.peakShadowRadius * max(0, CadenceTokens.Intensity.heatmapGlow),
-                        y: visuals.peakShadowYOffset * max(0, CadenceTokens.Intensity.heatmapGlow)
-                    )
                     .overlay {
                         if calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 4)
@@ -294,7 +243,7 @@ struct HabitHeatmap: View {
                                 )
                         }
                     }
-                    .animation(.easeOut(duration: 0.14), value: raw)
+                    .animation(.easeOut(duration: 0.14), value: metrics.count)
             }
         }
     }
@@ -339,37 +288,25 @@ struct HabitHeatmap: View {
             return IdentityStateVisualStyle(
                 foreground: Color.primary.opacity(colorScheme == .dark ? 0.83 : 0.8),
                 background: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.09),
-                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
-                heatmapSaturation: 1,
-                heatmapContrast: 1,
-                heatmapBrightness: 0
+                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
             )
         case .building:
             return IdentityStateVisualStyle(
                 foreground: Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.84),
                 background: softAccent.opacity(colorScheme == .dark ? 0.28 : 0.2),
-                border: accent.opacity(colorScheme == .dark ? 0.2 : 0.14),
-                heatmapSaturation: 1.03,
-                heatmapContrast: 1.02,
-                heatmapBrightness: 0.01
+                border: accent.opacity(colorScheme == .dark ? 0.2 : 0.14)
             )
         case .steady, .strong:
             return IdentityStateVisualStyle(
                 foreground: Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.84),
                 background: softAccent.opacity(colorScheme == .dark ? 0.24 : 0.18),
-                border: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.1),
-                heatmapSaturation: 1,
-                heatmapContrast: 1.04,
-                heatmapBrightness: 0
+                border: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.1)
             )
         case .slipping, .rebuilding:
             return IdentityStateVisualStyle(
                 foreground: Color.primary.opacity(colorScheme == .dark ? 0.84 : 0.8),
                 background: softAccent.opacity(colorScheme == .dark ? 0.16 : 0.11),
-                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
-                heatmapSaturation: 0.92,
-                heatmapContrast: 0.98,
-                heatmapBrightness: 0
+                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
             )
         }
     }
