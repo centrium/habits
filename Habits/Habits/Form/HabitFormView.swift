@@ -221,9 +221,11 @@ struct HabitFormView: View {
                             .font(.headline)
 
                         VStack(alignment: .leading, spacing: 16) {
+                            let canonicalSelectedColor = HabitColor.from(hex: selectedHex)
+
                             LazyVGrid(columns: colorSwatchColumns, spacing: 12) {
                                 ForEach(HabitColor.allCases) { paletteColor in
-                                    let isSelected = isSameHex(selectedHex, paletteColor.hex)
+                                    let isSelected = (paletteColor == canonicalSelectedColor)
 
                                     Button {
                                         selectedHex = paletteColor.hex
@@ -265,7 +267,7 @@ struct HabitFormView: View {
 
                                     if let iconName, !iconName.isEmpty {
                                         Image(systemName: iconName)
-                                            .foregroundStyle(HabitColor.from(hex: selectedHex).color)
+                                            .foregroundStyle(canonicalSelectedColor.color)
                                     } else {
                                         Text("None")
                                             .foregroundStyle(.secondary)
@@ -695,14 +697,6 @@ struct HabitFormView: View {
         }
     }
 
-    private func isSameHex(_ lhs: String, _ rhs: String) -> Bool {
-        lhs
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ==
-        rhs
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-    }
 }
 
 private struct HabitReminderEditorSheet: View {

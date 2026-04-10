@@ -62,24 +62,24 @@ enum CadenceColorPalette {
             )
         case .sky:
             return CadencePaletteRoles(
-                primaryAccent: "#0288D1",
-                secondaryAccent: "#039BE5",
-                ambientSurface: "#0277BD",
-                highlightPeak: "#42A5F5"
+                primaryAccent: "#4FA6E8",
+                secondaryAccent: "#6CB8EF",
+                ambientSurface: "#B9DBF6",
+                highlightPeak: "#8DCCF5"
             )
         case .iris:
             return CadencePaletteRoles(
-                primaryAccent: "#009688",
-                secondaryAccent: "#26A69A",
-                ambientSurface: "#4DB6AC",
-                highlightPeak: "#FFEB3B"
+                primaryAccent: "#7B61D1",
+                secondaryAccent: "#9279DD",
+                ambientSurface: "#C6B8F0",
+                highlightPeak: "#B7A2EE"
             )
         case .amethyst:
             return CadencePaletteRoles(
-                primaryAccent: "#FF6347",
-                secondaryAccent: "#FF7F50",
-                ambientSurface: "#FF6F61",
-                highlightPeak: "#FF4500"
+                primaryAccent: "#5A47B8",
+                secondaryAccent: "#705FD0",
+                ambientSurface: "#AA9CE4",
+                highlightPeak: "#8D79D9"
             )
         case .apricot:
             return CadencePaletteRoles(
@@ -118,10 +118,10 @@ enum CadenceColorPalette {
             )
         case .cyan:
             return CadencePaletteRoles(
-                primaryAccent: "#0288D1",
-                secondaryAccent: "#039BE5",
-                ambientSurface: "#42A5F5",
-                highlightPeak: "#90CAF9"
+                primaryAccent: "#19AFCF",
+                secondaryAccent: "#33C0DD",
+                ambientSurface: "#A9E5F2",
+                highlightPeak: "#6BD7EB"
             )
         }
     }
