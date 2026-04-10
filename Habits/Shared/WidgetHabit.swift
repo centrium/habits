@@ -41,86 +41,86 @@ enum CadenceColorPalette {
         switch token {
         case .fern:
             return CadencePaletteRoles(
-                primaryAccent: "#8BC34A",
-                secondaryAccent: "#AED581",
-                ambientSurface: "#AED581",
-                highlightPeak: "#FFD700"
+                primaryAccent: "#4CAF50",
+                secondaryAccent: "#3E9A43",
+                ambientSurface: "#76C879",
+                highlightPeak: "#9FE26A"
             )
         case .sage:
             return CadencePaletteRoles(
-                primaryAccent: "#388E3C",
-                secondaryAccent: "#43A047",
-                ambientSurface: "#2E7D32",
-                highlightPeak: "#8BC34A"
+                primaryAccent: "#8BC34A",
+                secondaryAccent: "#74A93A",
+                ambientSurface: "#A9D86F",
+                highlightPeak: "#C4FF8C"
             )
         case .cobalt:
             return CadencePaletteRoles(
-                primaryAccent: "#1976D2",
-                secondaryAccent: "#42A5F5",
-                ambientSurface: "#90CAF9",
-                highlightPeak: "#039BE5"
+                primaryAccent: "#1565C0",
+                secondaryAccent: "#0F52A3",
+                ambientSurface: "#4D8ED8",
+                highlightPeak: "#5FB0E6"
             )
         case .sky:
             return CadencePaletteRoles(
-                primaryAccent: "#4FA6E8",
-                secondaryAccent: "#6CB8EF",
-                ambientSurface: "#B9DBF6",
-                highlightPeak: "#8DCCF5"
+                primaryAccent: "#42A5F5",
+                secondaryAccent: "#2E8FDE",
+                ambientSurface: "#78C1F8",
+                highlightPeak: "#8FD3FF"
             )
         case .iris:
             return CadencePaletteRoles(
-                primaryAccent: "#7B61D1",
-                secondaryAccent: "#9279DD",
-                ambientSurface: "#C6B8F0",
-                highlightPeak: "#B7A2EE"
+                primaryAccent: "#7E57C2",
+                secondaryAccent: "#6945AD",
+                ambientSurface: "#A583D8",
+                highlightPeak: "#C7A8FF"
             )
         case .amethyst:
             return CadencePaletteRoles(
-                primaryAccent: "#5A47B8",
-                secondaryAccent: "#705FD0",
-                ambientSurface: "#AA9CE4",
-                highlightPeak: "#8D79D9"
+                primaryAccent: "#5E35B1",
+                secondaryAccent: "#4D2897",
+                ambientSurface: "#8763CA",
+                highlightPeak: "#A785E6"
             )
         case .apricot:
             return CadencePaletteRoles(
-                primaryAccent: "#FF9800",
-                secondaryAccent: "#FFA726",
-                ambientSurface: "#FFB74D",
-                highlightPeak: "#FFC107"
+                primaryAccent: "#FF8A65",
+                secondaryAccent: "#E3734E",
+                ambientSurface: "#FFAF94",
+                highlightPeak: "#FFB77A"
             )
         case .amber:
             return CadencePaletteRoles(
                 primaryAccent: "#FFB300",
-                secondaryAccent: "#FFC107",
-                ambientSurface: "#FFD700",
-                highlightPeak: "#FFEB3B"
+                secondaryAccent: "#E09A00",
+                ambientSurface: "#FFCB4D",
+                highlightPeak: "#FFE27A"
             )
         case .coral:
             return CadencePaletteRoles(
                 primaryAccent: "#FF6F61",
-                secondaryAccent: "#FFB997",
-                ambientSurface: "#FF7F50",
-                highlightPeak: "#FF4500"
+                secondaryAccent: "#E45C50",
+                ambientSurface: "#FF968C",
+                highlightPeak: "#FFB3C1"
             )
         case .rose:
             return CadencePaletteRoles(
-                primaryAccent: "#FF69B4",
-                secondaryAccent: "#FFB6C1",
-                ambientSurface: "#FFB6C1",
-                highlightPeak: "#FFD700"
+                primaryAccent: "#EC407A",
+                secondaryAccent: "#D12D67",
+                ambientSurface: "#F073A0",
+                highlightPeak: "#FFB3C1"
             )
         case .teal:
             return CadencePaletteRoles(
                 primaryAccent: "#009688",
-                secondaryAccent: "#26A69A",
-                ambientSurface: "#4DB6AC",
-                highlightPeak: "#039BE5"
+                secondaryAccent: "#007D73",
+                ambientSurface: "#48B8AE",
+                highlightPeak: "#5EF2E0"
             )
         case .cyan:
             return CadencePaletteRoles(
-                primaryAccent: "#19AFCF",
-                secondaryAccent: "#33C0DD",
-                ambientSurface: "#A9E5F2",
+                primaryAccent: "#00ACC1",
+                secondaryAccent: "#0093A6",
+                ambientSurface: "#57CAD9",
                 highlightPeak: "#6BD7EB"
             )
         }
@@ -157,7 +157,7 @@ enum CadenceColorPalette {
         let normalized = normalizeHex(baseHex)
         return CadencePaletteToken.allCases.first {
             normalizeHex(light(for: $0).base) == normalized ||
-            normalizeHex(legacyBaseHex(for: $0)) == normalized
+            legacyBaseHexes(for: $0).contains(normalized)
         }
     }
 
@@ -177,20 +177,20 @@ enum CadenceColorPalette {
         return first.mixed(with: second, amount: amount).hex
     }
 
-    private static func legacyBaseHex(for token: CadencePaletteToken) -> String {
+    private static func legacyBaseHexes(for token: CadencePaletteToken) -> Set<String> {
         switch token {
-        case .fern: return "#5FAF7A"
-        case .sage: return "#7FBF95"
-        case .cobalt: return "#5B7DB8"
-        case .sky: return "#6F95C8"
-        case .iris: return "#7A6FB2"
-        case .amethyst: return "#8B80C2"
-        case .apricot: return "#C69C4F"
-        case .amber: return "#D2AE6A"
-        case .coral: return "#C46A6A"
-        case .rose: return "#C46A6A"
-        case .teal: return "#5FA3A0"
-        case .cyan: return "#5FA3A0"
+        case .fern: return ["#5FAF7A", "#8BC34A"]
+        case .sage: return ["#7FBF95", "#388E3C"]
+        case .cobalt: return ["#5B7DB8", "#1976D2"]
+        case .sky: return ["#6F95C8", "#4FA6E8"]
+        case .iris: return ["#7A6FB2", "#7B61D1"]
+        case .amethyst: return ["#8B80C2", "#5A47B8"]
+        case .apricot: return ["#C69C4F", "#FF9800"]
+        case .amber: return ["#D2AE6A", "#FFB300"]
+        case .coral: return ["#C46A6A", "#FF6F61"]
+        case .rose: return ["#C46A6A", "#FF69B4"]
+        case .teal: return ["#5FA3A0", "#009688"]
+        case .cyan: return ["#5FA3A0", "#19AFCF"]
         }
     }
 }

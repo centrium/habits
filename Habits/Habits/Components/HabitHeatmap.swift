@@ -123,9 +123,16 @@ struct HabitHeatmap: View {
 
         let entry = cache.entry(key: cacheKey) {
             let dayMetrics = service.dayMetrics(for: habit, on: fullGridDays)
-
+            let logsByDay = Dictionary(grouping: habit.logs) { log in
+                calendar.startOfDay(for: log.day)
+            }
             let logCountMap = Dictionary(uniqueKeysWithValues: fullGridDays.map { day in
-                (day, computeLogCount(for: day, dayMetrics: dayMetrics, lockGate: lockGate))
+                if lockGate.isLocked(date: day) {
+                    return (day, 0)
+                }
+
+                let logsForDay = logsByDay[day] ?? []
+                return (day, logsForDay.count)
             })
 
             return HeatmapMetricsCache.Entry(
@@ -173,19 +180,6 @@ struct HabitHeatmap: View {
             .map { calendarProvider.calendar.startOfDay(for: $0) }
     }
 
-    private func computeLogCount(
-        for day: Date,
-        dayMetrics: [Date: HabitDayMetrics],
-        lockGate: PremiumHistoryGate.Context
-    ) -> Int {
-        if lockGate.isLocked(date: day) {
-            return 0
-        }
-
-        let metrics = dayMetrics[day] ?? .zero
-        return metrics.count
-    }
-    
     private var compactHeatmap: some View {
         let revision = service.metricsRevision(for: habit.id)
 
@@ -196,17 +190,23 @@ struct HabitHeatmap: View {
             calendar.date(byAdding: .day, value: -$0, to: today)
         }.reversed()
 
-        let dayMetrics = service.dayMetrics(for: habit, on: days)
+        let logsByDay = Dictionary(grouping: habit.logs) { log in
+            calendar.startOfDay(for: log.day)
+        }
+        let dayCountMap = Dictionary(uniqueKeysWithValues: days.map { day in
+            let count = logsByDay[day]?.count ?? 0
+            return (day, count)
+        })
 
         return HStack(spacing: 6) {
             weekGrid(
                 days: Array(days.prefix(7)),
-                dayMetrics: dayMetrics
+                dayCountMap: dayCountMap
             )
 
             weekGrid(
                 days: Array(days.suffix(7)),
-                dayMetrics: dayMetrics
+                dayCountMap: dayCountMap
             )
         }
         .id(revision)
@@ -217,19 +217,19 @@ struct HabitHeatmap: View {
     
     private func weekGrid(
         days: [Date],
-        dayMetrics: [Date: HabitDayMetrics]
+        dayCountMap: [Date: Int]
     ) -> some View {
         let calendar = calendarProvider.calendar
         let columns = Array(repeating: GridItem(.flexible(), spacing: 2.5), count: 7)
 
         return LazyVGrid(columns: columns, spacing: 2.5) {
-            ForEach(days, id: \.self) { day in
-                let metrics = dayMetrics[day] ?? .zero
+            ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                let count = dayCountMap[day] ?? 0
 
                 HeatmapCellView(
                     date: day,
                     isSelected: false,
-                    logCount: metrics.count,
+                    logCount: count,
                     habitColor: habit.curatedColor,
                     selectionAccent: accent
                 )
@@ -243,7 +243,7 @@ struct HabitHeatmap: View {
                                 )
                         }
                     }
-                    .animation(.easeOut(duration: 0.14), value: metrics.count)
+                    .animation(.easeOut(duration: 0.14), value: count)
             }
         }
     }

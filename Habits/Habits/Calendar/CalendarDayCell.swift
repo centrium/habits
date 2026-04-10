@@ -279,13 +279,9 @@ struct CalendarDayCell: View {
                 }
             }
         } else {
-            HStack(spacing: Layout.dotSpacing) {
-                indicatorDot
-
-                Text("+\(count - 1)")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(indicatorForegroundColor)
-            }
+            Text("+\(count)")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(indicatorForegroundColor)
         }
     }
 

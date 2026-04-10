@@ -81,6 +81,9 @@ struct CalendarMonthView: View {
         let _ = uiStateStore.progressByHabitAndDate.count
         let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
         let dayMetrics = service.dayMetrics(for: habit, on: days)
+        let logsByDay = Dictionary(grouping: habit.logs) { log in
+            calendar.startOfDay(for: log.day)
+        }
 
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
@@ -109,7 +112,7 @@ struct CalendarMonthView: View {
                             let isInDisplayedMonth = isDisplayedMonth(day)
                             let isDisabledDay = isFutureDate(day)
                             let isLockedDay = premiumHistoryGate.isLocked(date: day)
-                            let count = isLockedDay ? 0 : metrics.count
+                            let count = isLockedDay ? 0 : (logsByDay[normalizedDay]?.count ?? 0)
                             let indicatorText = isLockedDay || habit.goalType != .cumulative || metrics.value <= 0
                                 ? nil
                                 : service.formatValue(metrics.value, for: habit)

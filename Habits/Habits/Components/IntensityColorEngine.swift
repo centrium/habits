@@ -16,9 +16,9 @@ struct HeatmapPalette {
 }
 
 enum IntensityColorEngine {
-    private static let neutralLightFill = Color.black.opacity(0.055)
+    private static let neutralLightFill = Color(hex: "#E7EBEF")
     private static let neutralLightBorder = Color.black.opacity(0.12)
-    private static let neutralDarkFill = Color.white.opacity(0.08)
+    private static let neutralDarkFill = Color(hex: "#1B2128")
     private static let neutralDarkBorder = Color.white.opacity(0.16)
 
     static func color(forLogCount logCount: Int, habitColor: HabitColor, colorScheme: ColorScheme) -> Color {
@@ -71,79 +71,107 @@ enum IntensityColorEngine {
     }
 
     private static func palette(for habitColor: HabitColor, colorScheme: ColorScheme) -> HeatmapPalette {
-        let token = cadenceToken(for: habitColor)
-        let tones = CadenceColorPalette.light(for: token)
-        let base = tones.base
-
-        if colorScheme == .dark {
-            // Monotonic dark-mode ramp: each level gets brighter and more chromatic.
-            let lv1 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.78)
-            let lv2 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.64)
-            let lv3 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.50)
-            let lv4 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.34)
-            let lv5 = CadenceColorPalette.mix(hex: base, with: "#11151A", towardSecond: 0.16)
-
-            return HeatmapPalette(
-                levels: [
-                    neutralDarkFill,
-                    Color(hex: lv1),
-                    Color(hex: lv2),
-                    Color(hex: lv3),
-                    Color(hex: lv4),
-                    Color(hex: lv5)
-                ],
-                borders: [
-                    neutralDarkBorder,
-                    Color(hex: CadenceColorPalette.mix(hex: lv1, with: "#FFFFFF", towardSecond: 0.14)),
-                    Color(hex: CadenceColorPalette.mix(hex: lv2, with: "#FFFFFF", towardSecond: 0.16)),
-                    Color(hex: CadenceColorPalette.mix(hex: lv3, with: "#FFFFFF", towardSecond: 0.18)),
-                    Color(hex: CadenceColorPalette.mix(hex: lv4, with: "#FFFFFF", towardSecond: 0.20)),
-                    Color(hex: CadenceColorPalette.mix(hex: lv5, with: "#FFFFFF", towardSecond: 0.24))
-                ]
-            )
-        }
-
-        // Monotonic light-mode ramp: each level gets deeper and more chromatic.
-        let lv1 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.78)
-        let lv2 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.64)
-        let lv3 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.50)
-        let lv4 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.36)
-        let lv5 = CadenceColorPalette.mix(hex: base, with: "#FFFFFF", towardSecond: 0.22)
+        let scaleHex = heatmapScale(for: habitColor)
+        let neutralFill = colorScheme == .dark ? neutralDarkFill : neutralLightFill
+        let scale = [
+            neutralFill,
+            Color(hex: scaleHex[1]),
+            Color(hex: scaleHex[2]),
+            Color(hex: scaleHex[3]),
+            Color(hex: scaleHex[4]),
+            Color(hex: scaleHex[5])
+        ]
 
         return HeatmapPalette(
-            levels: [
-                neutralLightFill,
-                Color(hex: lv1),
-                Color(hex: lv2),
-                Color(hex: lv3),
-                Color(hex: lv4),
-                Color(hex: lv5)
-            ],
+            levels: scale,
             borders: [
-                neutralLightBorder,
-                Color(hex: CadenceColorPalette.mix(hex: lv1, with: "#000000", towardSecond: 0.10)),
-                Color(hex: CadenceColorPalette.mix(hex: lv2, with: "#000000", towardSecond: 0.12)),
-                Color(hex: CadenceColorPalette.mix(hex: lv3, with: "#000000", towardSecond: 0.14)),
-                Color(hex: CadenceColorPalette.mix(hex: lv4, with: "#000000", towardSecond: 0.16)),
-                Color(hex: CadenceColorPalette.mix(hex: lv5, with: "#000000", towardSecond: 0.18))
+                colorScheme == .dark ? neutralDarkBorder : neutralLightBorder,
+                borderColor(for: scaleHex[1], colorScheme: colorScheme),
+                borderColor(for: scaleHex[2], colorScheme: colorScheme),
+                borderColor(for: scaleHex[3], colorScheme: colorScheme),
+                borderColor(for: scaleHex[4], colorScheme: colorScheme),
+                borderColor(for: scaleHex[5], colorScheme: colorScheme)
             ]
         )
     }
 
-    private static func cadenceToken(for habitColor: HabitColor) -> CadencePaletteToken {
+    private static func heatmapScale(for habitColor: HabitColor) -> [String] {
         switch habitColor {
-        case .fern: return .fern
-        case .sage: return .sage
-        case .cobalt: return .cobalt
-        case .sky: return .sky
-        case .iris: return .iris
-        case .amethyst: return .amethyst
-        case .apricot: return .apricot
-        case .amber: return .amber
-        case .coral: return .coral
-        case .rose: return .rose
-        case .teal: return .teal
-        case .cyan: return .cyan
+        case .fern, .sage:
+            return [
+                "#121E12",
+                "#E4F1DE",
+                "#C8E6BE",
+                "#9FD173",
+                "#73B34A",
+                "#4F7A3F"
+            ]
+        case .cobalt, .sky:
+            return [
+                "#0D1C2A",
+                "#E1EDFA",
+                "#C4DCF3",
+                "#8FBBE6",
+                "#5C94D2",
+                "#2F5F8A"
+            ]
+        case .iris, .amethyst:
+            return [
+                "#1A1426",
+                "#ECE5F8",
+                "#D5C4EF",
+                "#B497DE",
+                "#8C6BCB",
+                "#5E3F8A"
+            ]
+        case .teal, .cyan:
+            return [
+                "#0F1F1E",
+                "#E1F4F2",
+                "#BFE9E3",
+                "#84D2C7",
+                "#49B7A8",
+                "#176E68"
+            ]
+        case .rose, .coral:
+            return [
+                "#211517",
+                "#F8E7EB",
+                "#F1CBD5",
+                "#E29DAF",
+                "#C97186",
+                "#7A3F47"
+            ]
+        case .amber:
+            return [
+                "#2A250C",
+                "#F8F0D9",
+                "#EEDFAE",
+                "#E0C36A",
+                "#C29A1F",
+                "#8A6E14"
+            ]
+        case .apricot:
+            return [
+                "#2A1A0C",
+                "#F9EBDD",
+                "#F3D5BC",
+                "#E8B186",
+                "#D3874A",
+                "#8A4A14"
+            ]
         }
+    }
+
+    private static func borderColor(for fillHex: String, colorScheme: ColorScheme) -> Color {
+        let mixTarget = colorScheme == .dark ? "#FFFFFF" : "#000000"
+        let mixAmount = colorScheme == .dark ? 0.16 : 0.14
+        return Color(
+            hex: CadenceColorPalette.mix(
+                hex: fillHex,
+                with: mixTarget,
+                towardSecond: mixAmount
+            )
+        )
     }
 }
