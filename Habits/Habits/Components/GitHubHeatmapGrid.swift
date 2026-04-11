@@ -171,13 +171,12 @@ struct GitHubHeatmapGrid: View {
                             Circle()
                                 .fill(Color(.systemBackground).opacity(0.92))
                             Circle()
-                                .strokeBorder(Color.primary.opacity(0.26), lineWidth: 0.8)
+                                .strokeBorder(Color.secondary.opacity(0.26), lineWidth: 0.8)
                             Image(systemName: "lock.fill")
                                 .font(.system(size: max(9, style.cellSize * 0.64), weight: .bold))
-                                .foregroundStyle(Color.primary.opacity(0.9))
+                                .foregroundStyle(Color.secondary.opacity(0.9))
                         }
                         .frame(width: style.cellSize + 2, height: style.cellSize + 2)
-                        .shadow(color: Color.black.opacity(0.12), radius: 1.6, y: 0.6)
                         .position(x: premiumLockPosition.x, y: premiumLockPosition.y)
                         .allowsHitTesting(false)
                     }

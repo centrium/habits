@@ -198,7 +198,7 @@ struct HabitHeatmap: View {
             return (day, count)
         })
 
-        return HStack(spacing: 6) {
+        return HStack(spacing: 2) {
             weekGrid(
                 days: Array(days.prefix(7)),
                 dayCountMap: dayCountMap
@@ -212,7 +212,7 @@ struct HabitHeatmap: View {
         .id(revision)
         .padding(.top, 6)
         .padding(.bottom, 4)
-        .frame(height: 40)
+        .frame(height: 32)
     }
     
     private func weekGrid(
@@ -220,9 +220,9 @@ struct HabitHeatmap: View {
         dayCountMap: [Date: Int]
     ) -> some View {
         let calendar = calendarProvider.calendar
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 2.5), count: 7)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
 
-        return LazyVGrid(columns: columns, spacing: 2.5) {
+        return LazyVGrid(columns: columns, spacing: 2) {
             ForEach(Array(days.enumerated()), id: \.offset) { _, day in
                 let count = dayCountMap[day] ?? 0
 
@@ -233,17 +233,16 @@ struct HabitHeatmap: View {
                     habitColor: habit.curatedColor,
                     selectionAccent: accent
                 )
-                    .frame(height: 14)
+                    .frame(height: 10)
                     .overlay {
                         if calendar.isDateInToday(day) {
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: 2)
                                 .stroke(
-                                    Color.primary.opacity(colorScheme == .dark ? 0.52 : 0.28),
-                                    lineWidth: colorScheme == .dark ? 1.5 : 1.25
+                                    Color.primary.opacity(0.35),
+                                    lineWidth: 1
                                 )
                         }
                     }
-                    .animation(.easeOut(duration: 0.14), value: count)
             }
         }
     }

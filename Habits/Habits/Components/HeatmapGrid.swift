@@ -40,11 +40,10 @@ struct HeatmapGrid: View {
                             .strokeBorder(
                                 visuals.level > 0
                                     ? visuals.border
-                                    : Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.07),
+                                    : Color.secondary.opacity(colorScheme == .dark ? 0.08 : 0.07),
                                 lineWidth: 1
                             )
                     )
-                    .scaleEffect(visuals.peakScale)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         onTapDay(day)

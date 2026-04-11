@@ -74,39 +74,25 @@ struct CalendarDayCell: View {
     }
     
     private var backgroundFill: Color {
-        if isDisabled {
-            return Color.primary.opacity(isInDisplayedMonth ? Layout.disabledBackgroundOpacity : Layout.disabledOutOfMonthBackgroundOpacity)
-        }
+        isSelected
+            ? selectedAccent.opacity(colorScheme == .dark ? 0.25 : 0.12)
+            : .clear
+    }
 
-        if isSelected {
-            return selectedAccent.opacity(Layout.selectedBackgroundOpacity)
-        }
-
-        return HeatmapColorResolver.color(
-            for: count,
-            habitColor: habitColor,
-            scheme: colorScheme
-        )
+    private var neutralBaseFill: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.04)
+            : Color.black.opacity(0.03)
     }
 
     private var dayNumber: String {
         "\(calendar.component(.day, from: date))"
     }
 
-    private var heatmapIntensity: Double {
-        Double(intensityVisual.level) / 5.0
-    }
-
-    private var isDarkFill: Bool {
-        isSelected || heatmapIntensity > 0.55
-    }
-
     private var dayNumberColor: Color {
-        if isDisabled {
-            return Color.primary.opacity(isInDisplayedMonth ? 0.38 : 0.24)
-        }
-
-        return isDarkFill ? .white : Color.primary.opacity(0.85)
+        isInDisplayedMonth
+            ? Color.primary
+            : Color.secondary.opacity(0.5)
     }
 
     private var contentOpacity: Double {
@@ -129,21 +115,15 @@ struct CalendarDayCell: View {
         ZStack {
             RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
                 .fill(backgroundFill)
-
-            if isSelected {
-                RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
-                    .fill(Color.black.opacity(0.24))
-            }
+                .background(
+                    RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
+                        .fill(neutralBaseFill)
+                )
 
             VStack(spacing: 0) {
                 Text(dayNumber)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(dayNumberColor)
-                    .shadow(
-                        color: isDarkFill ? Color.black.opacity(0.25) : .clear,
-                        radius: 1,
-                        y: 0.5
-                    )
                     .frame(maxWidth: .infinity)
                     .padding(.top, Layout.dayTopPadding)
                     .frame(height: Layout.dayNumberAreaHeight, alignment: .top)
@@ -203,10 +183,10 @@ struct CalendarDayCell: View {
         let lineWidth: CGFloat
 
         if isSelected {
-            strokeColor = selectedAccent.opacity(Layout.selectedStrokeOpacity)
-            lineWidth = Layout.selectedStrokeWidth
+            strokeColor = selectedAccent
+            lineWidth = 1.5
         } else if isToday {
-            strokeColor = Color.primary.opacity(colorScheme == .light ? 0.28 : Layout.todayStrokeOpacity)
+            strokeColor = Color.secondary.opacity(colorScheme == .light ? 0.28 : Layout.todayStrokeOpacity)
             lineWidth = Layout.todayStrokeWidth
         } else {
             strokeColor = nil
@@ -217,10 +197,8 @@ struct CalendarDayCell: View {
             RoundedRectangle(cornerRadius: Layout.cellCornerRadius)
                 .strokeBorder(
                     isLocked
-                    ? Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.14)
-                    : (intensityVisual.level > 0
-                       ? intensityVisual.border.opacity(colorScheme == .dark ? 0.9 : 0.82)
-                       : Color.primary.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity)),
+                    ? Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.14)
+                    : Color.secondary.opacity(colorScheme == .dark ? Layout.baseStrokeDarkOpacity : Layout.baseStrokeLightOpacity),
                     lineWidth: Layout.baseStrokeWidth
                 )
 
@@ -256,7 +234,7 @@ struct CalendarDayCell: View {
                         .overlay {
                             if colorScheme == .dark {
                                 Capsule()
-                                    .strokeBorder(Color.white.opacity(Layout.indicatorPlateDarkStrokeOpacity))
+                                    .strokeBorder(Color.secondary.opacity(Layout.indicatorPlateDarkStrokeOpacity))
                             }
                         }
                 )
@@ -266,14 +244,11 @@ struct CalendarDayCell: View {
             let usesDots = logCount <= 5
 
             if usesDots {
+                let dotOpacity: Double = logCount >= 4 ? 0.55 : 0.35
                 HStack(spacing: 3) {
                     ForEach(0..<logCount, id: \.self) { _ in
                         Circle()
-                            .fill(
-                                isDarkFill
-                                ? Color.white.opacity(0.85)
-                                : Color.primary.opacity(0.5)
-                            )
+                            .fill(Color.primary.opacity(dotOpacity))
                             .frame(width: 3, height: 3)
                     }
                 }
@@ -282,27 +257,19 @@ struct CalendarDayCell: View {
                 .background(
                     Capsule()
                         .fill(
-                            isDarkFill
-                            ? Color.black.opacity(0.18)
-                            : Color.white.opacity(0.6)
+                            Color.secondary.opacity(colorScheme == .dark ? 0.16 : 0.12)
                         )
                 )
             } else {
                 Text("\(logCount)")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(
-                        isDarkFill
-                        ? Color.white
-                        : Color.primary.opacity(0.85)
-                    )
+                    .foregroundStyle(Color.primary.opacity(0.7))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(
                         Capsule()
                             .fill(
-                                isDarkFill
-                                ? Color.black.opacity(0.22)
-                                : Color.white.opacity(0.7)
+                                Color.secondary.opacity(colorScheme == .dark ? 0.16 : 0.12)
                             )
                     )
             }
@@ -310,26 +277,18 @@ struct CalendarDayCell: View {
     }
 
     private var indicatorForegroundColor: Color {
-        if isSelected {
-            return .white.opacity(0.95)
-        }
-
-        if intensityVisual.level > 0 {
-            return Color.black.opacity(colorScheme == .dark ? 0.78 : 0.72)
-        }
-
-        return colorScheme == .dark ? .white.opacity(0.90) : Color.primary.opacity(0.72)
+        Color.primary.opacity(0.7)
     }
 
     private var indicatorPlateFill: Color {
         if isSelected {
-            return Color.white.opacity(colorScheme == .dark ? 0.30 : 0.26)
+            return Color.secondary.opacity(colorScheme == .dark ? 0.22 : 0.18)
         }
 
         if intensityVisual.level > 0 {
-            return Color.white.opacity(colorScheme == .dark ? 0.30 : 0.26)
+            return Color.secondary.opacity(colorScheme == .dark ? 0.2 : 0.16)
         }
 
-        return Color.white.opacity(colorScheme == .dark ? 0.14 : 0.20)
+        return Color.secondary.opacity(colorScheme == .dark ? 0.14 : 0.12)
     }
 }

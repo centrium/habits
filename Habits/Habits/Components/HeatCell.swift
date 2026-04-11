@@ -33,7 +33,6 @@ struct HeatCell: View {
                     .strokeBorder(borderColor, lineWidth: pixelLineWidth)
             )
             .overlay(selectionOverlay)
-            .scaleEffect(intensityVisual.peakScale)
             .contentShape(cellShape)
             .allowsHitTesting(isInteractive)
             .highPriorityGesture(
@@ -56,7 +55,7 @@ struct HeatCell: View {
             strokeColor = accent.opacity(style.selectedStrokeOpacity)
             lineWidth = style.selectedStrokeWidth
         } else if isToday {
-            strokeColor = Color.primary.opacity(style.todayStrokeOpacity)
+            strokeColor = Color.secondary.opacity(style.todayStrokeOpacity)
             lineWidth = style.todayStrokeWidth
         } else {
             strokeColor = nil
@@ -77,14 +76,13 @@ struct HeatCell: View {
 
     private var fillColor: Color {
         if isLocked {
-            return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
+            return Color.secondary.opacity(colorScheme == .dark ? 0.08 : 0.12)
         }
 
         guard intensityVisual.level > 0 else {
-            let opacity = colorScheme == .light
-                ? max(0.06, min(style.inactiveFillOpacity * inactiveEmphasis, 1))
-                : min(style.inactiveFillOpacity * inactiveEmphasis, 1)
-            return Color.primary.opacity(opacity)
+            return colorScheme == .dark
+                ? Color.white.opacity(0.08)
+                : Color.black.opacity(0.06)
         }
 
         return intensityVisual.fill
@@ -92,14 +90,14 @@ struct HeatCell: View {
 
     private var borderColor: Color {
         if isLocked {
-            return Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.14)
+            return Color.secondary.opacity(colorScheme == .dark ? 0.16 : 0.14)
         }
 
         guard intensityVisual.level > 0 else {
             let opacity = colorScheme == .light
                 ? max(0.07, min(style.inactiveStrokeOpacity * inactiveEmphasis, 1))
                 : min(style.inactiveStrokeOpacity * inactiveEmphasis, 1)
-            return Color.primary.opacity(opacity)
+            return Color.secondary.opacity(opacity)
         }
 
         return intensityVisual.border

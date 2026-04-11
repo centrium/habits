@@ -23,23 +23,12 @@ struct HeatmapCellView: View, Equatable {
             habitColor: habitColor,
             colorScheme: colorScheme
         )
-        let fillColor = HeatmapColorResolver.color(
-            for: logCount,
-            habitColor: habitColor,
-            scheme: colorScheme
-        )
 
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(fillColor)
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(visuals.fill)
             .overlay(cellBorderOverlay)
             .overlay(todayOverlay(today: today))
             .overlay(selectionOverlay)
-            .shadow(
-                color: visuals.peakShadowColor.opacity(Double(CadenceTokens.Intensity.heatmapGlow)),
-                radius: visuals.peakShadowRadius * max(0, CadenceTokens.Intensity.heatmapGlow),
-                y: visuals.peakShadowYOffset * max(0, CadenceTokens.Intensity.heatmapGlow)
-            )
-            .scaleEffect(visuals.peakScale)
     }
 
     @ViewBuilder
@@ -50,19 +39,18 @@ struct HeatmapCellView: View, Equatable {
             colorScheme: colorScheme
         )
 
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
             .stroke(visuals.border, lineWidth: 1)
     }
 
     @ViewBuilder
     private func todayOverlay(today: Bool) -> some View {
         if today {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .stroke(
-                    Color.primary.opacity(colorScheme == .dark ? 0.52 : 0.3),
-                    lineWidth: colorScheme == .dark ? 1.4 : 1.2
+                    Color.primary.opacity(0.35),
+                    lineWidth: 1
                 )
-                .scaleEffect(1.04)
         }
     }
 
@@ -71,8 +59,14 @@ struct HeatmapCellView: View, Equatable {
         let today = Calendar.current.isDateInToday(date)
 
         if isSelected {
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(selectionAccent, lineWidth: today ? 2 : 1.6)
+            RoundedRectangle(cornerRadius: 2)
+                .stroke(selectionAccent.opacity(0.2), lineWidth: 0.5)
+                .overlay {
+                    if today {
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(Color.primary.opacity(0.35), lineWidth: 1)
+                    }
+                }
         }
     }
 }
