@@ -29,6 +29,14 @@ struct CadencePaletteTones {
     let strong: String
 }
 
+struct CadenceHeatmapScale {
+    let scale1: String
+    let scale2: String
+    let scale3: String
+    let scale4: String
+    let scale5: String
+}
+
 struct CadencePaletteRoles {
     let primaryAccent: String
     let secondaryAccent: String
@@ -151,6 +159,128 @@ enum CadenceColorPalette {
             soft: roles.ambientSurface,
             strong: roles.highlightPeak
         )
+    }
+
+    static func heatmapLight(for token: CadencePaletteToken) -> CadenceHeatmapScale {
+        switch token {
+        case .fern, .sage:
+            return CadenceHeatmapScale(
+                scale1: "#E4F1DE",
+                scale2: "#C8E6BE",
+                scale3: "#9FD173",
+                scale4: "#73B34A",
+                scale5: "#4F7A3F"
+            )
+        case .cobalt, .sky:
+            return CadenceHeatmapScale(
+                scale1: "#E1EDFA",
+                scale2: "#C4DCF3",
+                scale3: "#8FBBE6",
+                scale4: "#5C94D2",
+                scale5: "#2F5F8A"
+            )
+        case .iris, .amethyst:
+            return CadenceHeatmapScale(
+                scale1: "#ECE5F8",
+                scale2: "#D5C4EF",
+                scale3: "#B497DE",
+                scale4: "#8C6BCB",
+                scale5: "#5E3F8A"
+            )
+        case .teal, .cyan:
+            return CadenceHeatmapScale(
+                scale1: "#E1F4F2",
+                scale2: "#BFE9E3",
+                scale3: "#84D2C7",
+                scale4: "#49B7A8",
+                scale5: "#176E68"
+            )
+        case .rose, .coral:
+            return CadenceHeatmapScale(
+                scale1: "#F8E7EB",
+                scale2: "#F1CBD5",
+                scale3: "#E29DAF",
+                scale4: "#C97186",
+                scale5: "#7A3F47"
+            )
+        case .amber:
+            return CadenceHeatmapScale(
+                scale1: "#F8F0D9",
+                scale2: "#EEDFAE",
+                scale3: "#E0C36A",
+                scale4: "#C29A1F",
+                scale5: "#8A6E14"
+            )
+        case .apricot:
+            return CadenceHeatmapScale(
+                scale1: "#F9EBDD",
+                scale2: "#F3D5BC",
+                scale3: "#E8B186",
+                scale4: "#D3874A",
+                scale5: "#8A4A14"
+            )
+        }
+    }
+
+    static func heatmapDark(for token: CadencePaletteToken) -> CadenceHeatmapScale {
+        switch token {
+        case .fern, .sage:
+            return CadenceHeatmapScale(
+                scale1: "#203225",
+                scale2: "#2C4930",
+                scale3: "#3D6640",
+                scale4: "#51884E",
+                scale5: "#6EAF60"
+            )
+        case .cobalt, .sky:
+            return CadenceHeatmapScale(
+                scale1: "#1F2E43",
+                scale2: "#2C4362",
+                scale3: "#3E5B84",
+                scale4: "#5478AC",
+                scale5: "#6E9BDA"
+            )
+        case .iris, .amethyst:
+            return CadenceHeatmapScale(
+                scale1: "#2A2340",
+                scale2: "#3A305A",
+                scale3: "#52407C",
+                scale4: "#7057A8",
+                scale5: "#9474D6"
+            )
+        case .teal, .cyan:
+            return CadenceHeatmapScale(
+                scale1: "#1A3533",
+                scale2: "#25514C",
+                scale3: "#33726A",
+                scale4: "#46998D",
+                scale5: "#5CBEB0"
+            )
+        case .rose, .coral:
+            return CadenceHeatmapScale(
+                scale1: "#3A242A",
+                scale2: "#55323A",
+                scale3: "#794753",
+                scale4: "#A86172",
+                scale5: "#D07D92"
+            )
+        case .amber:
+            return CadenceHeatmapScale(
+                scale1: "#3D3417",
+                scale2: "#5B4D22",
+                scale3: "#826C30",
+                scale4: "#B29142",
+                scale5: "#D8B35D"
+            )
+        case .apricot:
+            return CadenceHeatmapScale(
+                scale1: "#3E2B1A",
+                scale2: "#5D3F24",
+                scale3: "#885A32",
+                scale4: "#BB7B45",
+                scale5: "#DE9762"
+            )
+        }
     }
 
     static func token(from baseHex: String) -> CadencePaletteToken? {

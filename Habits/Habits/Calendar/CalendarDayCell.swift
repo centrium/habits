@@ -78,19 +78,15 @@ struct CalendarDayCell: View {
             return Color.primary.opacity(isInDisplayedMonth ? Layout.disabledBackgroundOpacity : Layout.disabledOutOfMonthBackgroundOpacity)
         }
 
-        if isLocked {
-            return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.12)
-        }
-
         if isSelected {
             return selectedAccent.opacity(Layout.selectedBackgroundOpacity)
         }
 
-        if !isInDisplayedMonth {
-            return Color.primary.opacity(Layout.outOfMonthBackgroundOpacity)
-        }
-
-        return intensityVisual.fill
+        return HeatmapColorResolver.color(
+            for: count,
+            habitColor: habitColor,
+            scheme: colorScheme
+        )
     }
 
     private var dayNumber: String {

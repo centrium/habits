@@ -23,9 +23,14 @@ struct HeatmapCellView: View, Equatable {
             habitColor: habitColor,
             colorScheme: colorScheme
         )
+        let fillColor = HeatmapColorResolver.color(
+            for: logCount,
+            habitColor: habitColor,
+            scheme: colorScheme
+        )
 
         RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(visuals.fill)
+            .fill(fillColor)
             .overlay(cellBorderOverlay)
             .overlay(todayOverlay(today: today))
             .overlay(selectionOverlay)

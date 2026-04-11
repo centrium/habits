@@ -81,7 +81,7 @@ enum HabitColor: String, CaseIterable, Identifiable {
     var softHex: String { CadenceColorPalette.light(for: paletteToken).soft }
     var softOpacity: Double { 1.0 }
 
-    private var paletteToken: CadencePaletteToken {
+    var paletteToken: CadencePaletteToken {
         switch self {
         case .fern: return .fern
         case .sage: return .sage
