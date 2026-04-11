@@ -183,24 +183,13 @@ struct GitHubHeatmapGrid: View {
                     }
                 }
                 .frame(width: gridWidth + gridTrailingInset, height: contentHeight, alignment: .topLeading)
-
-                Color.clear
-                    .frame(width: style.rightEdgeFadeWidth, height: contentHeight)
             }
             .frame(width: scrollContentWidth, height: contentHeight, alignment: .leading)
         }
         .defaultScrollAnchor(.trailing)
         .frame(maxWidth: .infinity, alignment: .leading)
         .mask {
-            HStack(spacing: 0) {
-                Rectangle().fill(.white)
-                LinearGradient(
-                    colors: [.white, .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: style.rightEdgeFadeWidth)
-            }
+            Rectangle()
         }
     }
 
@@ -236,11 +225,11 @@ struct GitHubHeatmapGrid: View {
     }
 
     private var scrollContentWidth: CGFloat {
-        gridWidth + gridTrailingInset + style.rightEdgeFadeWidth
+        gridWidth + gridTrailingInset
     }
 
     private var gridTrailingInset: CGFloat {
-        3
+        style.cellSize * 0.5
     }
 
     private var monthMarkers: [MonthMarker] {

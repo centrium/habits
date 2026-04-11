@@ -97,32 +97,20 @@ struct CalendarDayCell: View {
         "\(calendar.component(.day, from: date))"
     }
 
+    private var heatmapIntensity: Double {
+        Double(intensityVisual.level) / 5.0
+    }
+
+    private var isDarkFill: Bool {
+        isSelected || heatmapIntensity > 0.55
+    }
+
     private var dayNumberColor: Color {
         if isDisabled {
             return Color.primary.opacity(isInDisplayedMonth ? 0.38 : 0.24)
         }
 
-        if isLocked {
-            return Color.primary.opacity(isInDisplayedMonth ? 0.7 : 0.45)
-        }
-
-        if isSelected {
-            return .white.opacity(0.95)
-        }
-
-        if intensityVisual.level >= 3 {
-            return Color.black.opacity(colorScheme == .dark ? 0.86 : 0.80)
-        }
-
-        if intensityVisual.level > 0 {
-            return Color.black.opacity(colorScheme == .dark ? 0.90 : 0.84)
-        }
-
-        if isInDisplayedMonth {
-            return Color.primary.opacity(0.78)
-        }
-
-        return Color.primary.opacity(0.54)
+        return isDarkFill ? .white : Color.primary.opacity(0.85)
     }
 
     private var contentOpacity: Double {
@@ -153,8 +141,13 @@ struct CalendarDayCell: View {
 
             VStack(spacing: 0) {
                 Text(dayNumber)
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(dayNumberColor)
+                    .shadow(
+                        color: isDarkFill ? Color.black.opacity(0.25) : .clear,
+                        radius: 1,
+                        y: 0.5
+                    )
                     .frame(maxWidth: .infinity)
                     .padding(.top, Layout.dayTopPadding)
                     .frame(height: Layout.dayNumberAreaHeight, alignment: .top)
@@ -245,18 +238,6 @@ struct CalendarDayCell: View {
         if showsIndicator {
             indicatorContent
                 .frame(height: Layout.indicatorCapsuleHeight, alignment: .center)
-                .padding(.horizontal, Layout.indicatorHorizontalPadding)
-                .padding(.vertical, Layout.indicatorVerticalPadding)
-                .background(
-                    Capsule()
-                        .fill(indicatorPlateFill)
-                        .overlay {
-                            if colorScheme == .dark {
-                                Capsule()
-                                    .strokeBorder(Color.white.opacity(Layout.indicatorPlateDarkStrokeOpacity))
-                            }
-                        }
-                )
                 .padding(.bottom, Layout.indicatorBottomPadding)
         }
     }
@@ -271,39 +252,65 @@ struct CalendarDayCell: View {
                 .lineLimit(1)
                 .allowsTightening(true)
                 .minimumScaleFactor(0.5)
+                .padding(.horizontal, Layout.indicatorHorizontalPadding)
+                .padding(.vertical, Layout.indicatorVerticalPadding)
+                .background(
+                    Capsule()
+                        .fill(indicatorPlateFill)
+                        .overlay {
+                            if colorScheme == .dark {
+                                Capsule()
+                                    .strokeBorder(Color.white.opacity(Layout.indicatorPlateDarkStrokeOpacity))
+                            }
+                        }
+                )
                 .transition(.opacity.combined(with: .offset(y: 3)))
-        } else if count <= 5 {
-            HStack(spacing: Layout.dotSpacing) {
-                ForEach(0..<count, id: \.self) { _ in
-                    indicatorDot
-                }
-            }
         } else {
-            Text("+\(count)")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(indicatorForegroundColor)
-        }
-    }
+            let logCount = max(0, count)
+            let usesDots = logCount <= 5
 
-    private var indicatorDot: some View {
-        Circle()
-            .fill(dotFill)
-            .overlay {
-                if colorScheme == .dark {
-                    Circle()
-                        .strokeBorder(Color.white.opacity(isSelected ? 0.32 : 0.22), lineWidth: 0.4)
+            if usesDots {
+                HStack(spacing: 3) {
+                    ForEach(0..<logCount, id: \.self) { _ in
+                        Circle()
+                            .fill(
+                                isDarkFill
+                                ? Color.white.opacity(0.85)
+                                : Color.primary.opacity(0.5)
+                            )
+                            .frame(width: 3, height: 3)
+                    }
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(
+                            isDarkFill
+                            ? Color.black.opacity(0.18)
+                            : Color.white.opacity(0.6)
+                        )
+                )
+            } else {
+                Text("\(logCount)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(
+                        isDarkFill
+                        ? Color.white
+                        : Color.primary.opacity(0.85)
+                    )
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(
+                                isDarkFill
+                                ? Color.black.opacity(0.22)
+                                : Color.white.opacity(0.7)
+                            )
+                    )
             }
-            .shadow(
-                color: colorScheme == .dark ? selectedAccent.opacity(isSelected ? 0.2 : 0.24) : .clear,
-                radius: colorScheme == .dark ? 1.6 : 0,
-                y: 0.4
-            )
-            .frame(width: Layout.dotSize, height: Layout.dotSize)
-    }
-
-    private var dotFill: some ShapeStyle {
-        AnyShapeStyle(indicatorDotColor)
+        }
     }
 
     private var indicatorForegroundColor: Color {
@@ -328,17 +335,5 @@ struct CalendarDayCell: View {
         }
 
         return Color.white.opacity(colorScheme == .dark ? 0.14 : 0.20)
-    }
-
-    private var indicatorDotColor: Color {
-        if isSelected {
-            return Color.white.opacity(0.9)
-        }
-
-        if intensityVisual.level > 0 {
-            return Color.black.opacity(colorScheme == .dark ? 0.72 : 0.64)
-        }
-
-        return colorScheme == .dark ? .white.opacity(0.86) : Color.primary.opacity(0.62)
     }
 }
