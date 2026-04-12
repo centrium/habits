@@ -50,50 +50,52 @@ private struct CadenceSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                ZStack {
+                if colorScheme == .dark {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(surfaceBorder)
+                        .fill(darkSurfaceFill)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(surfaceBorder)
 
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .inset(by: 1)
-                        .fill(surfaceFill)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .inset(by: 1)
+                            .fill(surfaceFill)
 
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .inset(by: 1)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: cardAmbientTint.opacity(cardAmbientTopOpacity), location: 0.0),
+                                        .init(color: cardAmbientTint.opacity(cardAmbientMidOpacity), location: 0.2),
+                                        .init(color: .clear, location: 0.56)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+                }
+            }
+            .overlay {
+                if colorScheme == .dark {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .inset(by: 1)
-                        .fill(
+                        .strokeBorder(darkEdgeStroke, lineWidth: 1)
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
+                        .strokeBorder(topEdgeTint, lineWidth: 1)
+                        .mask(
                             LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: cardAmbientTint.opacity(cardAmbientTopOpacity), location: 0.0),
-                                    .init(color: cardAmbientTint.opacity(cardAmbientMidOpacity), location: 0.2),
-                                    .init(color: .clear, location: 0.56)
-                                ]),
+                                colors: [
+                                    .white,
+                                    .white.opacity(0.08),
+                                    .clear
+                                ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
-                    .strokeBorder(topEdgeTint, lineWidth: 1)
-                    .mask(
-                        LinearGradient(
-                            colors: [
-                                .white,
-                                .white.opacity(0.08),
-                                .clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-            }
-            .overlay {
-                if colorScheme == .dark {
-                    RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.035), lineWidth: 1)
-                        .blur(radius: 1)
-                        .opacity(0.65)
                 }
             }
     }
@@ -101,37 +103,53 @@ private struct CadenceSurfaceModifier: ViewModifier {
     // MARK: - Surface Fill (this is EVERYTHING)
 
     private var surfaceFill: Color {
-        colorScheme == .light
-        ? Color(red: 0.992, green: 0.988, blue: 0.978)
-        : Color(white: 0.14)
+        Color(red: 0.992, green: 0.988, blue: 0.978)
     }
 
     // MARK: - Border (barely visible, but critical)
 
     private var surfaceBorder: Color {
-        colorScheme == .light
-        ? Color.black.opacity(0.035)
-        : Color.white.opacity(0.045)
+        Color.black.opacity(0.035)
     }
 
     private var topEdgeTint: Color {
-        colorScheme == .light
-            ? Color.white.opacity(0.5)
-            : Color.white.opacity(0.075)
+        Color.white.opacity(0.5)
+    }
+
+    private var darkSurfaceFill: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color(red: 0.056, green: 0.058, blue: 0.072), location: 0.0),
+                .init(color: Color(red: 0.050, green: 0.051, blue: 0.062), location: 0.16),
+                .init(color: Color(red: 0.050, green: 0.051, blue: 0.062), location: 1.0)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var darkEdgeStroke: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color(red: 0.84, green: 0.89, blue: 1.0).opacity(0.08), location: 0.0),
+                .init(color: Color(red: 0.84, green: 0.89, blue: 1.0).opacity(0.072), location: 0.2),
+                .init(color: Color(red: 0.80, green: 0.86, blue: 0.97).opacity(0.058), location: 1.0)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var cardAmbientTint: Color {
-        colorScheme == .light
-            ? Color(red: 0.66, green: 0.75, blue: 0.84)
-            : Color(red: 0.21, green: 0.30, blue: 0.38)
+        Color(red: 0.66, green: 0.75, blue: 0.84)
     }
 
     private var cardAmbientTopOpacity: Double {
-        colorScheme == .light ? 0.038 : 0.03
+        0.038
     }
 
     private var cardAmbientMidOpacity: Double {
-        colorScheme == .light ? 0.018 : 0.013
+        0.018
     }
 }
 
