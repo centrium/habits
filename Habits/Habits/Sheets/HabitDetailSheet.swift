@@ -89,9 +89,7 @@ struct HabitDetailSheet: View {
             backgroundColor
                 .ignoresSafeArea()
 
-            TopAmbientGradient(
-                tone: CadenceTokens.Color.accent(for: habit).ambient
-            )
+            TopAmbientGradient()
                 .frame(maxWidth: .infinity, alignment: .top)
                 .ignoresSafeArea()
 
@@ -249,9 +247,7 @@ struct HabitDetailSheet: View {
                 backgroundColor
                     .ignoresSafeArea()
 
-                TopAmbientGradient(
-                    tone: CadenceTokens.Color.accent(for: habit).ambient
-                )
+                TopAmbientGradient()
                     .frame(maxWidth: .infinity, alignment: .top)
                     .ignoresSafeArea()
 

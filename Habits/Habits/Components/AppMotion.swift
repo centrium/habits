@@ -57,6 +57,20 @@ private struct CadenceSurfaceModifier: ViewModifier {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .inset(by: 1)
                         .fill(surfaceFill)
+
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .inset(by: 1)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: cardAmbientTint.opacity(cardAmbientTopOpacity), location: 0.0),
+                                    .init(color: cardAmbientTint.opacity(cardAmbientMidOpacity), location: 0.2),
+                                    .init(color: .clear, location: 0.56)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 }
             }
             .overlay {
@@ -105,6 +119,20 @@ private struct CadenceSurfaceModifier: ViewModifier {
             ? Color.white.opacity(0.5)
             : Color.white.opacity(0.075)
     }
+
+    private var cardAmbientTint: Color {
+        colorScheme == .light
+            ? Color(red: 0.66, green: 0.75, blue: 0.84)
+            : Color(red: 0.21, green: 0.30, blue: 0.38)
+    }
+
+    private var cardAmbientTopOpacity: Double {
+        colorScheme == .light ? 0.038 : 0.03
+    }
+
+    private var cardAmbientMidOpacity: Double {
+        colorScheme == .light ? 0.018 : 0.013
+    }
 }
 
 private struct CadenceAmbientSurfaceModifier: ViewModifier {
@@ -127,8 +155,8 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                         accent.opacity((colorScheme == .dark ? 0.1 : 0.06) * ambient),
                         .clear
                     ],
-                    startPoint: animateSurface ? .topLeading : .topTrailing,
-                    endPoint: animateSurface ? .bottomTrailing : .bottomLeading
+                    startPoint: animateSurface ? UnitPoint(x: 0.46, y: 0.0) : UnitPoint(x: 0.54, y: 0.03),
+                    endPoint: animateSurface ? UnitPoint(x: 0.58, y: 1.0) : UnitPoint(x: 0.42, y: 0.97)
                 )
                 .blur(radius: 40 + (8 * (ambient - 1)))
                 .frame(height: 240)
@@ -166,7 +194,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
         }
 
         animateSurface = false
-        withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+        withAnimation(.easeInOut(duration: 32).repeatForever(autoreverses: true)) {
             animateSurface = true
         }
     }

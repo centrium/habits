@@ -40,8 +40,8 @@ struct HabitInsightsView: View {
             .padding(.bottom, 40)
         }
         .cadenceSurface(
-            accent: accent,
-            accentKey: "habit-insights-\(habit.colorHex)",
+            accent: Color.systemAccent,
+            accentKey: "habit-insights-brand-ambient",
             motionEnabled: userSettings.ambientSurfaceMotionEnabled
         )
         .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
