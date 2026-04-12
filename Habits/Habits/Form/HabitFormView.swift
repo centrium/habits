@@ -234,6 +234,7 @@ struct HabitFormView: View {
                                             .fill(paletteColor.color)
                                             .frame(width: colorSwatchSize, height: colorSwatchSize)
                                             .frame(width: 40, height: 40)
+                                            .contentShape(Rectangle())
                                             .overlay {
                                                 Circle()
                                                     .stroke(

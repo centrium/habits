@@ -16,24 +16,18 @@ struct HabitCard: View {
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
     @State private var showHeatmapPaywall = false
-    @State private var displayedStreak: Int = 0
+    @State private var displayedStreak: Int?
     private let isReordering: Bool
     private let trailingAccessory: AnyView?
     private let onTap: (() -> Void)?
 
-    private let headerHeight: CGFloat = 40
-    
     private func updateDisplayedStreak() {
         let now = Date()
-        let newValue = habit.displayStreak(
+        displayedStreak = habit.displayStreak(
             referenceDate: now,
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
         )
-
-        if newValue != displayedStreak {
-            displayedStreak = newValue
-        }
     }
 
     init(
@@ -72,7 +66,6 @@ struct HabitCard: View {
                 },
                 onQuickLogLongPress: nil
             )
-            .frame(height: headerHeight)
 
             Color.clear
                 .frame(height: 18)
@@ -133,10 +126,7 @@ struct HabitCard: View {
         }
         .onAppear {
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            
-            if displayedStreak == 0 {
-                updateDisplayedStreak()
-            }
+            updateDisplayedStreak()
         }
         .onChange(of: habit.logs) { _, _ in
             updateDisplayedStreak()

@@ -29,6 +29,7 @@ struct HeatmapCellView: View, Equatable {
             .overlay(cellBorderOverlay)
             .overlay(todayOverlay(today: today))
             .overlay(selectionOverlay)
+            .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -56,17 +57,15 @@ struct HeatmapCellView: View, Equatable {
 
     @ViewBuilder
     private var selectionOverlay: some View {
-        let today = Calendar.current.isDateInToday(date)
-
         if isSelected {
-            RoundedRectangle(cornerRadius: 2)
-                .stroke(selectionAccent.opacity(0.2), lineWidth: 0.5)
-                .overlay {
-                    if today {
-                        RoundedRectangle(cornerRadius: 2)
-                            .stroke(Color.primary.opacity(0.35), lineWidth: 1)
-                    }
-                }
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .strokeBorder(selectionStrokeColor, lineWidth: 1)
         }
+    }
+
+    private var selectionStrokeColor: Color {
+        colorScheme == .light
+            ? Color.black.opacity(0.6)
+            : Color.white.opacity(0.7)
     }
 }

@@ -285,8 +285,13 @@ enum CadenceColorPalette {
 
     static func token(from baseHex: String) -> CadencePaletteToken? {
         let normalized = normalizeHex(baseHex)
+        if let directMatch = CadencePaletteToken.allCases.first(
+            where: { normalizeHex(light(for: $0).base) == normalized }
+        ) {
+            return directMatch
+        }
+
         return CadencePaletteToken.allCases.first {
-            normalizeHex(light(for: $0).base) == normalized ||
             legacyBaseHexes(for: $0).contains(normalized)
         }
     }

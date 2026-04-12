@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct HabitHeatmap: View {
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var purchaseService: PurchaseService
     @State private var cache = HeatmapMetricsCache()
 
@@ -52,14 +51,22 @@ struct HabitHeatmap: View {
         habit.curatedColorVariants.accent
     }
 
-    private var softAccent: Color {
-        habit.curatedColorVariants.soft
+    private enum MomentumSemanticTone {
+        case noData
+        case strong
+        case building
+        case slipping
+        case atRisk
     }
 
-    private struct IdentityStateVisualStyle {
-        let foreground: Color
-        let background: Color
-        let border: Color
+    private enum MomentumRowMetrics {
+        static let rowSpacing: CGFloat = 6
+        static let verticalSpacing: CGFloat = 6
+        static let dotBaselineOpticalCorrection: CGFloat = 1
+        static let staticDotOpacity: Double = 0.9
+        static let breathingLowOpacity: Double = 0.75
+        static let breathingHighOpacity: Double = 1.0
+        static let breathingDuration: Double = 3.0
     }
 
     private var gridHeight: CGFloat {
@@ -248,23 +255,21 @@ struct HabitHeatmap: View {
     }
     
     private var identityStateBlock: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: MomentumRowMetrics.verticalSpacing) {
             compactHeatmap
 
-            HStack {
-                Text(CadenceLanguage.shortLabel(for: identityStateSummary.state))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(identityStateVisualStyle.foreground)
-                    .padding(.horizontal, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(identityStateVisualStyle.background)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .stroke(identityStateVisualStyle.border, lineWidth: 0.75)
-                    }
-
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                MomentumStatusRow(
+                    text: momentumLabelText,
+                    dotColor: momentumDotColor,
+                    rowSpacing: MomentumRowMetrics.rowSpacing,
+                    dotBaselineOpticalCorrection: MomentumRowMetrics.dotBaselineOpticalCorrection,
+                    staticDotOpacity: MomentumRowMetrics.staticDotOpacity,
+                    breathingLowOpacity: MomentumRowMetrics.breathingLowOpacity,
+                    breathingHighOpacity: MomentumRowMetrics.breathingHighOpacity,
+                    breathingDuration: MomentumRowMetrics.breathingDuration,
+                    isBreathingEnabled: momentumSemanticTone != .noData
+                )
                 Spacer()
             }
         }
@@ -279,34 +284,99 @@ struct HabitHeatmap: View {
         )
     }
 
-    private var identityStateVisualStyle: IdentityStateVisualStyle {
-        let state = identityStateSummary.state
+    private var momentumLabelText: String {
+        switch momentumSemanticTone {
+        case .noData:
+            return "No activity yet"
+        case .strong, .building, .slipping, .atRisk:
+            return CadenceLanguage.shortLabel(for: identityStateSummary.state)
+        }
+    }
 
-        switch state {
-        case .gettingStarted:
-            return IdentityStateVisualStyle(
-                foreground: Color.primary.opacity(colorScheme == .dark ? 0.83 : 0.8),
-                background: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.09),
-                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
-            )
+    private var momentumDotColor: Color {
+        switch momentumSemanticTone {
+        case .noData:
+            return Color(uiColor: .systemGray3)
+        case .strong:
+            return HabitColor.fern.variants.soft
         case .building:
-            return IdentityStateVisualStyle(
-                foreground: Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.84),
-                background: softAccent.opacity(colorScheme == .dark ? 0.28 : 0.2),
-                border: accent.opacity(colorScheme == .dark ? 0.2 : 0.14)
-            )
-        case .steady, .strong:
-            return IdentityStateVisualStyle(
-                foreground: Color.primary.opacity(colorScheme == .dark ? 0.9 : 0.84),
-                background: softAccent.opacity(colorScheme == .dark ? 0.24 : 0.18),
-                border: Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.1)
-            )
-        case .slipping, .rebuilding:
-            return IdentityStateVisualStyle(
-                foreground: Color.primary.opacity(colorScheme == .dark ? 0.84 : 0.8),
-                background: softAccent.opacity(colorScheme == .dark ? 0.16 : 0.11),
-                border: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
-            )
+            return HabitColor.teal.variants.soft
+        case .slipping:
+            return HabitColor.amber.variants.soft
+        case .atRisk:
+            return HabitColor.coral.variants.soft
+        }
+    }
+
+    private var momentumSemanticTone: MomentumSemanticTone {
+        if habit.logs.isEmpty {
+            return .noData
+        }
+        switch identityStateSummary.state {
+        case .strong:
+            return .strong
+        case .building, .steady, .gettingStarted:
+            return .building
+        case .slipping:
+            return .slipping
+        case .rebuilding:
+            return .atRisk
+        }
+    }
+}
+
+private struct MomentumStatusRow: View {
+    let text: String
+    let dotColor: Color
+    let rowSpacing: CGFloat
+    let dotBaselineOpticalCorrection: CGFloat
+    let staticDotOpacity: Double
+    let breathingLowOpacity: Double
+    let breathingHighOpacity: Double
+    let breathingDuration: Double
+    let isBreathingEnabled: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isBreathing = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: rowSpacing) {
+            Text("•")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(dotColor)
+                .opacity(dotOpacity)
+                .baselineOffset(dotBaselineOpticalCorrection)
+
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+        }
+        .onAppear {
+            restartBreathingAnimation()
+        }
+        .onChange(of: isBreathingEnabled) { _, _ in
+            restartBreathingAnimation()
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            restartBreathingAnimation()
+        }
+    }
+
+    private var dotOpacity: Double {
+        guard isBreathingEnabled, !reduceMotion else {
+            return staticDotOpacity
+        }
+        return isBreathing ? breathingHighOpacity : breathingLowOpacity
+    }
+
+    private func restartBreathingAnimation() {
+        guard isBreathingEnabled, !reduceMotion else {
+            isBreathing = false
+            return
+        }
+        isBreathing = false
+        withAnimation(.easeInOut(duration: breathingDuration).repeatForever(autoreverses: true)) {
+            isBreathing = true
         }
     }
 }

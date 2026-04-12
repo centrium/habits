@@ -12,9 +12,12 @@ enum HabitRowGrid {
     static let cardTrailingInList: CGFloat = 8
     static let spineToCardGutter: CGFloat = 16
     static let contentLeading: CGFloat = 16
-    static let contentSpacing: CGFloat = 12
+    static let contentSpacing: CGFloat = 8
+    static let trailingControlSpacing: CGFloat = 8
+    static let streakToTitleSpacing: CGFloat = 3
+    static let streakToCTASpacing: CGFloat = 12
     static let iconSize: CGFloat = 40
-    static let titleSubtitleSpacing: CGFloat = 2
+    static let titleSubtitleSpacing: CGFloat = 1
     static let headerToHeatmapSpacing: CGFloat = 12
     static let spineOpticalCorrection: CGFloat = -1
 
@@ -123,8 +126,26 @@ struct HabitHeader: View {
         return "Log \(habit.name) for \(dateText)"
     }
 
-    private var resolvedCurrentStreak: Int {
-        max(0, currentStreak ?? 0)
+    private var validatedCurrentStreak: Int? {
+        guard let currentStreak, currentStreak > 0 else { return nil }
+        return currentStreak
+    }
+
+    private var streakContext: StreakIndicatorPresentation.Context {
+        let displayStreak = max(0, validatedCurrentStreak ?? 0)
+        let today = CurrentDayResolver.currentDay(calendar: calendar)
+        let isTodayComplete = habit.isComplete(
+            for: today,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+
+        return StreakIndicatorPresentation.context(
+            displayStreak: displayStreak,
+            isTodayComplete: isTodayComplete,
+            now: Date(),
+            calendar: calendar
+        )
     }
 
     private var shouldShowQuickLogButton: Bool {
@@ -149,16 +170,12 @@ struct HabitHeader: View {
             }
 
             VStack(alignment: .leading, spacing: HabitRowGrid.titleSubtitleSpacing) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(habit.name)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(1)
-
-                    HabitHeaderStreakIndicator(streak: resolvedCurrentStreak)
-                }
+                Text(habit.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
 
                 if !subtitleText.isEmpty {
                     Text(subtitleText)
@@ -167,11 +184,16 @@ struct HabitHeader: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+
+                if streakContext.showBadge {
+                    HabitUnifiedStreakIndicator(context: streakContext)
+                        .offset(y: -1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Group {
                 if isReordering, let trailingAccessory {
@@ -204,48 +226,120 @@ struct HabitHeader: View {
     }
 }
 
-private struct HabitHeaderStreakIndicator: View {
+private struct HabitUnifiedStreakIndicator: View {
     @Environment(\.colorScheme) private var colorScheme
-    let streak: Int
 
-    private var showsIndicator: Bool {
-        StreakIndicatorPresentation.shouldShow(streak: streak)
-    }
+    let context: StreakIndicatorPresentation.Context
+    @State private var pulseScale: CGFloat = 1
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            HStack(spacing: 3) {
+        HStack(alignment: .center, spacing: 6) {
+            HStack(spacing: 2) {
                 Image(systemName: "flame.fill")
-                    .font(CadenceTokens.Typography.supporting)
-                Text("888")
-                    .font(CadenceTokens.Typography.supporting.weight(.regular))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(flameColor)
+                    .baselineOffset(1)
+
+                Text(StreakIndicatorPresentation.valueText(for: context.streak))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(numberColor)
             }
             .monospacedDigit()
-            .opacity(0)
 
-            if showsIndicator {
-                HStack(spacing: 3) {
-                    Image(systemName: "flame.fill")
-                        .font(CadenceTokens.Typography.supporting)
-                        .foregroundStyle(flameColor)
-
-                    Text(StreakIndicatorPresentation.valueText(for: streak))
-                        .font(CadenceTokens.Typography.supporting.weight(.regular))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            HStack(spacing: 5) {
+                ForEach(Array(context.directionalDots.dots.enumerated()), id: \.offset) { index, dot in
+                    Circle()
+                        .fill(dotFillColor(for: dot, isNextAction: index == nextActionDotIndex))
+                        .frame(width: 6, height: 6)
+                        .overlay {
+                            if dot.isAtRisk {
+                                Circle()
+                                    .strokeBorder(riskRingColor, lineWidth: 1)
+                            } else if index == nextActionDotIndex, !dot.isFilled {
+                                Circle()
+                                    .strokeBorder(nextActionRingColor, lineWidth: 0.9)
+                            } else if dot.isToday && !dot.isFilled {
+                                Circle()
+                                    .strokeBorder(todayRingColor, lineWidth: 1)
+                            }
+                        }
+                        .animation(.easeOut(duration: 0.35), value: context.directionalDots.filledCount)
                 }
-                .monospacedDigit()
             }
+            .baselineOffset(0.75)
         }
-        .frame(width: StreakIndicatorPresentation.reservedWidth, alignment: .leading)
+        .frame(height: 18, alignment: .center)
+        .scaleEffect(pulseScale)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(showsIndicator ? "Streak \(streak)" : "")
-        .accessibilityHidden(!showsIndicator)
+        .accessibilityLabel("Streak \(context.streak)")
+        .onChange(of: context.streak) { oldValue, newValue in
+            guard newValue > oldValue else { return }
+            triggerStreakPulse()
+        }
     }
 
     private var flameColor: Color {
-        colorScheme == .dark
-            ? CadenceTokens.Color.State.warning.opacity(0.78)
-            : CadenceTokens.Color.State.warning
+        if context.isAtRisk {
+            return colorScheme == .dark ? Color.white.opacity(0.94) : Color.black.opacity(0.64)
+        }
+        return colorScheme == .dark ? Color.white.opacity(0.9) : Color.black.opacity(0.58)
+    }
+
+    private var numberColor: Color {
+        if context.isAtRisk {
+            return colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.72)
+        }
+        return colorScheme == .dark ? Color.white.opacity(0.88) : Color.black.opacity(0.66)
+    }
+
+    private var nextActionDotIndex: Int? {
+        context.directionalDots.dots.firstIndex { !$0.isFilled }
+    }
+
+    private func dotFillColor(
+        for dot: StreakIndicatorPresentation.DirectionalDots.Dot,
+        isNextAction: Bool
+    ) -> Color {
+        if dot.isFilled {
+            return colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.54)
+        }
+
+        if dot.isAtRisk {
+            return colorScheme == .dark ? Color.white.opacity(0.34) : Color.black.opacity(0.26)
+        }
+
+        if isNextAction {
+            return colorScheme == .dark ? Color.white.opacity(0.27) : Color.black.opacity(0.2)
+        }
+
+        if dot.isToday {
+            return colorScheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.18)
+        }
+
+        return colorScheme == .dark ? Color.white.opacity(0.17) : Color.black.opacity(0.14)
+    }
+
+    private var todayRingColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.26) : Color.black.opacity(0.18)
+    }
+
+    private var riskRingColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.34) : Color.black.opacity(0.24)
+    }
+
+    private var nextActionRingColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.14)
+    }
+
+    private func triggerStreakPulse() {
+        withAnimation(.easeOut(duration: 0.16)) {
+            pulseScale = 1.06
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            withAnimation(.easeOut(duration: 0.16)) {
+                pulseScale = 1
+            }
+        }
     }
 }
 

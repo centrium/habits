@@ -51,15 +51,36 @@ private struct CadenceSurfaceModifier: ViewModifier {
         content
             .background {
                 ZStack {
-                       // Border layer (outer)
-                       RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                           .fill(surfaceBorder)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(surfaceBorder)
 
-                       // Fill layer (inner, slightly inset)
-                       RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                           .inset(by: 1) // 👈 KEY
-                           .fill(surfaceFill)
-                   }
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .inset(by: 1)
+                        .fill(surfaceFill)
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
+                    .strokeBorder(topEdgeTint, lineWidth: 1)
+                    .mask(
+                        LinearGradient(
+                            colors: [
+                                .white,
+                                .white.opacity(0.08),
+                                .clear
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+            .overlay {
+                if colorScheme == .dark {
+                    RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.035), lineWidth: 1)
+                        .blur(radius: 1)
+                        .opacity(0.65)
+                }
             }
     }
 
@@ -67,40 +88,22 @@ private struct CadenceSurfaceModifier: ViewModifier {
 
     private var surfaceFill: Color {
         colorScheme == .light
-        ? Color.white
-        : Color(white: 0.12) // lifted from pure black
+        ? Color(red: 0.992, green: 0.988, blue: 0.978)
+        : Color(white: 0.14)
     }
 
     // MARK: - Border (barely visible, but critical)
 
     private var surfaceBorder: Color {
         colorScheme == .light
-        ? Color.black.opacity(0.04)   // was 0.06
-        : Color.white.opacity(0.05)
-    }
-    
-    private var borderWidth: CGFloat {
-        1
+        ? Color.black.opacity(0.035)
+        : Color.white.opacity(0.045)
     }
 
-    // MARK: - Top Edge Light (this is the "Apple polish")
-
-    private var topEdgeHighlight: some View {
-        LinearGradient(
-            colors: [
-                colorScheme == .light
-                    ? Color.white.opacity(0.25)
-                    : Color.white.opacity(0.04)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: 3)
-        .padding(.horizontal, 2) // 👈 keep it away from corners
-        .mask(
-            Rectangle() // 👈 IMPORTANT: no rounded mask
-        )
-        .allowsHitTesting(false)
+    private var topEdgeTint: Color {
+        colorScheme == .light
+            ? Color.white.opacity(0.5)
+            : Color.white.opacity(0.075)
     }
 }
 

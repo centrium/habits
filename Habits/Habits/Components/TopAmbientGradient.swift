@@ -1,25 +1,47 @@
 import SwiftUI
 
 struct TopAmbientGradient: View {
-    let accent: Color
-    let highlight: Color
+    let tone: Color
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        LinearGradient(
-            colors: gradientColors,
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        ZStack {
+            RadialGradient(
+                colors: [
+                    tone.opacity(colorScheme == .dark ? 0.24 : 0.18),
+                    tone.opacity(colorScheme == .dark ? 0.14 : 0.1),
+                    tone.opacity(colorScheme == .dark ? 0.08 : 0.05),
+                    .clear
+                ],
+                center: .topLeading,
+                startRadius: 12,
+                endRadius: 260
+            )
+            .offset(x: -26, y: -86)
+            .blur(radius: colorScheme == .dark ? 40 : 46)
+
+            RadialGradient(
+                colors: [
+                    tone.opacity(colorScheme == .dark ? 0.18 : 0.13),
+                    tone.opacity(colorScheme == .dark ? 0.1 : 0.07),
+                    .clear
+                ],
+                center: .topTrailing,
+                startRadius: 8,
+                endRadius: 240
+            )
+            .offset(x: 38, y: -72)
+            .blur(radius: colorScheme == .dark ? 44 : 50)
+        }
         .frame(maxWidth: .infinity)
-        .frame(height: 260, alignment: .top)
+        .frame(height: 214, alignment: .top)
         .ignoresSafeArea(edges: .top)
         .mask(
             LinearGradient(
                 colors: [
                     .white,
-                    .white.opacity(0.6),
+                    .white.opacity(0.42),
                     .clear
                 ],
                 startPoint: .top,
@@ -27,23 +49,5 @@ struct TopAmbientGradient: View {
             )
         )
         .allowsHitTesting(false)
-    }
-
-    private var gradientColors: [Color] {
-        if colorScheme == .light {
-            return [
-                highlight.opacity(0.22),
-                accent.opacity(0.28),
-                accent.opacity(0.14),
-                .clear
-            ]
-        } else {
-            return [
-                highlight.opacity(0.24),
-                accent.opacity(0.20),
-                accent.opacity(0.10),
-                .clear
-            ]
-        }
     }
 }

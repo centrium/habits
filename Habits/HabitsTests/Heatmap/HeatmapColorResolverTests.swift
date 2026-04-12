@@ -3,6 +3,15 @@ import XCTest
 @testable import Habits
 
 final class HeatmapColorResolverTests: XCTestCase {
+    func testHabitColorFromHexPrefersDirectPaletteMatchOverLegacyAliases() {
+        XCTAssertEqual(HabitColor.from(hex: HabitColor.fern.hex), .fern)
+        XCTAssertEqual(HabitColor.from(hex: HabitColor.sage.hex), .sage)
+        XCTAssertEqual(HabitColor.from(hex: HabitColor.coral.hex), .coral)
+        XCTAssertEqual(HabitColor.from(hex: HabitColor.rose.hex), .rose)
+        XCTAssertEqual(HabitColor.from(hex: HabitColor.teal.hex), .teal)
+        XCTAssertEqual(HabitColor.from(hex: HabitColor.cyan.hex), .cyan)
+    }
+
     func testZeroStateUsesFixedNeutralHexes() {
         XCTAssertEqual(
             HeatmapColorResolver.hex(for: 0, habitColor: .teal, scheme: .light),

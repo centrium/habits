@@ -58,8 +58,7 @@ struct HabitsListView: View {
                     .ignoresSafeArea()
 
                 TopAmbientGradient(
-                    accent: headerAmbientColor,
-                    highlight: headerHighlightColor
+                    tone: headerAmbientColor
                 )
                     .frame(maxWidth: .infinity, alignment: .top)
                     .ignoresSafeArea()
@@ -397,21 +396,63 @@ struct HabitsListView: View {
     }
 
     private var headerAmbientColor: Color {
-        if let firstHabit = firstVisibleHabitForAmbient {
-            return CadenceTokens.Color.accent(for: firstHabit).ambient
-        }
-        return .systemAccent
-    }
+        let contributingHabits = Array(visibleHabits.prefix(3))
+        guard !contributingHabits.isEmpty else { return .systemAccent }
 
-    private var headerHighlightColor: Color {
-        if let firstHabit = firstVisibleHabitForAmbient {
-            return CadenceTokens.Color.accent(for: firstHabit).highlight
-        }
-        return .systemAccent
-    }
+        let weights: [CGFloat] = [0.58, 0.3, 0.12]
+        var weightedHueX: CGFloat = 0
+        var weightedHueY: CGFloat = 0
+        var weightedSaturation: CGFloat = 0
+        var weightedBrightness: CGFloat = 0
+        var totalWeight: CGFloat = 0
 
-    private var firstVisibleHabitForAmbient: Habit? {
-        visibleHabits.first
+        for (index, habit) in contributingHabits.enumerated() {
+            let weight = weights[min(index, weights.count - 1)]
+            let sourceColor = UIColor(habit.curatedColorVariants.strong)
+
+            var hue: CGFloat = 0
+            var saturation: CGFloat = 0
+            var brightness: CGFloat = 0
+            var alpha: CGFloat = 0
+            guard sourceColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+                continue
+            }
+
+            let hueAngle = hue * (.pi * 2)
+            weightedHueX += cos(hueAngle) * weight
+            weightedHueY += sin(hueAngle) * weight
+            weightedSaturation += saturation * weight
+            weightedBrightness += brightness * weight
+            totalWeight += weight
+        }
+
+        guard totalWeight > 0 else { return .systemAccent }
+
+        let normalizedHue = {
+            let angle = atan2(weightedHueY, weightedHueX)
+            return angle < 0 ? (angle + (.pi * 2)) / (.pi * 2) : angle / (.pi * 2)
+        }()
+        let baseSaturation = weightedSaturation / totalWeight
+        let baseBrightness = weightedBrightness / totalWeight
+
+        let tunedSaturation: CGFloat
+        let tunedBrightness: CGFloat
+        if colorScheme == .dark {
+            tunedSaturation = min(0.58, max(0.14, baseSaturation * 0.55))
+            tunedBrightness = min(0.72, max(0.28, (baseBrightness * 0.86) + 0.02))
+        } else {
+            tunedSaturation = min(0.45, max(0.08, baseSaturation * 0.42))
+            tunedBrightness = min(0.98, max(0.62, (baseBrightness * 0.94) + 0.12))
+        }
+
+        return Color(
+            UIColor(
+                hue: normalizedHue,
+                saturation: tunedSaturation,
+                brightness: tunedBrightness,
+                alpha: 1
+            )
+        )
     }
 
     private var lockedHabitSlot: some View {

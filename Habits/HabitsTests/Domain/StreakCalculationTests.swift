@@ -106,7 +106,7 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertEqual(streak, 3)
     }
 
-    func testOpenGoalSingleDayNoStreakIndicator() {
+    func testOpenGoalSingleDayShowsStreakIndicator() {
         // Given
         let today = TestDateFactory.date(2026, 3, 19, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
@@ -124,7 +124,7 @@ final class StreakCalculationTests: XCTestCase {
 
         // Then
         XCTAssertEqual(currentStreak, 1)
-        XCTAssertFalse(shouldShowIndicator)
+        XCTAssertTrue(shouldShowIndicator)
     }
 
     func testCurrentStreakIsZeroWhenCurrentPeriodIsIncomplete() {
