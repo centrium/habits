@@ -100,8 +100,8 @@ struct HabitDetailSheet: View {
                 earliestCalendarDate: earliestCalendarDate
             )
         }
-        .navigationBarTitleDisplayMode(.large)
-        .navigationTitle(habit.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
 
@@ -329,12 +329,18 @@ struct HabitDetailSheet: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: sectionSpacing) {
+                DetailHeaderIdentity(
+                    habitName: habit.name,
+                    iconName: habit.iconName,
+                    accent: accent.primary
+                )
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.md)
+
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                     HeroTopRow(
-                        habitName: habit.name,
                         categoryLabel: habit.category.rawValue,
-                        loggingContextText: loggingContextText,
-                        accent: accent.tertiary
+                        loggingContextText: loggingContextText
                     )
 
                     Text(heroStatus)
@@ -342,8 +348,8 @@ struct HabitDetailSheet: View {
                         .foregroundStyle(.primary.opacity(0.9))
                         .lineLimit(2)
                         .minimumScaleFactor(0.92)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 3)
 
                     if showsProgressSummary {
@@ -388,7 +394,6 @@ struct HabitDetailSheet: View {
                 .frame(minHeight: 206, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
-                .padding(.top, CadenceTokens.Space.md)
 
                 HabitIdentityCard(
                     identityText: identityText,
@@ -851,6 +856,39 @@ struct HabitDetailSheet: View {
 
 }
 
+private struct DetailHeaderIdentity: View {
+    let habitName: String
+    let iconName: String?
+    let accent: Color
+
+    private var resolvedIcon: String? {
+        let trimmed = iconName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            HabitBadge(
+                iconName: resolvedIcon,
+                accent: accent,
+                habitName: habitName,
+                size: 30
+            )
+            .alignmentGuide(.firstTextBaseline) { dimensions in
+                dimensions[.bottom] - 2
+            }
+
+            Text(habitName)
+                .font(.largeTitle.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct InsightsInlineNudgeRow: View {
     let text: String
     let action: () -> Void
@@ -905,44 +943,22 @@ struct CueInsightView: View {
 }
 
 private struct HeroTopRow: View {
-    let habitName: String
     let categoryLabel: String
     let loggingContextText: String
-    let accent: Color
 
     var body: some View {
-        HStack(spacing: CadenceTokens.Space.md) {
-            Circle()
-                .fill(accent)
-                .frame(width: CadenceTokens.Space.md, height: CadenceTokens.Space.md)
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+            Text(categoryLabel)
+                .font(.caption)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                .lineLimit(1)
 
-            VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
-                HStack(spacing: CadenceTokens.Space.sm) {
-                    Text(habitName)
-                        .font(CadenceTokens.Typography.title)
-                        .tracking(CadenceTokens.Typography.titleTracking)
-                        .foregroundStyle(CadenceTokens.Color.Text.primary)
-                        .lineLimit(1)
-
-                    Text(categoryLabel)
-                        .font(.caption)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(CadenceTokens.Color.Background.tertiary.opacity(0.75))
-                        )
-                }
-
-                Text(loggingContextText)
-                    .font(CadenceTokens.Typography.body)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: CadenceTokens.Space.sm)
+            Text(loggingContextText)
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
