@@ -54,7 +54,7 @@ final class CueInsightService {
         let minimumDominantRatio = self.minimumDominantRatio
 
         let insight = await Task.detached(priority: .utility) {
-            Self.computeCue(
+            await Self.computeCue(
                 from: snapshot,
                 minimumInterval: minimumInterval,
                 maximumInterval: maximumInterval,

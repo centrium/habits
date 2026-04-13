@@ -16,19 +16,9 @@ struct HabitCard: View {
     @State private var selectedDate = Date()
     @State private var showQuickEntry = false
     @State private var showHeatmapPaywall = false
-    @State private var displayedStreak: Int?
     private let isReordering: Bool
     private let trailingAccessory: AnyView?
     private let onTap: (() -> Void)?
-
-    private func updateDisplayedStreak() {
-        let now = Date()
-        displayedStreak = habit.displayStreak(
-            referenceDate: now,
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        )
-    }
 
     init(
         habit: Habit,
@@ -43,7 +33,12 @@ struct HabitCard: View {
     }
 
     var body: some View {
-        
+        let displayedStreak = habit.displayStreak(
+            referenceDate: Date(),
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
+
         VStack(alignment: .leading, spacing: HabitRowGrid.headerToHeatmapSpacing) {
             HabitHeader(
                 habit: habit,
@@ -85,6 +80,7 @@ struct HabitCard: View {
                     },
                     isCompact: true
                 )
+                .padding(.leading, HabitRowGrid.iconSize + HabitRowGrid.iconToTitleSpacing)
             
         }
         .padding(.horizontal, HabitRowGrid.contentLeading)
@@ -126,14 +122,9 @@ struct HabitCard: View {
         }
         .onAppear {
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            updateDisplayedStreak()
-        }
-        .onChange(of: habit.logs) { _, _ in
-            updateDisplayedStreak()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             selectedDate = calculationCalendar.startOfDay(for: selectedDate)
-            updateDisplayedStreak()
         }
     }
 

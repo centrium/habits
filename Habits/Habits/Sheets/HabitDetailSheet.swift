@@ -288,16 +288,7 @@ struct HabitDetailSheet: View {
                     .buttonStyle(TactileButtonStyle())
                     .accessibilityLabel("Quick log")
 
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                            .frame(width: 34, height: 34)
-                            .padding(.horizontal, 4)
-                            .cadenceControlChrome()
-                    }
-                    .accessibilityLabel("Settings")
+                   
                 }
             }
         }
@@ -326,6 +317,7 @@ struct HabitDetailSheet: View {
         let identityStatText = identityText == nil
             ? nil
             : CadenceLanguage.identityStat(days: identityState.activeDays, window: identityState.windowDays)
+        let streakCardConfiguration = streakCardConfiguration(displayedStreak: displayedStreak)
 
         ScrollView {
             VStack(alignment: .leading, spacing: sectionSpacing) {
@@ -394,6 +386,14 @@ struct HabitDetailSheet: View {
                 .frame(minHeight: 206, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
+
+                if let streakCardConfiguration {
+                    StreakNudgeCard(
+                        configuration: streakCardConfiguration,
+                        accent: accent
+                    )
+                    .padding(.horizontal, sectionPadding)
+                }
 
                 HabitIdentityCard(
                     identityText: identityText,
@@ -510,7 +510,7 @@ struct HabitDetailSheet: View {
     private var backgroundColor: Color {
         colorScheme == .light
             ? Color(white: 0.96)
-            : Color.black
+            : Color(white: 0.04)
     }
 
     @ViewBuilder
@@ -653,6 +653,37 @@ struct HabitDetailSheet: View {
             calendar: calculationCalendar,
             now: Date(),
             windowDays: 7
+        )
+    }
+
+    private func streakCardConfiguration(displayedStreak: Int) -> StreakCardConfiguration? {
+        let currentStreak = max(0, displayedStreak)
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        let hasLoggedToday = uiStateStore.progress(habitId: habit.id, date: today).map { $0 > 0 } == true
+            || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
+        let isMilestone = StreakCardConfiguration.milestoneThresholds.contains(currentStreak)
+
+        let baseState: StreakCardConfiguration.State? = {
+            if hasLoggedToday {
+                return .secured
+            } else if currentStreak > 0 {
+                return .atRisk
+            } else {
+                return nil
+            }
+        }()
+
+        guard var resolvedState = baseState else { return nil }
+
+        if isMilestone {
+            resolvedState = .milestone
+        }
+
+        return StreakCardConfiguration(
+            currentStreak: currentStreak,
+            hasLoggedToday: hasLoggedToday,
+            isMilestone: isMilestone,
+            state: resolvedState
         )
     }
 
@@ -939,6 +970,119 @@ struct CueInsightView: View {
         .animation(.easeIn(duration: 0.2), value: isVisible)
         .onAppear { isVisible = true }
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct StreakCardConfiguration: Equatable {
+    enum State: Equatable {
+        case secured
+        case atRisk
+        case milestone
+    }
+
+    static let milestoneThresholds: Set<Int> = [7, 14, 30, 60, 90, 100, 180, 365]
+
+    let currentStreak: Int
+    let hasLoggedToday: Bool
+    let isMilestone: Bool
+    let state: State
+
+    var iconSystemName: String {
+        switch state {
+        case .secured:
+            return "flame.fill"
+        case .atRisk:
+            return "exclamationmark.triangle.fill"
+        case .milestone:
+            return "sparkles"
+        }
+    }
+
+    var titleText: String {
+        let dayText = currentStreak == 1 ? "Day" : "Days"
+        return "\(currentStreak) \(dayText) Streak"
+    }
+
+    var supportingPrimaryText: String {
+        switch state {
+        case .secured:
+            return "Momentum is building"
+        case .atRisk:
+            return "Don't break the chain today"
+        case .milestone:
+            return "Strong run - keep it going"
+        }
+    }
+
+    var supportingSecondaryText: String {
+        switch state {
+        case .secured:
+            return "Keep it alive tomorrow"
+        case .atRisk:
+            return "Miss today and this resets"
+        case .milestone:
+            return "You've built real consistency"
+        }
+    }
+}
+
+private struct StreakNudgeCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let configuration: StreakCardConfiguration
+    let accent: CadenceAccentTokens
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs + 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Image(systemName: configuration.iconSystemName)
+                    .font(.system(size: configuration.state == .atRisk ? 17.1 : 18, weight: .semibold))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(iconColor)
+                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                        dimensions[.bottom] - 2
+                    }
+
+                Text(configuration.titleText)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .lineLimit(1)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(configuration.supportingPrimaryText)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .lineLimit(1)
+
+                Text(configuration.supportingSecondaryText)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(CadenceTokens.Space.lg)
+        .background(
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .fill(accent.primary.opacity(colorScheme == .dark ? 0.09 : 0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .stroke(accent.primary.opacity(colorScheme == .dark ? 0.3 : 0.2), lineWidth: 1)
+        )
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(configuration.titleText). \(configuration.supportingPrimaryText). \(configuration.supportingSecondaryText)")
+    }
+
+    private var iconColor: Color {
+        switch configuration.state {
+        case .atRisk:
+            return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
+        case .secured, .milestone:
+            return accent.primary.opacity(colorScheme == .dark ? 1 : 0.88)
+        }
     }
 }
 

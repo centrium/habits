@@ -21,6 +21,9 @@ enum HabitRowGrid {
     static let titleRowHeight: CGFloat = 21
     static let titleToMetaSpacing: CGFloat = 3
     static let metaRowHeight: CGFloat = 18
+    static let subtitleToStreakSpacing: CGFloat = 4
+    static let streakIconToValueSpacing: CGFloat = 4
+    static let streakValueToDotsSpacing: CGFloat = 7
     static let headerToHeatmapSpacing: CGFloat = 12
     static let spineOpticalCorrection: CGFloat = -1
 
@@ -134,18 +137,20 @@ struct HabitHeader: View {
         return currentStreak
     }
 
+    private var hasLoggedToday: Bool {
+        let today = CurrentDayResolver.currentDay(calendar: calendar)
+        if let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today), optimisticProgress > 0 {
+            return true
+        }
+        return !habit.logs(on: today, calendar: calendar).isEmpty
+    }
+
     private var streakContext: StreakIndicatorPresentation.Context {
         let displayStreak = max(0, validatedCurrentStreak ?? 0)
-        let today = CurrentDayResolver.currentDay(calendar: calendar)
-        let isTodayComplete = habit.isComplete(
-            for: today,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
 
         return StreakIndicatorPresentation.context(
             displayStreak: displayStreak,
-            isTodayComplete: isTodayComplete,
+            isTodayComplete: hasLoggedToday,
             now: Date(),
             calendar: calendar
         )
@@ -159,25 +164,39 @@ struct HabitHeader: View {
         return true
     }
 
+    private var hasSubtitle: Bool {
+        subtitleText != nil
+    }
+
+    private var showsStreak: Bool {
+        streakContext.showBadge
+    }
+
+    private var hasMetadataContent: Bool {
+        hasSubtitle || showsStreak
+    }
+
     @ViewBuilder
-    private var metaContent: some View {
+    private var metadataStack: some View {
         if let subtitleText {
             Text(subtitleText)
                 .font(.system(size: 14))
                 .foregroundStyle(CadenceTokens.Color.Text.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-        } else if streakContext.showBadge {
-            HabitUnifiedStreakIndicator(context: streakContext)
-        } else {
-            Color.clear
-                .accessibilityHidden(true)
+        }
+
+        if showsStreak {
+            HabitUnifiedStreakIndicator(
+                context: streakContext,
+                accent: iconAccent
+            )
         }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: HabitRowGrid.contentSpacing) {
-            HStack(alignment: .top, spacing: HabitRowGrid.iconToTitleSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.iconToTitleSpacing) {
                 HabitBadge(
                     iconName: iconName,
                     accent: iconAccent,
@@ -185,8 +204,14 @@ struct HabitHeader: View {
                     size: HabitRowGrid.iconSize
                 )
                 .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize, alignment: .top)
+                .alignmentGuide(.firstTextBaseline) { dimensions in
+                    dimensions[.bottom] - 2
+                }
 
-                VStack(alignment: .leading, spacing: HabitRowGrid.titleToMetaSpacing) {
+                VStack(
+                    alignment: .leading,
+                    spacing: hasMetadataContent ? HabitRowGrid.titleToMetaSpacing : 0
+                ) {
                     Text(habit.name)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
@@ -195,12 +220,25 @@ struct HabitHeader: View {
                         .frame(height: HabitRowGrid.titleRowHeight, alignment: .topLeading)
                         .layoutPriority(1)
 
-                    metaContent
+                    if hasMetadataContent {
+                        VStack(
+                            alignment: .leading,
+                            spacing: hasSubtitle && showsStreak
+                                ? HabitRowGrid.subtitleToStreakSpacing
+                                : 0
+                        ) {
+                            metadataStack
+                        }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: HabitRowGrid.metaRowHeight, alignment: .leading)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: HabitRowGrid.headerContentHeight, alignment: .topLeading)
+                .frame(
+                    minHeight: hasMetadataContent
+                        ? HabitRowGrid.headerContentHeight
+                        : HabitRowGrid.titleRowHeight,
+                    alignment: .topLeading
+                )
                 .layoutPriority(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,7 +266,7 @@ struct HabitHeader: View {
                     .transition(.opacity.combined(with: .scale))
                 }
             }
-            .frame(minHeight: HabitRowGrid.headerContentHeight, alignment: .center)
+            .frame(height: HabitRowGrid.titleRowHeight, alignment: .center)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
     }
@@ -238,15 +276,19 @@ private struct HabitUnifiedStreakIndicator: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let context: StreakIndicatorPresentation.Context
+    let accent: Color
     @State private var pulseScale: CGFloat = 1
 
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
-            HStack(spacing: 2) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(flameColor)
-                    .baselineOffset(1)
+        HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.streakValueToDotsSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.streakIconToValueSpacing) {
+                Image(systemName: context.isAtRisk ? "exclamationmark.triangle.fill" : "flame.fill")
+                    .font(.system(size: context.isAtRisk ? 11.4 : 12, weight: .semibold))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(iconColor)
+                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                        dimensions[.bottom] - 1
+                    }
 
                 Text(StreakIndicatorPresentation.valueText(for: context.streak))
                     .font(.system(size: 15, weight: .semibold))
@@ -274,7 +316,7 @@ private struct HabitUnifiedStreakIndicator: View {
                         .animation(.easeOut(duration: 0.35), value: context.directionalDots.filledCount)
                 }
             }
-            .baselineOffset(0.75)
+            .baselineOffset(1)
         }
         .frame(height: 18, alignment: .center)
         .scaleEffect(pulseScale)
@@ -286,11 +328,15 @@ private struct HabitUnifiedStreakIndicator: View {
         }
     }
 
-    private var flameColor: Color {
+    private var iconColor: Color {
         if context.isAtRisk {
-            return colorScheme == .dark ? Color.white.opacity(0.94) : Color.black.opacity(0.64)
+            return warningColor.opacity(colorScheme == .dark ? 0.95 : 0.9)
         }
-        return colorScheme == .dark ? Color.white.opacity(0.9) : Color.black.opacity(0.58)
+        return accent.opacity(colorScheme == .dark ? 1 : 0.88)
+    }
+
+    private var warningColor: Color {
+        .orange
     }
 
     private var numberColor: Color {
@@ -308,23 +354,25 @@ private struct HabitUnifiedStreakIndicator: View {
         for dot: StreakIndicatorPresentation.DirectionalDots.Dot,
         isNextAction: Bool
     ) -> Color {
+        let baseColor = colorScheme == .dark ? Color.white : Color.black
+
         if dot.isFilled {
-            return colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.54)
+            return baseColor.opacity(1)
         }
 
         if dot.isAtRisk {
-            return colorScheme == .dark ? Color.white.opacity(0.34) : Color.black.opacity(0.26)
+            return baseColor.opacity(0.52)
         }
 
         if isNextAction {
-            return colorScheme == .dark ? Color.white.opacity(0.27) : Color.black.opacity(0.2)
+            return baseColor.opacity(0.3)
         }
 
         if dot.isToday {
-            return colorScheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.18)
+            return baseColor.opacity(0.5)
         }
 
-        return colorScheme == .dark ? Color.white.opacity(0.17) : Color.black.opacity(0.14)
+        return baseColor.opacity(0.27)
     }
 
     private var todayRingColor: Color {

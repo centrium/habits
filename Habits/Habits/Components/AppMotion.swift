@@ -190,38 +190,86 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
         content
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: accent.opacity((colorScheme == .dark ? 0.248 : 0.146) * ambient), location: 0.0),
-                            .init(color: accent.opacity((colorScheme == .dark ? 0.108 : 0.064) * ambient), location: 0.24),
-                            .init(color: accent.opacity((colorScheme == .dark ? 0.032 : 0.022) * ambient), location: 0.58),
-                            .init(color: .clear, location: 1.0)
-                        ]),
-                        startPoint: animateSurface ? UnitPoint(x: 0.46, y: 0.0) : UnitPoint(x: 0.54, y: 0.03),
-                        endPoint: animateSurface ? UnitPoint(x: 0.58, y: 1.0) : UnitPoint(x: 0.42, y: 0.97)
-                    )
-                    .blur(radius: 42 + (8 * (ambient - 1)))
+                    if colorScheme == .dark {
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.03 * ambient), location: 0.0),
+                                .init(color: Color.white.opacity(0.014 * ambient), location: 0.26),
+                                .init(color: .clear, location: 0.72)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
 
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity((colorScheme == .dark ? 0.02 : 0.042) * ambient), location: 0.0),
-                            .init(color: Color.white.opacity((colorScheme == .dark ? 0.008 : 0.016) * ambient), location: 0.22),
-                            .init(color: .clear, location: 0.74)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .blendMode(.screen)
+                        RadialGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color(red: 0.50, green: 0.58, blue: 0.66).opacity(0.088 * ambient), location: 0.0),
+                                .init(color: Color(red: 0.50, green: 0.58, blue: 0.66).opacity(0.054 * ambient), location: 0.42),
+                                .init(color: .clear, location: 1.0)
+                            ]),
+                            center: animateSurface ? UnitPoint(x: -0.12, y: -0.2) : UnitPoint(x: -0.18, y: -0.24),
+                            startRadius: 72,
+                            endRadius: 680
+                        )
+                        .blur(radius: 198)
+
+                        RadialGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: accent.opacity(0.016 * ambient), location: 0.0),
+                                .init(color: accent.opacity(0.01 * ambient), location: 0.44),
+                                .init(color: .clear, location: 1.0)
+                            ]),
+                            center: animateSurface ? UnitPoint(x: -0.12, y: -0.2) : UnitPoint(x: -0.18, y: -0.24),
+                            startRadius: 84,
+                            endRadius: 700
+                        )
+                        .blur(radius: 198)
+
+                        RadialGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color(red: 0.47, green: 0.56, blue: 0.63).opacity(0.06 * ambient), location: 0.0),
+                                .init(color: Color(red: 0.47, green: 0.56, blue: 0.63).opacity(0.036 * ambient), location: 0.46),
+                                .init(color: .clear, location: 1.0)
+                            ]),
+                            center: animateSurface ? UnitPoint(x: 1.22, y: 0.86) : UnitPoint(x: 1.16, y: 0.8),
+                            startRadius: 70,
+                            endRadius: 640
+                        )
+                        .blur(radius: 188)
+                    } else {
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: accent.opacity(0.146 * ambient), location: 0.0),
+                                .init(color: accent.opacity(0.064 * ambient), location: 0.24),
+                                .init(color: accent.opacity(0.022 * ambient), location: 0.58),
+                                .init(color: .clear, location: 1.0)
+                            ]),
+                            startPoint: animateSurface ? UnitPoint(x: 0.46, y: 0.0) : UnitPoint(x: 0.54, y: 0.03),
+                            endPoint: animateSurface ? UnitPoint(x: 0.58, y: 1.0) : UnitPoint(x: 0.42, y: 0.97)
+                        )
+                        .blur(radius: 42 + (8 * (ambient - 1)))
+
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.042 * ambient), location: 0.0),
+                                .init(color: Color.white.opacity(0.016 * ambient), location: 0.22),
+                                .init(color: .clear, location: 0.74)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .blendMode(.screen)
+                    }
                 }
-                .frame(height: colorScheme == .dark ? 284 : 292)
+                .frame(height: colorScheme == .dark ? 320 : 292)
                 .allowsHitTesting(false)
                 .ignoresSafeArea(edges: .top)
                 .mask(
                     LinearGradient(
                         gradient: Gradient(stops: [
                             .init(color: .white, location: 0.0),
-                            .init(color: .white, location: 0.56),
-                            .init(color: .white.opacity(0.74), location: 0.8),
+                            .init(color: .white, location: colorScheme == .dark ? 0.38 : 0.56),
+                            .init(color: .white.opacity(colorScheme == .dark ? 0.45 : 0.74), location: colorScheme == .dark ? 0.62 : 0.8),
                             .init(color: .clear, location: 1.0)
                         ]),
                         startPoint: .top,

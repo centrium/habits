@@ -5,56 +5,96 @@ struct TopAmbientGradient: View {
 
     var body: some View {
         let palette = AmbientPalette.palette(for: colorScheme)
-        let ambientHeight: CGFloat = colorScheme == .dark ? 376 : 332
+        let ambientHeight: CGFloat = colorScheme == .dark ? 428 : 332
         let maskSolidEnd: CGFloat = colorScheme == .dark ? 0.52 : 0.45
         let maskFeatherLocation: CGFloat = colorScheme == .dark ? 0.89 : 0.85
         let maskFeatherOpacity: Double = colorScheme == .dark ? 0.8 : 0.72
 
         return ZStack(alignment: .top) {
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: palette.topTint.opacity(palette.linearTopOpacity), location: 0.0),
-                    .init(color: palette.topTint.opacity(palette.linearMidOpacity), location: 0.16),
-                    .init(color: palette.topTint.opacity(palette.linearLowOpacity), location: 0.36),
-                    .init(color: palette.topTint.opacity(palette.linearTailOpacity), location: 0.67),
-                    .init(color: .clear, location: 1.0)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            if colorScheme == .dark {
+                // Dark mode uses two soft, asymmetrical edge-biased zones.
+                // This avoids a full-screen haze and keeps cards/text visually dominant.
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: Color.white.opacity(0.032), location: 0.0),
+                        .init(color: Color.white.opacity(0.016), location: 0.24),
+                        .init(color: .clear, location: 0.72)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
 
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: palette.secondaryTint.opacity(palette.secondaryTopOpacity), location: 0.0),
-                    .init(color: palette.secondaryTint.opacity(palette.secondaryMidOpacity), location: 0.24),
-                    .init(color: .clear, location: 0.76)
-                ]),
-                startPoint: .topTrailing,
-                endPoint: .bottomLeading
-            )
+                RadialGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: palette.topTint.opacity(0.088), location: 0.0),
+                        .init(color: palette.topTint.opacity(0.054), location: 0.42),
+                        .init(color: .clear, location: 1.0)
+                    ]),
+                    center: .topLeading,
+                    startRadius: 72,
+                    endRadius: 640
+                )
+                .offset(x: -236, y: -212)
+                .blur(radius: 198)
 
-            RadialGradient(
-                gradient: Gradient(stops: [
-                    .init(color: palette.radialLift.opacity(palette.radialPeakOpacity), location: 0.0),
-                    .init(color: palette.radialLift.opacity(palette.radialSoftOpacity), location: 0.42),
-                    .init(color: .clear, location: 1.0)
-                ]),
-                center: .top,
-                startRadius: 12,
-                endRadius: 270
-            )
-            .offset(y: 46)
-            .blur(radius: colorScheme == .dark ? 58 : 50)
+                RadialGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: palette.secondaryTint.opacity(0.058), location: 0.0),
+                        .init(color: palette.secondaryTint.opacity(0.034), location: 0.44),
+                        .init(color: .clear, location: 1.0)
+                    ]),
+                    center: UnitPoint(x: 0.98, y: 0.78),
+                    startRadius: 64,
+                    endRadius: 620
+                )
+                .offset(x: 148, y: 166)
+                .blur(radius: 186)
+            } else {
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: palette.topTint.opacity(palette.linearTopOpacity), location: 0.0),
+                        .init(color: palette.topTint.opacity(palette.linearMidOpacity), location: 0.16),
+                        .init(color: palette.topTint.opacity(palette.linearLowOpacity), location: 0.36),
+                        .init(color: palette.topTint.opacity(palette.linearTailOpacity), location: 0.67),
+                        .init(color: .clear, location: 1.0)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
 
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: .clear, location: 0.0),
-                    .init(color: palette.neutralBridge.opacity(palette.neutralBridgeOpacity), location: 0.74),
-                    .init(color: .clear, location: 1.0)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: palette.secondaryTint.opacity(palette.secondaryTopOpacity), location: 0.0),
+                        .init(color: palette.secondaryTint.opacity(palette.secondaryMidOpacity), location: 0.24),
+                        .init(color: .clear, location: 0.76)
+                    ]),
+                    startPoint: .topTrailing,
+                    endPoint: .bottomLeading
+                )
+
+                RadialGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: palette.radialLift.opacity(palette.radialPeakOpacity), location: 0.0),
+                        .init(color: palette.radialLift.opacity(palette.radialSoftOpacity), location: 0.42),
+                        .init(color: .clear, location: 1.0)
+                    ]),
+                    center: .top,
+                    startRadius: 12,
+                    endRadius: 340
+                )
+                .offset(y: 46)
+                .blur(radius: 50)
+
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: palette.neutralBridge.opacity(palette.neutralBridgeOpacity), location: 0.74),
+                        .init(color: .clear, location: 1.0)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
         .frame(maxWidth: .infinity)
         .frame(height: ambientHeight, alignment: .top)
@@ -96,19 +136,19 @@ private enum AmbientPalette {
     static func palette(for colorScheme: ColorScheme) -> Values {
         if colorScheme == .dark {
             return Values(
-                topTint: Color(red: 0.115, green: 0.166, blue: 0.228),
-                secondaryTint: Color(red: 0.092, green: 0.196, blue: 0.248),
+                topTint: Color(red: 0.15, green: 0.18, blue: 0.22),
+                secondaryTint: Color(red: 0.14, green: 0.20, blue: 0.23),
                 radialLift: Color(red: 0.30, green: 0.40, blue: 0.49),
-                linearTopOpacity: 0.194,
-                linearMidOpacity: 0.108,
-                linearLowOpacity: 0.05,
-                linearTailOpacity: 0.021,
-                secondaryTopOpacity: 0.066,
-                secondaryMidOpacity: 0.029,
+                linearTopOpacity: 0.22,
+                linearMidOpacity: 0.128,
+                linearLowOpacity: 0.068,
+                linearTailOpacity: 0.036,
+                secondaryTopOpacity: 0.088,
+                secondaryMidOpacity: 0.046,
                 neutralBridge: Color(red: 0.04, green: 0.05, blue: 0.07),
-                neutralBridgeOpacity: 0.2,
-                radialPeakOpacity: 0.046,
-                radialSoftOpacity: 0.02
+                neutralBridgeOpacity: 0.28,
+                radialPeakOpacity: 0.076,
+                radialSoftOpacity: 0.041
             )
         }
 

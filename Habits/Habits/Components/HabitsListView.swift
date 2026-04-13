@@ -602,7 +602,7 @@ struct HabitsListView: View {
     private var backgroundColor: Color {
         colorScheme == .light
             ? Color(white: 0.96)
-            : Color.black
+            : Color(white: 0.04)
     }
 
     private func scheduleReorderPersistence() {
