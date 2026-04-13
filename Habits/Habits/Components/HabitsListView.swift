@@ -272,7 +272,8 @@ struct HabitsListView: View {
                     } label: {
                         PremiumInsightsStripView(
                             summary: premiumInsightsSummary,
-                            momentumLine: premiumMomentumLine
+                            momentumLine: premiumMomentumLine,
+                            accentHex: momentumHabit?.colorHex ?? HabitColor.default.hex
                         )
                             .frame(maxWidth: .infinity)
                     }
@@ -811,16 +812,21 @@ private struct UpgradeHintRow: View {
 }
 
 private struct PremiumInsightsStripView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let summary: PremiumInsightsStripSummary
     let momentumLine: String?
-    private let accentColor = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
+    let accentHex: String
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: CadenceTokens.Space.md) {
             LinearGradient(
                 colors: [
-                    accentColor.opacity(0.28),
-                    accentColor.opacity(0.12),
+                    semanticAccent.cadenceAccentPrimary.opacity(0.28),
+                    semanticAccent.cadenceAccentPrimary.opacity(0.12),
                     .clear
                 ],
                 startPoint: .leading,
@@ -861,7 +867,7 @@ private struct PremiumInsightsStripView: View {
         label.foregroundColor = CadenceTokens.Color.Text.primary
 
         var value = AttributedString(summary.primaryValue)
-        value.foregroundColor = accentColor
+        value.foregroundColor = semanticAccent.cadenceAccentPrimary
 
         return label + value
     }
@@ -875,7 +881,7 @@ private struct PremiumInsightsStripView: View {
         line.foregroundColor = CadenceTokens.Color.Text.secondary
 
         var value = AttributedString(summary.secondaryValue)
-        value.foregroundColor = accentColor
+        value.foregroundColor = semanticAccent.cadenceAccentSecondary
         line += value
 
         if let secondarySuffix = summary.secondarySuffix {

@@ -8,6 +8,12 @@ struct CadenceAccentTokens {
     let highlight: Color
 }
 
+struct CadenceSemanticAccentTokens {
+    let cadenceAccentPrimary: Color
+    let cadenceAccentSecondary: Color
+    let cadenceAccentSubtle: Color
+}
+
 enum CadenceTokens {
     enum Color {
         enum Background {
@@ -40,6 +46,34 @@ enum CadenceTokens {
                 tertiary: variants.soft,
                 ambient: variants.ambient,
                 highlight: variants.highlight
+            )
+        }
+
+        static func semanticAccent(
+            for habit: Habit,
+            colorScheme: ColorScheme
+        ) -> CadenceSemanticAccentTokens {
+            semanticAccent(from: habit.colorHex, colorScheme: colorScheme)
+        }
+
+        static func semanticAccent(
+            from hex: String,
+            colorScheme: ColorScheme
+        ) -> CadenceSemanticAccentTokens {
+            let accent = accent(from: hex)
+
+            if colorScheme == .light {
+                return CadenceSemanticAccentTokens(
+                    cadenceAccentPrimary: accent.primary.opacity(0.9),
+                    cadenceAccentSecondary: accent.secondary.opacity(0.78),
+                    cadenceAccentSubtle: accent.tertiary.opacity(0.55)
+                )
+            }
+
+            return CadenceSemanticAccentTokens(
+                cadenceAccentPrimary: accent.primary.opacity(0.96),
+                cadenceAccentSecondary: accent.secondary.opacity(0.86),
+                cadenceAccentSubtle: accent.tertiary.opacity(0.64)
             )
         }
     }

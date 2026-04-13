@@ -19,14 +19,18 @@ struct GlobalInsightsView: View {
         ).snapshot(for: habits, now: .now)
     }
 
+    private var accentHex: String {
+        habits.first?.colorHex ?? HabitColor.default.hex
+    }
+
     var body: some View {
         ScrollView {
             if let snapshot {
                 VStack(alignment: .leading, spacing: GlobalInsightsSpacing.section) {
-                    GlobalInsightsHeroSection(hero: snapshot.hero)
-                    GlobalInsightsMetricsSection(metrics: snapshot.metrics)
-                    GlobalInsightsHabitSnapshotSection(rows: snapshot.topHabits)
-                    GlobalInsightsGreigSection(greig: snapshot.greig)
+                    GlobalInsightsHeroSection(hero: snapshot.hero, accentHex: accentHex)
+                    GlobalInsightsMetricsSection(metrics: snapshot.metrics, accentHex: accentHex)
+                    GlobalInsightsHabitSnapshotSection(rows: snapshot.topHabits, accentHex: accentHex)
+                    GlobalInsightsGreigSection(greig: snapshot.greig, accentHex: accentHex)
                 }
                 .padding(.horizontal, CadenceTokens.Space.xl)
                 .padding(.top, CadenceTokens.Space.x2l)
@@ -54,7 +58,13 @@ struct GlobalInsightsView: View {
 }
 
 private struct GlobalInsightsHeroSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let hero: GlobalInsightsHero
+    let accentHex: String
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+    }
 
     var body: some View {
         GlobalInsightsSurface(padding: GlobalInsightsSpacing.cardPadding) {
@@ -63,7 +73,7 @@ private struct GlobalInsightsHeroSection: View {
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
                     metricLine(label: CadenceLanguage.identityTitle(), value: CadenceLanguage.shortLabel(for: hero.dominantState))
-                    metricLine(label: "Consistency", value: hero.consistency)
+                    metricLine(label: "Consistency", value: hero.consistency, usesPrimaryAccent: false)
                 }
 
                 Text(hero.summaryText)
@@ -75,7 +85,11 @@ private struct GlobalInsightsHeroSection: View {
         }
     }
 
-    private func metricLine(label: String, value: String) -> some View {
+    private func metricLine(label: String, value: Int, usesPrimaryAccent: Bool = true) -> some View {
+        metricLine(label: label, value: "\(value)%", usesPrimaryAccent: usesPrimaryAccent)
+    }
+
+    private func metricLine(label: String, value: String, usesPrimaryAccent: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
                 .font(CadenceTokens.Typography.sectionHeader)
@@ -86,17 +100,23 @@ private struct GlobalInsightsHeroSection: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.18), value: value)
-                .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
+                .foregroundStyle(
+                    usesPrimaryAccent
+                        ? semanticAccent.cadenceAccentPrimary
+                        : semanticAccent.cadenceAccentSecondary
+                )
         }
-    }
-
-    private func metricLine(label: String, value: Int) -> some View {
-        metricLine(label: label, value: "\(value)%")
     }
 }
 
 private struct GlobalInsightsMetricsSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let metrics: GlobalInsightsMetrics
+    let accentHex: String
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+    }
 
     var body: some View {
         GlobalInsightsSurface(padding: CadenceTokens.Space.lg + 2) {
@@ -105,9 +125,10 @@ private struct GlobalInsightsMetricsSection: View {
                     title: "Current streak",
                     value: metrics.bestCurrentStreak == 0 ? "0" : "\(metrics.bestCurrentStreak)d"
                 )
-                metricColumn(title: "Best day", value: metrics.bestDayOfWeek)
                 metricColumn(title: "At risk", value: "\(metrics.atRiskCount)")
             }
+
+            bestDayRow
         }
     }
 
@@ -118,9 +139,10 @@ private struct GlobalInsightsMetricsSection: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.18), value: value)
-                .foregroundStyle(CadenceTokens.Color.Text.primary)
+                .foregroundStyle(title == "Current streak" ? semanticAccent.cadenceAccentPrimary : CadenceTokens.Color.Text.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.72)
+                .allowsTightening(true)
 
             Text(title)
                 .font(CadenceTokens.Typography.supporting.weight(.medium))
@@ -129,10 +151,36 @@ private struct GlobalInsightsMetricsSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
+
+    private var bestDayRow: some View {
+        VStack(spacing: CadenceTokens.Space.xs) {
+            Text(metrics.bestDayOfWeek)
+                .font(CadenceTokens.Typography.primaryValue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .allowsTightening(true)
+                .truncationMode(.tail)
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            Text("Best day")
+                .font(CadenceTokens.Typography.supporting.weight(.medium))
+                .foregroundStyle(CadenceTokens.Color.Text.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.top, CadenceTokens.Space.md)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
 }
 
 private struct GlobalInsightsHabitSnapshotSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let rows: [GlobalInsightHabitRow]
+    let accentHex: String
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+    }
 
     var body: some View {
         GlobalInsightsSurface(padding: CadenceTokens.Space.lg + 2) {
@@ -163,7 +211,7 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 
     private func statusColor(for state: HabitIdentityState) -> Color {
         _ = state
-        return CadenceTokens.Color.Text.secondary
+        return semanticAccent.cadenceAccentSecondary
     }
 
     private func rowOpacity(for index: Int) -> Double {
@@ -179,7 +227,13 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 }
 
 private struct GlobalInsightsGreigSection: View {
+    @Environment(\.colorScheme) private var colorScheme
     let greig: GlobalInsightsGreig
+    let accentHex: String
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+    }
 
     var body: some View {
         GlobalInsightsSurface(padding: GlobalInsightsSpacing.cardPadding) {
@@ -224,7 +278,7 @@ private struct GlobalInsightsGreigSection: View {
                       let attributedRange = Range(range, in: attributed) else {
                     continue
                 }
-                attributed[attributedRange].foregroundColor = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
+                attributed[attributedRange].foregroundColor = semanticAccent.cadenceAccentPrimary
             }
         }
 

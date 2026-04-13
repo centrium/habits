@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RhythmDetailSheet: View {
+    @Environment(\.colorScheme) private var colorScheme
     let isPremium: Bool
     let data: [HourValue]
     let habit: Habit
@@ -14,7 +15,11 @@ struct RhythmDetailSheet: View {
     }
 
     private var accent: Color {
-        habit.curatedColorVariants.strong
+        semanticAccent.cadenceAccentPrimary
+    }
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(for: habit, colorScheme: colorScheme)
     }
 
     var body: some View {
@@ -35,16 +40,15 @@ struct RhythmDetailSheet: View {
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                         Text("Peak / Dip Summary")
                             .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                        Text("Peak around \(humanTime(for: insight.peakHour)).")
-                        Text("Momentum dips between \(humanTime(for: insight.lowRange.0)) and \(humanTime(for: insight.lowRange.1)).")
+                        Text(peakSummaryLine)
+                        Text(dipSummaryLine)
                     }
                     .font(CadenceTokens.Typography.body)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                     if isPremium {
-                        Text(insight.summary)
+                        Text(highlightedTimesBySentence(in: insight.summary))
                             .font(CadenceTokens.Typography.body)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
@@ -76,5 +80,109 @@ struct RhythmDetailSheet: View {
                 }
             }
         }
+    }
+
+    private var peakSummaryLine: AttributedString {
+        var line = AttributedString("Peak around ")
+        line.foregroundColor = CadenceTokens.Color.Text.secondary
+
+        var value = AttributedString(formattedTime(insight.peakHour))
+        value.foregroundColor = semanticAccent.cadenceAccentPrimary
+        line += value
+
+        var suffix = AttributedString(".")
+        suffix.foregroundColor = CadenceTokens.Color.Text.secondary
+        line += suffix
+
+        return line
+    }
+
+    private var dipSummaryLine: AttributedString {
+        var line = AttributedString("Momentum dips between ")
+        line.foregroundColor = CadenceTokens.Color.Text.secondary
+
+        var start = AttributedString(formattedTime(insight.lowRange.0))
+        start.foregroundColor = semanticAccent.cadenceAccentPrimary
+        line += start
+
+        var connector = AttributedString(" and ")
+        connector.foregroundColor = CadenceTokens.Color.Text.secondary
+        line += connector
+
+        var end = AttributedString(formattedTime(insight.lowRange.1))
+        end.foregroundColor = semanticAccent.cadenceAccentPrimary
+        line += end
+
+        var suffix = AttributedString(".")
+        suffix.foregroundColor = CadenceTokens.Color.Text.secondary
+        line += suffix
+
+        return line
+    }
+
+    private func formattedTime(_ hour: Int) -> String {
+        let normalized = ((hour % 24) + 24) % 24
+        switch normalized {
+        case 0:
+            return "Midnight"
+        case 12:
+            return "Noon"
+        case 1..<12:
+            return "\(normalized)am"
+        default:
+            return "\(normalized - 12)pm"
+        }
+    }
+
+    private func highlightedTimesBySentence(in text: String) -> AttributedString {
+        let nsText = text as NSString
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?i)\b(midnight|noon|\d{1,2}(?:am|pm))\b"#,
+            options: []
+        ) else {
+            var fallback = AttributedString(text)
+            fallback.foregroundColor = CadenceTokens.Color.Text.secondary
+            return fallback
+        }
+
+        var output = AttributedString()
+        var cursor = 0
+        let fullRange = NSRange(location: 0, length: nsText.length)
+
+        var hasAccentInCurrentSentence = false
+
+        for match in regex.matches(in: text, options: [], range: fullRange) {
+            let preTokenRange = NSRange(location: cursor, length: match.range.location - cursor)
+            if preTokenRange.length > 0 {
+                let plain = nsText.substring(with: preTokenRange)
+                var plainAttributed = AttributedString(plain)
+                plainAttributed.foregroundColor = CadenceTokens.Color.Text.secondary
+                output += plainAttributed
+
+                if plain.contains(".") || plain.contains("!") || plain.contains("?") {
+                    hasAccentInCurrentSentence = false
+                }
+            }
+
+            let token = nsText.substring(with: match.range)
+            var tokenAttributed = AttributedString(token)
+            tokenAttributed.foregroundColor = hasAccentInCurrentSentence
+                ? CadenceTokens.Color.Text.secondary
+                : semanticAccent.cadenceAccentSecondary
+            output += tokenAttributed
+
+            hasAccentInCurrentSentence = true
+
+            cursor = match.range.location + match.range.length
+        }
+
+        if cursor < nsText.length {
+            let trailing = nsText.substring(from: cursor)
+            var trailingAttributed = AttributedString(trailing)
+            trailingAttributed.foregroundColor = CadenceTokens.Color.Text.secondary
+            output += trailingAttributed
+        }
+
+        return output
     }
 }

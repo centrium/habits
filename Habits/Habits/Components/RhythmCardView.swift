@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RhythmCardView: View {
     @Environment(\.calendar) private var calendar
+    @Environment(\.colorScheme) private var colorScheme
 
     let isPremium: Bool
     let data: [HourValue]
@@ -16,7 +17,11 @@ struct RhythmCardView: View {
     }
 
     private var accent: Color {
-        habit.curatedColorVariants.strong
+        semanticAccent.cadenceAccentPrimary
+    }
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(for: habit, colorScheme: colorScheme)
     }
 
     private var selectedLabel: String? {
@@ -55,12 +60,44 @@ struct RhythmCardView: View {
         return "Right now: past your peak window."
     }
 
-    private var primaryInsight: String {
-        "Your strongest window is \(formattedTime(insight.peakHour))."
+    private var primaryInsight: AttributedString {
+        var leading = AttributedString("Your strongest window is ")
+        leading.foregroundColor = CadenceTokens.Color.Text.primary
+
+        var value = AttributedString(formattedTime(insight.peakHour))
+        value.foregroundColor = semanticAccent.cadenceAccentPrimary
+
+        var trailing = AttributedString(".")
+        trailing.foregroundColor = CadenceTokens.Color.Text.primary
+
+        return leading + value + trailing
     }
 
-    private var secondaryDetail: String {
-        "Peak: \(formattedTime(insight.peakHour)) · Dip: \(formattedTime(insight.lowRange.0))–\(formattedTime(insight.lowRange.1))"
+    private var secondaryDetail: AttributedString {
+        var text = AttributedString("Peak: ")
+        text.foregroundColor = CadenceTokens.Color.Text.secondary
+
+        var peak = AttributedString(formattedTime(insight.peakHour))
+        peak.foregroundColor = semanticAccent.cadenceAccentPrimary
+        text += peak
+
+        var separator = AttributedString(" · Dip: ")
+        separator.foregroundColor = CadenceTokens.Color.Text.secondary
+        text += separator
+
+        var dipStart = AttributedString(formattedTime(insight.lowRange.0))
+        dipStart.foregroundColor = semanticAccent.cadenceAccentPrimary
+        text += dipStart
+
+        var dash = AttributedString("–")
+        dash.foregroundColor = semanticAccent.cadenceAccentSecondary
+        text += dash
+
+        var dipEnd = AttributedString(formattedTime(insight.lowRange.1))
+        dipEnd.foregroundColor = semanticAccent.cadenceAccentPrimary
+        text += dipEnd
+
+        return text
     }
 
     private var behaviouralSignal: String {
@@ -101,7 +138,6 @@ struct RhythmCardView: View {
             if isPremium {
                 Text(primaryInsight)
                     .font(CadenceTokens.Typography.body.weight(.semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -128,7 +164,6 @@ struct RhythmCardView: View {
 
                 Text(secondaryDetail)
                     .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(behaviouralSignal)
