@@ -13,6 +13,7 @@ import UIKit
 private enum ActiveSheet: Identifiable {
     case addHabit
     case paywall(PremiumFeature)
+    case rhythmDetail(UUID)
 
     var id: String {
         switch self {
@@ -20,6 +21,8 @@ private enum ActiveSheet: Identifiable {
             return "addHabit"
         case .paywall(let feature):
             return "paywall-\(String(describing: feature))"
+        case .rhythmDetail(let habitID):
+            return "rhythm-\(habitID.uuidString)"
         }
     }
 }
@@ -48,6 +51,7 @@ struct HabitsListView: View {
     @State private var frames: [Habit.ID: CGRect] = [:]
     @State private var initialFrame: CGRect = .zero
     @State private var isFABPressed: Bool = false
+    @State private var rhythmData: [HourValue] = []
 
     init() {}
 
@@ -185,6 +189,18 @@ struct HabitsListView: View {
                         .presentationCornerRadius(24)
                 case .paywall(let feature):
                     PaywallView(feature: feature)
+                case .rhythmDetail(let habitID):
+                    if let habit = habits.first(where: { $0.id == habitID }) {
+                        RhythmDetailSheet(
+                            isPremium: purchaseService.premiumStatus == .premium,
+                            data: rhythmData,
+                            habit: habit
+                        ) {
+                            showPaywall(feature: .advancedInsights)
+                        }
+                    } else {
+                        EmptyView()
+                    }
                 }
             }
         }
@@ -205,6 +221,9 @@ struct HabitsListView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             presentHabitDetailForDeepLinkIfNeeded()
+        }
+        .task(id: rhythmTaskKey) {
+            await refreshRhythmData()
         }
         .onDisappear {
             flushPendingReorderPersistence()
@@ -251,12 +270,30 @@ struct HabitsListView: View {
                     Button {
                         openGlobalInsights()
                     } label: {
-                        PremiumInsightsStripView(summary: premiumInsightsSummary)
+                        PremiumInsightsStripView(
+                            summary: premiumInsightsSummary,
+                            momentumLine: premiumMomentumLine
+                        )
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.plain)
                     .contentShape(Rectangle())
                     .padding(.top, 2)
+                    .padding(.bottom, 4)
+                }
+
+                if let momentumHabit {
+                    RhythmCardView(
+                        isPremium: purchaseService.premiumStatus == .premium,
+                        data: rhythmData,
+                        habit: momentumHabit,
+                        onUnlock: {
+                            showPaywall(feature: .advancedInsights)
+                        },
+                        onOpen: {
+                            openRhythm(for: momentumHabit)
+                        }
+                    )
                     .padding(.bottom, 4)
                 }
 
@@ -391,6 +428,31 @@ struct HabitsListView: View {
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
         ).snapshot(for: habits, now: .now)?.stripSummary
+    }
+
+    private var premiumMomentumLine: String? {
+        guard purchaseService.premiumStatus == .premium,
+              !rhythmData.isEmpty else {
+            return nil
+        }
+
+        return generateRhythmInsight(data: rhythmData).summary
+    }
+
+    private var momentumHabit: Habit? {
+        visibleHabits.first
+    }
+
+    private var rhythmTaskKey: String {
+        guard let momentumHabit else { return "no-momentum-habit" }
+
+        let newestTimestamp = momentumHabit.logs
+            .map(\.effectiveTimestamp)
+            .max()?
+            .timeIntervalSince1970 ?? 0
+        let logCount = momentumHabit.logs.count
+        let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
+        return "\(momentumHabit.id.uuidString)-\(logCount)-\(newestTimestamp)-\(premiumFlag)"
     }
 
     private var lockedHabitSlot: some View {
@@ -546,6 +608,38 @@ struct HabitsListView: View {
     private func showPaywall(feature: PremiumFeature) {
         guard purchaseService.premiumStatus != .unknown else { return }
         activeSheet = .paywall(feature)
+    }
+
+    private func openRhythm(for habit: Habit) {
+        switch purchaseService.premiumStatus {
+        case .unknown:
+            return
+        case .free:
+            showPaywall(feature: .advancedInsights)
+        case .premium:
+            activeSheet = .rhythmDetail(habit.id)
+        }
+    }
+
+    private func refreshRhythmData() async {
+        guard let momentumHabit else {
+            rhythmData = []
+            return
+        }
+
+        guard purchaseService.premiumStatus != .unknown else {
+            return
+        }
+
+        let values = await TimeOfDayPerformanceService.shared.hourlyValues(
+            for: momentumHabit,
+            isPremium: purchaseService.premiumStatus == .premium,
+            now: .now,
+            calendar: calculationCalendar
+        )
+
+        guard !Task.isCancelled else { return }
+        rhythmData = values
     }
 
     private func requestDeletion(of habit: Habit) {
@@ -718,6 +812,7 @@ private struct UpgradeHintRow: View {
 
 private struct PremiumInsightsStripView: View {
     let summary: PremiumInsightsStripSummary
+    let momentumLine: String?
     private let accentColor = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
 
     var body: some View {
@@ -745,6 +840,14 @@ private struct PremiumInsightsStripView: View {
                     .font(CadenceTokens.Typography.body)
                     .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let momentumLine {
+                    Text(momentumLine)
+                        .font(CadenceTokens.Typography.microCopy)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.horizontal, CadenceTokens.Space.lg)
