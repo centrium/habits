@@ -25,6 +25,10 @@ struct HabitBadge: View {
         size * 0.87
     }
 
+    private var fallbackCircleSize: CGFloat {
+        max(0, visualSize - 2)
+    }
+
     private var iconTint: Color {
         accent.opacity(colorScheme == .dark ? 0.9 : 0.82)
     }
@@ -44,7 +48,7 @@ struct HabitBadge: View {
                         Circle()
                             .stroke(Color.white.opacity(colorScheme == .dark ? 0.14 : 0.2), lineWidth: 0.7)
                     }
-                    .frame(width: visualSize, height: visualSize)
+                    .frame(width: fallbackCircleSize, height: fallbackCircleSize)
                     .accessibilityHidden(true)
             }
         }

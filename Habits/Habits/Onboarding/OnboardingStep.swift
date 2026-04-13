@@ -161,9 +161,24 @@ extension Color {
     static let systemAccent = CadenceTokens.Color.accent(from: HabitColor.default.hex).primary
     static let appBackground = CadenceTokens.Color.Background.primary
     static let appSecondaryBackground = CadenceTokens.Color.Background.secondary
-    static let appGroupedBackground = Color(uiColor: .systemGroupedBackground)
-    static let appSecondaryGroupedBackground = Color(uiColor: .secondarySystemGroupedBackground)
-    static let appTertiaryGroupedBackground = Color(uiColor: .tertiarySystemGroupedBackground)
+    static let appGroupedBackground = Color(
+        uiColor: UIColor { traits in
+            guard traits.userInterfaceStyle == .dark else { return .systemGroupedBackground }
+            return UIColor(red: 0.028, green: 0.031, blue: 0.04, alpha: 1)
+        }
+    )
+    static let appSecondaryGroupedBackground = Color(
+        uiColor: UIColor { traits in
+            guard traits.userInterfaceStyle == .dark else { return .secondarySystemGroupedBackground }
+            return UIColor(red: 0.033, green: 0.037, blue: 0.047, alpha: 1)
+        }
+    )
+    static let appTertiaryGroupedBackground = Color(
+        uiColor: UIColor { traits in
+            guard traits.userInterfaceStyle == .dark else { return .tertiarySystemGroupedBackground }
+            return UIColor(red: 0.039, green: 0.044, blue: 0.056, alpha: 1)
+        }
+    )
     static let appSeparator = Color(uiColor: .separator)
     static let onboardingBackground = appBackground
     static let onboardingAccent = Color.systemAccent

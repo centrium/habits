@@ -53,6 +53,20 @@ private struct CadenceSurfaceModifier: ViewModifier {
                 if colorScheme == .dark {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(darkSurfaceFill)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(stops: [
+                                            .init(color: cardAmbientTint.opacity(cardAmbientDarkTopOpacity), location: 0.0),
+                                            .init(color: cardAmbientTint.opacity(cardAmbientDarkMidOpacity), location: 0.22),
+                                            .init(color: .clear, location: 0.58)
+                                        ]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -109,11 +123,11 @@ private struct CadenceSurfaceModifier: ViewModifier {
     // MARK: - Border (barely visible, but critical)
 
     private var surfaceBorder: Color {
-        Color.black.opacity(0.035)
+        Color.black.opacity(0.032)
     }
 
     private var topEdgeTint: Color {
-        Color.white.opacity(0.5)
+        Color.white.opacity(0.44)
     }
 
     private var darkSurfaceFill: LinearGradient {
@@ -131,9 +145,9 @@ private struct CadenceSurfaceModifier: ViewModifier {
     private var darkEdgeStroke: LinearGradient {
         LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: Color(red: 0.84, green: 0.89, blue: 1.0).opacity(0.08), location: 0.0),
-                .init(color: Color(red: 0.84, green: 0.89, blue: 1.0).opacity(0.072), location: 0.2),
-                .init(color: Color(red: 0.80, green: 0.86, blue: 0.97).opacity(0.058), location: 1.0)
+                .init(color: Color(red: 0.84, green: 0.89, blue: 1.0).opacity(0.072), location: 0.0),
+                .init(color: Color(red: 0.84, green: 0.89, blue: 1.0).opacity(0.066), location: 0.2),
+                .init(color: Color(red: 0.80, green: 0.86, blue: 0.97).opacity(0.06), location: 1.0)
             ]),
             startPoint: .top,
             endPoint: .bottom
@@ -145,11 +159,19 @@ private struct CadenceSurfaceModifier: ViewModifier {
     }
 
     private var cardAmbientTopOpacity: Double {
-        0.038
+        0.032
     }
 
     private var cardAmbientMidOpacity: Double {
+        0.016
+    }
+
+    private var cardAmbientDarkTopOpacity: Double {
         0.018
+    }
+
+    private var cardAmbientDarkMidOpacity: Double {
+        0.008
     }
 }
 
@@ -167,26 +189,45 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
 
         content
             .background(alignment: .top) {
-                LinearGradient(
-                    colors: [
-                        accent.opacity((colorScheme == .dark ? 0.24 : 0.14) * ambient),
-                        accent.opacity((colorScheme == .dark ? 0.1 : 0.06) * ambient),
-                        .clear
-                    ],
-                    startPoint: animateSurface ? UnitPoint(x: 0.46, y: 0.0) : UnitPoint(x: 0.54, y: 0.03),
-                    endPoint: animateSurface ? UnitPoint(x: 0.58, y: 1.0) : UnitPoint(x: 0.42, y: 0.97)
-                )
-                .blur(radius: 40 + (8 * (ambient - 1)))
-                .frame(height: 240)
+                ZStack(alignment: .top) {
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: accent.opacity((colorScheme == .dark ? 0.248 : 0.146) * ambient), location: 0.0),
+                            .init(color: accent.opacity((colorScheme == .dark ? 0.108 : 0.064) * ambient), location: 0.24),
+                            .init(color: accent.opacity((colorScheme == .dark ? 0.032 : 0.022) * ambient), location: 0.58),
+                            .init(color: .clear, location: 1.0)
+                        ]),
+                        startPoint: animateSurface ? UnitPoint(x: 0.46, y: 0.0) : UnitPoint(x: 0.54, y: 0.03),
+                        endPoint: animateSurface ? UnitPoint(x: 0.58, y: 1.0) : UnitPoint(x: 0.42, y: 0.97)
+                    )
+                    .blur(radius: 42 + (8 * (ambient - 1)))
+
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: Color.white.opacity((colorScheme == .dark ? 0.02 : 0.042) * ambient), location: 0.0),
+                            .init(color: Color.white.opacity((colorScheme == .dark ? 0.008 : 0.016) * ambient), location: 0.22),
+                            .init(color: .clear, location: 0.74)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .blendMode(.screen)
+                }
+                .frame(height: colorScheme == .dark ? 284 : 292)
                 .allowsHitTesting(false)
                 .ignoresSafeArea(edges: .top)
                 .mask(
                     LinearGradient(
-                        colors: [.white, .white.opacity(0.7), .clear],
+                        gradient: Gradient(stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: .white, location: 0.56),
+                            .init(color: .white.opacity(0.74), location: 0.8),
+                            .init(color: .clear, location: 1.0)
+                        ]),
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 260)
+                    .frame(height: 324)
                     .ignoresSafeArea(edges: .top)
                 )
                 .id(accentKey)

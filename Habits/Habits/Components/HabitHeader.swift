@@ -13,11 +13,14 @@ enum HabitRowGrid {
     static let spineToCardGutter: CGFloat = 16
     static let contentLeading: CGFloat = 16
     static let contentSpacing: CGFloat = 8
+    static let iconToTitleSpacing: CGFloat = 13
     static let trailingControlSpacing: CGFloat = 8
     static let streakToTitleSpacing: CGFloat = 3
     static let streakToCTASpacing: CGFloat = 12
-    static let iconSize: CGFloat = 40
-    static let titleSubtitleSpacing: CGFloat = 1
+    static let iconSize: CGFloat = 36
+    static let titleRowHeight: CGFloat = 21
+    static let titleToMetaSpacing: CGFloat = 3
+    static let metaRowHeight: CGFloat = 18
     static let headerToHeatmapSpacing: CGFloat = 12
     static let spineOpticalCorrection: CGFloat = -1
 
@@ -29,6 +32,10 @@ enum HabitRowGrid {
 
     static var cardLeadingInList: CGFloat {
         max(listSafeLeading, spineXInList + spineToCardGutter)
+    }
+
+    static var headerContentHeight: CGFloat {
+        titleRowHeight + titleToMetaSpacing + metaRowHeight
     }
 }
 
@@ -79,17 +86,13 @@ struct HabitHeader: View {
     private var iconAccent: Color { habit.curatedColorVariants.base }
     private var actionAccent: Color { habit.curatedColorVariants.strong }
 
-    private var subtitleText: String {
+    private var subtitleText: String? {
         if let secondaryTextOverride, !secondaryTextOverride.isEmpty {
             return secondaryTextOverride
         }
 
         let trimmed = habit.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty {
-            return trimmed
-        }
-
-        return habit.logs.isEmpty ? "Tap to log" : ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private var iconName: String? {
@@ -156,44 +159,51 @@ struct HabitHeader: View {
         return true
     }
 
+    @ViewBuilder
+    private var metaContent: some View {
+        if let subtitleText {
+            Text(subtitleText)
+                .font(.system(size: 14))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        } else if streakContext.showBadge {
+            HabitUnifiedStreakIndicator(context: streakContext)
+        } else {
+            Color.clear
+                .accessibilityHidden(true)
+        }
+    }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.contentSpacing) {
-            HabitBadge(
-                iconName: iconName,
-                accent: iconAccent,
-                habitName: habit.name,
-                size: HabitRowGrid.iconSize
-            )
-            .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize)
-            .alignmentGuide(.firstTextBaseline) { dimensions in
-                dimensions[VerticalAlignment.center]
-            }
+        HStack(alignment: .top, spacing: HabitRowGrid.contentSpacing) {
+            HStack(alignment: .top, spacing: HabitRowGrid.iconToTitleSpacing) {
+                HabitBadge(
+                    iconName: iconName,
+                    accent: iconAccent,
+                    habitName: habit.name,
+                    size: HabitRowGrid.iconSize
+                )
+                .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize, alignment: .top)
 
-            VStack(alignment: .leading, spacing: HabitRowGrid.titleSubtitleSpacing) {
-                Text(habit.name)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-
-                if !subtitleText.isEmpty {
-                    Text(subtitleText)
-                        .font(.system(size: 14))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                VStack(alignment: .leading, spacing: HabitRowGrid.titleToMetaSpacing) {
+                    Text(habit.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                }
+                        .frame(height: HabitRowGrid.titleRowHeight, alignment: .topLeading)
+                        .layoutPriority(1)
 
-                if streakContext.showBadge {
-                    HabitUnifiedStreakIndicator(context: streakContext)
-                        .offset(y: -1)
+                    metaContent
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: HabitRowGrid.metaRowHeight, alignment: .leading)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: HabitRowGrid.headerContentHeight, alignment: .topLeading)
+                .layoutPriority(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
-
-            Spacer(minLength: 0)
 
             Group {
                 if isReordering, let trailingAccessory {
@@ -218,9 +228,7 @@ struct HabitHeader: View {
                     .transition(.opacity.combined(with: .scale))
                 }
             }
-            .alignmentGuide(.firstTextBaseline) { dimensions in
-                dimensions[VerticalAlignment.center]
-            }
+            .frame(minHeight: HabitRowGrid.headerContentHeight, alignment: .center)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
     }
@@ -351,9 +359,9 @@ struct HabitHeaderPreview: View {
 
     private var accent: Color { HabitColor.from(hex: colorHex).color }
 
-    private var displaySubtitle: String {
+    private var displaySubtitle: String? {
         let trimmed = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "Optional subtitle" : trimmed
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private var resolvedIcon: String? {
@@ -362,36 +370,44 @@ struct HabitHeaderPreview: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.contentSpacing) {
+        HStack(alignment: .top, spacing: HabitRowGrid.iconToTitleSpacing) {
             HabitBadge(
                 iconName: resolvedIcon,
                 accent: accent,
                 habitName: name.isEmpty ? "Habit name" : name,
                 size: HabitRowGrid.iconSize
             )
-            .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize)
-            .alignmentGuide(.firstTextBaseline) { dimensions in
-                dimensions[VerticalAlignment.center]
-            }
+            .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize, alignment: .top)
 
-            VStack(alignment: .leading, spacing: HabitRowGrid.titleSubtitleSpacing) {
+            VStack(alignment: .leading, spacing: HabitRowGrid.titleToMetaSpacing) {
                 Text(name.isEmpty ? "Habit name" : name)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(CadenceTokens.Color.Text.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .frame(height: HabitRowGrid.titleRowHeight, alignment: .topLeading)
                     .layoutPriority(1)
 
-                Text(displaySubtitle)
-                    .font(.system(size: 14))
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                Group {
+                    if let displaySubtitle {
+                        Text(displaySubtitle)
+                            .font(.system(size: 14))
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } else {
+                        Color.clear
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: HabitRowGrid.metaRowHeight, alignment: .leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: HabitRowGrid.headerContentHeight, alignment: .topLeading)
             .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
     }
 }

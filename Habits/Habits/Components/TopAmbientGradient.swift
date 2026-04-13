@@ -5,10 +5,10 @@ struct TopAmbientGradient: View {
 
     var body: some View {
         let palette = AmbientPalette.palette(for: colorScheme)
-        let ambientHeight: CGFloat = colorScheme == .dark ? 348 : 304
-        let maskSolidEnd: CGFloat = colorScheme == .dark ? 0.48 : 0.4
-        let maskFeatherLocation: CGFloat = colorScheme == .dark ? 0.83 : 0.78
-        let maskFeatherOpacity: Double = colorScheme == .dark ? 0.74 : 0.66
+        let ambientHeight: CGFloat = colorScheme == .dark ? 376 : 332
+        let maskSolidEnd: CGFloat = colorScheme == .dark ? 0.52 : 0.45
+        let maskFeatherLocation: CGFloat = colorScheme == .dark ? 0.89 : 0.85
+        let maskFeatherOpacity: Double = colorScheme == .dark ? 0.8 : 0.72
 
         return ZStack(alignment: .top) {
             LinearGradient(
@@ -44,12 +44,12 @@ struct TopAmbientGradient: View {
                 endRadius: 270
             )
             .offset(y: 46)
-            .blur(radius: colorScheme == .dark ? 54 : 46)
+            .blur(radius: colorScheme == .dark ? 58 : 50)
 
             LinearGradient(
                 gradient: Gradient(stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: palette.neutralBridge.opacity(palette.neutralBridgeOpacity), location: 0.68),
+                    .init(color: palette.neutralBridge.opacity(palette.neutralBridgeOpacity), location: 0.74),
                     .init(color: .clear, location: 1.0)
                 ]),
                 startPoint: .top,
@@ -96,36 +96,36 @@ private enum AmbientPalette {
     static func palette(for colorScheme: ColorScheme) -> Values {
         if colorScheme == .dark {
             return Values(
-                topTint: Color(red: 0.11, green: 0.16, blue: 0.22),
-                secondaryTint: Color(red: 0.09, green: 0.19, blue: 0.24),
+                topTint: Color(red: 0.115, green: 0.166, blue: 0.228),
+                secondaryTint: Color(red: 0.092, green: 0.196, blue: 0.248),
                 radialLift: Color(red: 0.30, green: 0.40, blue: 0.49),
-                linearTopOpacity: 0.18,
-                linearMidOpacity: 0.10,
-                linearLowOpacity: 0.045,
-                linearTailOpacity: 0.018,
-                secondaryTopOpacity: 0.06,
-                secondaryMidOpacity: 0.026,
+                linearTopOpacity: 0.194,
+                linearMidOpacity: 0.108,
+                linearLowOpacity: 0.05,
+                linearTailOpacity: 0.021,
+                secondaryTopOpacity: 0.066,
+                secondaryMidOpacity: 0.029,
                 neutralBridge: Color(red: 0.04, green: 0.05, blue: 0.07),
-                neutralBridgeOpacity: 0.24,
-                radialPeakOpacity: 0.042,
-                radialSoftOpacity: 0.018
+                neutralBridgeOpacity: 0.2,
+                radialPeakOpacity: 0.046,
+                radialSoftOpacity: 0.02
             )
         }
 
         return Values(
-            topTint: Color(red: 0.57, green: 0.66, blue: 0.76),
-            secondaryTint: Color(red: 0.54, green: 0.71, blue: 0.74),
+            topTint: Color(red: 0.58, green: 0.67, blue: 0.77),
+            secondaryTint: Color(red: 0.546, green: 0.716, blue: 0.746),
             radialLift: Color(red: 0.81, green: 0.87, blue: 0.93),
-            linearTopOpacity: 0.13,
-            linearMidOpacity: 0.082,
-            linearLowOpacity: 0.03,
-            linearTailOpacity: 0.012,
-            secondaryTopOpacity: 0.052,
-            secondaryMidOpacity: 0.024,
+            linearTopOpacity: 0.138,
+            linearMidOpacity: 0.09,
+            linearLowOpacity: 0.034,
+            linearTailOpacity: 0.015,
+            secondaryTopOpacity: 0.056,
+            secondaryMidOpacity: 0.026,
             neutralBridge: Color(red: 0.96, green: 0.95, blue: 0.93),
-            neutralBridgeOpacity: 0.18,
-            radialPeakOpacity: 0.042,
-            radialSoftOpacity: 0.019
+            neutralBridgeOpacity: 0.16,
+            radialPeakOpacity: 0.046,
+            radialSoftOpacity: 0.021
         )
     }
 }
