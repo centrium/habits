@@ -306,14 +306,12 @@ struct HabitDetailSheet: View {
         earliestCalendarDate: Date?
     ) -> some View {
         let sectionPadding = CadenceTokens.Space.lg
-        let sectionSpacing = CadenceTokens.Space.lg
         let sectionCornerRadius = CadenceTokens.Surface.cardCornerRadius
         let accent = CadenceTokens.Color.accent(for: habit)
         let identityState = identityStateSummary()
         let heroStatus = heroCenterStatusText(identityState: identityState.state)
         let logCount = habit.logs.count
         let isLowDataActivityState = logCount == 0
-        let showsProgressSummary = logCount > 0 && progressSnapshot != nil
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
         let heroSupportingText = heroSupportingInsightText(identityState: identityState)
@@ -324,7 +322,7 @@ struct HabitDetailSheet: View {
         let streakCardConfiguration = streakCardConfiguration(displayedStreak: displayedStreak)
 
         ScrollView {
-            VStack(alignment: .leading, spacing: sectionSpacing) {
+            VStack(alignment: .leading, spacing: 0) {
                 DetailHeaderIdentity(
                     habitName: habit.name,
                     iconName: habit.iconName,
@@ -332,6 +330,69 @@ struct HabitDetailSheet: View {
                 )
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
+
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+                    Text(heroStatus)
+                        .font(CadenceTokens.Typography.body.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.92)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let userCueText = userDefinedCueText {
+                        Text(userCueText)
+                            .font(CadenceTokens.Typography.body)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if let detectedCueText {
+                        Text(detectedCueText)
+                            .font(CadenceTokens.Typography.body)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if let heroSupportingText {
+                        Text(heroSupportingText)
+                            .font(CadenceTokens.Typography.body)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.sm)
+
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
+                    if logCount == 0 {
+                        Text("Your progress starts here")
+                            .font(CadenceTokens.Typography.supporting)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .lineLimit(1)
+                    }
+
+                    KeyActionsSection(
+                        isCumulativeGoal: isCumulativeGoal,
+                        isCompleteToday: isCompleteForSelectedDate,
+                        accentHex: habit.colorHex,
+                        onQuickLog: {
+                            quickLogFromCalendarDay(selectedDate)
+                        },
+                        onManualEntry: {
+                            presentManualEntry(for: selectedDate)
+                        }
+                    )
+                }
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.md)
+
+                if let streakCardConfiguration {
+                    StreakNudgeCard(
+                        configuration: streakCardConfiguration,
+                        accent: accent
+                    )
+                    .padding(.horizontal, sectionPadding)
+                    .padding(.top, CadenceTokens.Space.md)
+                }
 
                 if !rhythmData.isEmpty {
                     RhythmCardView(
@@ -343,72 +404,7 @@ struct HabitDetailSheet: View {
                         }
                     )
                     .padding(.horizontal, sectionPadding)
-                }
-
-                VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
-                    HeroTopRow(
-                        categoryLabel: habit.category.rawValue,
-                        loggingContextText: loggingContextText
-                    )
-
-                    Text(heroStatus)
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(.primary.opacity(0.9))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.92)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 3)
-
-                    if showsProgressSummary {
-                        EquatableView(
-                            content: ProgressSummarySection(
-                                snapshot: progressSnapshot,
-                                accentHex: habit.colorHex,
-                                isCumulativeGoal: isCumulativeGoal,
-                                onTap: {
-                                    presentManualEntry(for: selectedDate)
-                                }
-                            )
-                        )
-                    }
-
-                    if let userCueText = userDefinedCueText {
-                        CueInsightView(text: userCueText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 6)
-                    } else if let detectedCueText {
-                        CueInsightView(text: detectedCueText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 6)
-                    }
-
-                    if let heroSupportingText {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary.opacity(0.7))
-
-                            Text(heroSupportingText)
-                                .font(.system(size: 13, weight: .regular))
-                                .foregroundStyle(.secondary.opacity(0.9))
-                        }
-                        .padding(.top, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                }
-                .padding(CadenceTokens.Space.lg)
-                .frame(minHeight: 206, alignment: .topLeading)
-                .cadenceSurface(cornerRadius: sectionCornerRadius)
-                .padding(.horizontal, sectionPadding)
-
-                if let streakCardConfiguration {
-                    StreakNudgeCard(
-                        configuration: streakCardConfiguration,
-                        accent: accent
-                    )
-                    .padding(.horizontal, sectionPadding)
+                    .padding(.top, CadenceTokens.Space.md)
                 }
 
                 HabitIdentityCard(
@@ -419,34 +415,8 @@ struct HabitDetailSheet: View {
                     prefersIdentityFocusOnEdit = true
                     activeSheet = .edit
                 }
-                .padding(.top, 6)
                 .padding(.horizontal, sectionPadding)
-
-                VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
-                    if logCount == 0 {
-                        Text("Your progress starts here")
-                            .font(CadenceTokens.Typography.supporting)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                            .lineLimit(1)
-                    }
-
-                    KeyActionsSection(
-                        isCumulativeGoal: habit.goalType == .cumulative,
-                        isCompleteToday: isCompleteForSelectedDate,
-                        accentHex: habit.colorHex,
-                        onQuickLog: {
-                            quickLogFromCalendarDay(selectedDate)
-                        },
-                        onManualEntry: {
-                            presentManualEntry(for: selectedDate)
-                        }
-                    )
-                }
-                .padding(CadenceTokens.Space.lg)
-                .frame(minHeight: 70)
-                .cadenceSurface(cornerRadius: sectionCornerRadius)
-                .padding(.top, 6)
-                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.md)
 
                 Button {
                     if let earliestCalendarDate {
@@ -500,6 +470,7 @@ struct HabitDetailSheet: View {
                 .frame(minHeight: 112, alignment: .topLeading)
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.md)
 
                 if showsInsightsSection {
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
@@ -512,6 +483,7 @@ struct HabitDetailSheet: View {
                     .frame(minHeight: 48, alignment: .leading)
                     .cadenceSurface(cornerRadius: sectionCornerRadius)
                     .padding(.horizontal, sectionPadding)
+                    .padding(.top, CadenceTokens.Space.md)
                 }
 
                 Color.clear
@@ -1107,7 +1079,7 @@ private struct StreakNudgeCard: View {
         .padding(CadenceTokens.Space.lg)
         .background(
             RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .fill(accent.primary.opacity(colorScheme == .dark ? 0.09 : 0.05))
+                .fill(accent.primary.opacity(colorScheme == .dark ? 0.07 : 0.04))
         )
         .overlay(
             RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)

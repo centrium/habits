@@ -61,7 +61,7 @@ struct RhythmCardView: View {
     }
 
     private var primaryInsight: AttributedString {
-        var leading = AttributedString("Your strongest window is ")
+        var leading = AttributedString("Best time to \(habit.name.lowercased()): ")
         leading.foregroundColor = CadenceTokens.Color.Text.primary
 
         var value = AttributedString(formattedTime(insight.peakHour))
@@ -105,7 +105,7 @@ struct RhythmCardView: View {
         let consistencyEnd = min(23, insight.peakHour + 1)
 
         if insight.lowRange.0 >= 22 || insight.lowRange.1 <= 2 {
-            return "Momentum tends to drop late at night."
+            return "Momentum drops late at night."
         }
 
         return "Your consistency window is \(formattedTime(consistencyStart))–\(formattedTime(consistencyEnd))."
