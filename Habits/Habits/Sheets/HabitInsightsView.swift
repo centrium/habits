@@ -41,8 +41,7 @@ struct HabitInsightsView: View {
         }
         .cadenceSurface(
             accent: Color.systemAccent,
-            accentKey: "habit-insights-brand-ambient",
-            motionEnabled: userSettings.ambientSurfaceMotionEnabled
+            accentKey: "habit-insights-brand-ambient"
         )
         .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
         .navigationTitle(insights.title)

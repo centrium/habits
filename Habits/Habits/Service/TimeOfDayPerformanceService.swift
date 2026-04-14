@@ -68,8 +68,8 @@ func humanTime(for hour: Int) -> String {
     switch normalized {
     case 0: return "Midnight"
     case 12: return "Noon"
-    case 1..<12: return "\(normalized)am"
-    default: return "\(normalized - 12)pm"
+    case 1..<12: return "\(normalized)AM"
+    default: return "\(normalized - 12)PM"
     }
 }
 

@@ -178,11 +178,8 @@ private struct CadenceSurfaceModifier: ViewModifier {
 private struct CadenceAmbientSurfaceModifier: ViewModifier {
     let accent: Color
     let accentKey: String
-    let motionEnabled: Bool
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animateSurface = false
 
     func body(content: Content) -> some View {
         let ambient = max(0, Double(CadenceTokens.Intensity.ambientSurface))
@@ -207,7 +204,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                                 .init(color: Color(red: 0.50, green: 0.58, blue: 0.66).opacity(0.054 * ambient), location: 0.42),
                                 .init(color: .clear, location: 1.0)
                             ]),
-                            center: animateSurface ? UnitPoint(x: -0.12, y: -0.2) : UnitPoint(x: -0.18, y: -0.24),
+                            center: UnitPoint(x: -0.18, y: -0.24),
                             startRadius: 72,
                             endRadius: 680
                         )
@@ -219,7 +216,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                                 .init(color: accent.opacity(0.01 * ambient), location: 0.44),
                                 .init(color: .clear, location: 1.0)
                             ]),
-                            center: animateSurface ? UnitPoint(x: -0.12, y: -0.2) : UnitPoint(x: -0.18, y: -0.24),
+                            center: UnitPoint(x: -0.18, y: -0.24),
                             startRadius: 84,
                             endRadius: 700
                         )
@@ -231,7 +228,7 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                                 .init(color: Color(red: 0.47, green: 0.56, blue: 0.63).opacity(0.036 * ambient), location: 0.46),
                                 .init(color: .clear, location: 1.0)
                             ]),
-                            center: animateSurface ? UnitPoint(x: 1.22, y: 0.86) : UnitPoint(x: 1.16, y: 0.8),
+                            center: UnitPoint(x: 1.16, y: 0.8),
                             startRadius: 70,
                             endRadius: 640
                         )
@@ -244,8 +241,8 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                                 .init(color: accent.opacity(0.022 * ambient), location: 0.58),
                                 .init(color: .clear, location: 1.0)
                             ]),
-                            startPoint: animateSurface ? UnitPoint(x: 0.46, y: 0.0) : UnitPoint(x: 0.54, y: 0.03),
-                            endPoint: animateSurface ? UnitPoint(x: 0.58, y: 1.0) : UnitPoint(x: 0.42, y: 0.97)
+                            startPoint: UnitPoint(x: 0.54, y: 0.03),
+                            endPoint: UnitPoint(x: 0.42, y: 0.97)
                         )
                         .blur(radius: 42 + (8 * (ambient - 1)))
 
@@ -280,30 +277,6 @@ private struct CadenceAmbientSurfaceModifier: ViewModifier {
                 )
                 .id(accentKey)
             }
-        .onAppear {
-            restartAmbientAnimation()
-        }
-        .onChange(of: accentKey) { _, _ in
-            restartAmbientAnimation()
-        }
-        .onChange(of: motionEnabled) { _, _ in
-            restartAmbientAnimation()
-        }
-        .onChange(of: reduceMotion) { _, _ in
-            restartAmbientAnimation()
-        }
-    }
-
-    private func restartAmbientAnimation() {
-        guard motionEnabled, !reduceMotion else {
-            animateSurface = false
-            return
-        }
-
-        animateSurface = false
-        withAnimation(.easeInOut(duration: 32).repeatForever(autoreverses: true)) {
-            animateSurface = true
-        }
     }
 }
 
@@ -342,14 +315,12 @@ extension View {
 
     func cadenceSurface(
         accent: Color,
-        accentKey: String = "default",
-        motionEnabled: Bool = true
+        accentKey: String = "default"
     ) -> some View {
         modifier(
             CadenceAmbientSurfaceModifier(
                 accent: accent,
-                accentKey: accentKey,
-                motionEnabled: motionEnabled
+                accentKey: accentKey
             )
         )
     }

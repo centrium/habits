@@ -147,11 +147,11 @@ struct RhythmLineChart: View {
     private func axisLabel(for hour: Int) -> String {
         switch hour {
         case 6:
-            return "6am"
+            return "6AM"
         case 12:
-            return "12pm"
+            return "Noon"
         case 18:
-            return "6pm"
+            return "6PM"
         default:
             return "\(hour)"
         }

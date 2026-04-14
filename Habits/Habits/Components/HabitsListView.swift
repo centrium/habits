@@ -171,7 +171,7 @@ struct HabitsListView: View {
                                 Circle()
                                     .strokeBorder(Color.black.opacity(0.05), lineWidth: 1)
                             }
-                            .shadow(color: Color.black.opacity(0.14), radius: 14, y: 6)
+                            .shadow(color: Color.black.opacity(0.11), radius: 12, y: 5)
                             .scaleEffect(isFABPressed ? 0.96 : 1)
                             .animation(.easeOut(duration: 0.12), value: isFABPressed)
                     }
@@ -279,21 +279,21 @@ struct HabitsListView: View {
                     .padding(.bottom, CadenceTokens.Space.md)
                 }
 
-                if let todayInsightLine {
-                    Text(todayInsightLine)
-                        .font(CadenceTokens.Typography.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, CadenceTokens.Space.lg + 2)
-                }
-
                 if !visibleHabits.isEmpty {
                     Text("Growth Plan")
                         .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, CadenceTokens.Space.sm)
+                        .padding(.bottom, CadenceTokens.Space.xs)
                         .accessibilityAddTraits(.isHeader)
+                }
+                
+                if let todayInsightLine {
+                    Text(todayInsightLine)
+                        .font(CadenceTokens.Typography.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, CadenceTokens.Space.lg)
                 }
 
                 LazyVStack(spacing: isReordering ? CadenceTokens.Space.xl : CadenceTokens.Space.md) {
@@ -318,7 +318,7 @@ struct HabitsListView: View {
             }
             .padding(.horizontal, CadenceTokens.Space.lg)
             .padding(.top, CadenceTokens.Space.sm)
-            .padding(.bottom, CadenceTokens.Space.xs)
+            .padding(.bottom, CadenceTokens.Space.x3l)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
         .coordinateSpace(name: "container")
@@ -993,6 +993,7 @@ private struct HeroInsightCardView: View {
                 Text(globalInsightLine)
                     .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                     .lineLimit(2)
+                    .lineSpacing(1)
                     .padding(.top, CadenceTokens.Space.xs)
                     .padding(.bottom, CadenceTokens.Space.md)
 
@@ -1004,7 +1005,7 @@ private struct HeroInsightCardView: View {
 
                 Text(summary.title)
                     .font(CadenceTokens.Typography.body.weight(.semibold))
-                    .foregroundStyle(semanticAccent.cadenceAccentPrimary.opacity(0.9))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
                     .lineLimit(1)
                     .padding(.bottom, CadenceTokens.Space.xs)
 
@@ -1020,8 +1021,7 @@ private struct HeroInsightCardView: View {
             }
         }
         .padding(.horizontal, CadenceTokens.Space.lg)
-        .padding(.top, CadenceTokens.Space.md)
-        .padding(.bottom, CadenceTokens.Space.md)
+        .padding(.vertical, CadenceTokens.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
     }
@@ -1043,7 +1043,7 @@ private struct HeroInsightCardView: View {
         let parts = summary.timing.secondaryValue.components(separatedBy: " and ")
         if parts.count == 2 {
             var start = AttributedString(parts[0])
-            start.foregroundColor = semanticAccent.cadenceAccentSecondary
+            start.foregroundColor = CadenceTokens.Color.Text.secondary
             line += start
 
             var connector = AttributedString(" and ")
@@ -1051,13 +1051,13 @@ private struct HeroInsightCardView: View {
             line += connector
 
             var end = AttributedString(parts[1])
-            end.foregroundColor = semanticAccent.cadenceAccentSecondary
+            end.foregroundColor = CadenceTokens.Color.Text.secondary
             line += end
             return line
         }
 
         var value = AttributedString(summary.timing.secondaryValue)
-        value.foregroundColor = semanticAccent.cadenceAccentSecondary
+        value.foregroundColor = CadenceTokens.Color.Text.secondary
         line += value
         return line
     }

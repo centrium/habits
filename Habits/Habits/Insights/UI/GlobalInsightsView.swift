@@ -40,8 +40,7 @@ struct GlobalInsightsView: View {
         }
         .cadenceSurface(
             accent: CadenceTokens.Color.Global.cadenceGlobalAccentPrimary,
-            accentKey: "global-insights",
-            motionEnabled: userSettings.ambientSurfaceMotionEnabled
+            accentKey: "global-insights"
         )
         .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
         .navigationTitle("Global Insights")

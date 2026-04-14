@@ -121,17 +121,7 @@ struct RhythmDetailSheet: View {
     }
 
     private func formattedTime(_ hour: Int) -> String {
-        let normalized = ((hour % 24) + 24) % 24
-        switch normalized {
-        case 0:
-            return "Midnight"
-        case 12:
-            return "Noon"
-        case 1..<12:
-            return "\(normalized)am"
-        default:
-            return "\(normalized - 12)pm"
-        }
+        humanTime(for: hour)
     }
 
     private func highlightedTimesBySentence(in text: String) -> AttributedString {
