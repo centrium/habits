@@ -687,7 +687,7 @@ private extension PaywallView {
     }
 
     private var semanticAccent: CadenceSemanticAccentTokens {
-        CadenceTokens.Color.semanticAccent(from: HabitColor.default.hex, colorScheme: colorScheme)
+        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
     }
 
     private func rowSignalWidth(for row: String) -> CGFloat {

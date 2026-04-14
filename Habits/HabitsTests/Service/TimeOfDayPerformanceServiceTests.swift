@@ -43,7 +43,7 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
     }
 
     func testHumanTimeFormatting() {
-        XCTAssertEqual(humanTime(for: 0), "midnight")
+        XCTAssertEqual(humanTime(for: 0), "Midnight")
         XCTAssertEqual(humanTime(for: 13), "1pm")
         XCTAssertEqual(humanTime(for: 9), "9am")
     }

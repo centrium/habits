@@ -85,12 +85,13 @@ struct GlobalInsightsService {
 
         let rankedHabits = rankedHabitRows(from: metricsByHabit)
         let greig = greigSummary(from: metricsByHabit, now: now)
+        let globalTiming = globalLoggingTiming(for: habits, now: now)
         let stripSummary = PremiumInsightsStripSummary(
-            primaryLabel: "\(CadenceLanguage.identityTitle()) ",
-            primaryValue: CadenceLanguage.shortLabel(for: dominantState),
-            secondaryLabel: "Consistency ",
-            secondaryValue: "\(consistency)%",
-            secondarySuffix: stripSuffix(for: atRiskCount)
+            primaryLabel: "You tend to log habits most around ",
+            primaryValue: humanTime(for: globalTiming.peakHour),
+            secondaryLabel: "Logging activity dips between ",
+            secondaryValue: "\(humanTime(for: globalTiming.dipStart)) and \(humanTime(for: globalTiming.dipEnd))",
+            secondarySuffix: nil
         )
 
         return GlobalInsightsSnapshot(
@@ -119,6 +120,12 @@ private extension GlobalInsightsService {
         let elapsedDays: Int
         let totalDays: Int
         let remainingDays: Int
+    }
+
+    struct GlobalLoggingTiming {
+        let peakHour: Int
+        let dipStart: Int
+        let dipEnd: Int
     }
 
     func habitMetrics(
@@ -325,6 +332,58 @@ private extension GlobalInsightsService {
     func weeklyImprovementOpportunities(remainingDays: Int) -> Int {
         guard remainingDays > 0 else { return 0 }
         return Int(ceil(Double(remainingDays) / 7.0))
+    }
+
+    func globalLoggingTiming(for habits: [Habit], now: Date) -> GlobalLoggingTiming {
+        let allLogs = habits
+            .flatMap(\.logs)
+            .filter { $0.effectiveTimestamp <= now }
+
+        let entryLogs = allLogs.filter { $0.kind == .entry }
+        let logs = entryLogs.isEmpty ? allLogs : entryLogs
+
+        guard !logs.isEmpty else {
+            return GlobalLoggingTiming(peakHour: 12, dipStart: 15, dipEnd: 16)
+        }
+
+        var counts = Array(repeating: 0, count: 24)
+        counts.reserveCapacity(24)
+
+        for log in logs {
+            let hour = calendar.component(.hour, from: log.effectiveTimestamp)
+            counts[hour] += 1
+        }
+
+        let peakHour = (0..<24).max { lhs, rhs in
+            let lhsCount = counts[lhs]
+            let rhsCount = counts[rhs]
+            if lhsCount != rhsCount {
+                return lhsCount < rhsCount
+            }
+
+            let lhsDistanceFromNoon = abs(lhs - 12)
+            let rhsDistanceFromNoon = abs(rhs - 12)
+            if lhsDistanceFromNoon != rhsDistanceFromNoon {
+                return lhsDistanceFromNoon > rhsDistanceFromNoon
+            }
+
+            return lhs > rhs
+        } ?? 12
+
+        let dipStart = (0..<24).min { lhs, rhs in
+            let lhsSum = counts[lhs] + counts[(lhs + 1) % 24]
+            let rhsSum = counts[rhs] + counts[(rhs + 1) % 24]
+            if lhsSum != rhsSum {
+                return lhsSum < rhsSum
+            }
+            return lhs < rhs
+        } ?? 15
+
+        return GlobalLoggingTiming(
+            peakHour: peakHour,
+            dipStart: dipStart,
+            dipEnd: (dipStart + 1) % 24
+        )
     }
 
     func stripSuffix(for atRiskCount: Int) -> String? {

@@ -16,6 +16,16 @@ struct CadenceSemanticAccentTokens {
 
 enum CadenceTokens {
     enum Color {
+        enum Global {
+            static let cadenceGlobalAccentPrimary = SwiftUI.Color(
+                red: 76.0 / 255.0,
+                green: 141.0 / 255.0,
+                blue: 1.0
+            )
+            static let cadenceGlobalAccentSecondary = cadenceGlobalAccentPrimary.opacity(0.7)
+            static let cadenceGlobalAccentSubtle = cadenceGlobalAccentPrimary.opacity(0.4)
+        }
+
         enum Background {
             static let primary = SwiftUI.Color(uiColor: .systemBackground)
             static let secondary = SwiftUI.Color(uiColor: .secondarySystemBackground)
@@ -74,6 +84,15 @@ enum CadenceTokens {
                 cadenceAccentPrimary: accent.primary.opacity(0.96),
                 cadenceAccentSecondary: accent.secondary.opacity(0.86),
                 cadenceAccentSubtle: accent.tertiary.opacity(0.64)
+            )
+        }
+
+        static func globalSemanticAccent(colorScheme: ColorScheme) -> CadenceSemanticAccentTokens {
+            _ = colorScheme
+            return CadenceSemanticAccentTokens(
+                cadenceAccentPrimary: Global.cadenceGlobalAccentPrimary,
+                cadenceAccentSecondary: Global.cadenceGlobalAccentSecondary,
+                cadenceAccentSubtle: Global.cadenceGlobalAccentSubtle
             )
         }
     }

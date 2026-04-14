@@ -32,7 +32,11 @@ final class GlobalInsightsServiceTests: XCTestCase {
 
         XCTAssertEqual(snapshot?.metrics.atRiskCount, 1)
         XCTAssertEqual(snapshot?.metrics.bestCurrentStreak, 4)
-        XCTAssertEqual(snapshot?.stripSummary.secondarySuffix, "1 needs attention")
+        XCTAssertEqual(snapshot?.stripSummary.primaryLabel, "You tend to log habits most around ")
+        XCTAssertEqual(snapshot?.stripSummary.primaryValue, "Noon")
+        XCTAssertEqual(snapshot?.stripSummary.secondaryLabel, "Logging activity dips between ")
+        XCTAssertEqual(snapshot?.stripSummary.secondaryValue, "Midnight and 1am")
+        XCTAssertNil(snapshot?.stripSummary.secondarySuffix)
     }
 
     func testBestDayOfWeekCountsCompletedHabitDaysInsteadOfRawLogs() {

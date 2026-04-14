@@ -196,7 +196,7 @@ struct HabitHeader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: HabitRowGrid.contentSpacing) {
-            HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.iconToTitleSpacing) {
+            HStack(alignment: .top, spacing: HabitRowGrid.iconToTitleSpacing) {
                 HabitBadge(
                     iconName: iconName,
                     accent: iconAccent,
@@ -204,9 +204,6 @@ struct HabitHeader: View {
                     size: HabitRowGrid.iconSize
                 )
                 .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize, alignment: .top)
-                .alignmentGuide(.firstTextBaseline) { dimensions in
-                    dimensions[.bottom] - 2
-                }
 
                 VStack(
                     alignment: .leading,

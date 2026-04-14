@@ -38,6 +38,7 @@ struct HabitDetailSheet: View {
     @State private var selectedDate: Date
     @State private var isHistoryPresented = false
     @State private var cueInsight: CueInsight?
+    @State private var rhythmData: [HourValue] = []
     @State private var prefersIdentityFocusOnEdit = false
     private let onDeleted: (() -> Void)?
 
@@ -242,6 +243,9 @@ struct HabitDetailSheet: View {
         .task(id: habit.id) {
             await refreshCueInsight()
         }
+        .task(id: rhythmTaskKey) {
+            await refreshRhythmData()
+        }
         .navigationDestination(isPresented: $isHistoryPresented) {
             ZStack(alignment: .top) {
                 backgroundColor
@@ -328,6 +332,18 @@ struct HabitDetailSheet: View {
                 )
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
+
+                if !rhythmData.isEmpty {
+                    RhythmCardView(
+                        isPremium: purchaseService.premiumStatus == .premium,
+                        data: rhythmData,
+                        habit: habit,
+                        onUnlock: {
+                            showPaywall(feature: .advancedInsights)
+                        }
+                    )
+                    .padding(.horizontal, sectionPadding)
+                }
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                     HeroTopRow(
@@ -875,6 +891,32 @@ struct HabitDetailSheet: View {
 
     private func refreshCueInsight() async {
         cueInsight = await habitLogService.detectCue(for: habit.id)
+    }
+
+    private var rhythmTaskKey: String {
+        let newestTimestamp = habit.logs
+            .map(\.effectiveTimestamp)
+            .max()?
+            .timeIntervalSince1970 ?? 0
+        let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
+        return "\(habit.id.uuidString)-\(habit.logs.count)-\(newestTimestamp)-\(premiumFlag)"
+    }
+
+    private func refreshRhythmData() async {
+        guard purchaseService.premiumStatus != .unknown else {
+            rhythmData = []
+            return
+        }
+
+        let values = await TimeOfDayPerformanceService.shared.hourlyValues(
+            for: habit,
+            isPremium: purchaseService.premiumStatus == .premium,
+            now: .now,
+            calendar: calculationCalendar
+        )
+
+        guard !Task.isCancelled else { return }
+        rhythmData = values
     }
 
     private var detectedCueText: String? {

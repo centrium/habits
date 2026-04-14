@@ -7,6 +7,14 @@ struct HourValue: Identifiable, Equatable {
     var id: Int { hour }
 }
 
+struct HabitRhythm: Equatable, Sendable {
+    let peakHour: Int
+    let dipStart: Int
+    let dipEnd: Int
+    let consistencyScore: Double
+    let lastUpdated: Date
+}
+
 struct RhythmInsight: Equatable {
     let peakHour: Int
     let lowRange: (Int, Int)
@@ -58,8 +66,8 @@ func generateRhythmInsight(data: [HourValue]) -> RhythmInsight {
 func humanTime(for hour: Int) -> String {
     let normalized = ((hour % 24) + 24) % 24
     switch normalized {
-    case 0: return "midnight"
-    case 12: return "noon"
+    case 0: return "Midnight"
+    case 12: return "Noon"
     case 1..<12: return "\(normalized)am"
     default: return "\(normalized - 12)pm"
     }
@@ -107,6 +115,7 @@ final class TimeOfDayPerformanceService {
         let logCount: Int
         let newestTimestamp: Date?
         let values: [HourValue]
+        let rhythm: HabitRhythm
     }
 
     private struct LogSnapshot: Sendable {
@@ -126,6 +135,15 @@ final class TimeOfDayPerformanceService {
     ) async -> [HourValue] {
         let days = isPremium ? 21 : 3
         return await hourlyValues(for: habit, days: days, now: now, calendar: calendar)
+    }
+
+    func cachedRhythm(for habit: Habit, isPremium: Bool) -> HabitRhythm? {
+        cachedRhythm(for: habit.id, days: isPremium ? 21 : 3)
+    }
+
+    func cachedLastCompletedDate(for habit: Habit, isPremium: Bool) -> Date? {
+        let key = CacheKey(habitID: habit.id, days: isPremium ? 21 : 3)
+        return cache[key]?.newestTimestamp
     }
 
     func hourlyValues(
@@ -152,11 +170,13 @@ final class TimeOfDayPerformanceService {
         let values = await Task.detached(priority: .utility) {
             Self.buildValues(from: snapshots, calendar: calendar, floorValue: floorValue)
         }.value
+        let rhythm = Self.buildRhythm(from: values, lastUpdated: now)
 
         cache[key] = CacheEntry(
             logCount: logCount,
             newestTimestamp: newestTimestamp,
-            values: values
+            values: values,
+            rhythm: rhythm
         )
 
         return values
@@ -248,6 +268,42 @@ final class TimeOfDayPerformanceService {
             let clamped = min(1, max(dynamicFloor, tapered))
             return HourValue(hour: hour, value: clamped)
         }
+    }
+
+    private func cachedRhythm(for habitID: UUID, days: Int) -> HabitRhythm? {
+        let key = CacheKey(habitID: habitID, days: max(1, days))
+        return cache[key]?.rhythm
+    }
+
+    private nonisolated static func buildRhythm(from values: [HourValue], lastUpdated: Date) -> HabitRhythm {
+        let insight = generateRhythmInsight(data: values)
+        return HabitRhythm(
+            peakHour: insight.peakHour,
+            dipStart: insight.lowRange.0,
+            dipEnd: insight.lowRange.1,
+            consistencyScore: consistencyScore(from: values, peakHour: insight.peakHour),
+            lastUpdated: lastUpdated
+        )
+    }
+
+    private nonisolated static func consistencyScore(from values: [HourValue], peakHour: Int) -> Double {
+        guard !values.isEmpty else { return 0 }
+
+        let sorted = values.sorted { $0.value > $1.value }
+        let primary = sorted.first?.value ?? 0
+        let secondary = sorted.dropFirst().first?.value ?? 0
+        let separation = max(0, primary - secondary)
+        let concentration = neighborhoodAverage(around: peakHour, values: values)
+        let score = (separation * 0.6) + (concentration * 0.4)
+        return min(1, max(0, score))
+    }
+
+    private nonisolated static func neighborhoodAverage(around hour: Int, values: [HourValue]) -> Double {
+        let lookup = Dictionary(uniqueKeysWithValues: values.map { ($0.hour, $0.value) })
+        let previous = lookup[(hour + 23) % 24] ?? 0
+        let current = lookup[hour] ?? 0
+        let next = lookup[(hour + 1) % 24] ?? 0
+        return (previous + current + next) / 3.0
     }
 
     private nonisolated static func fillHourlyGaps(_ counts: [Int: Int]) -> [Int: Double] {

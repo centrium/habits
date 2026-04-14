@@ -19,18 +19,14 @@ struct GlobalInsightsView: View {
         ).snapshot(for: habits, now: .now)
     }
 
-    private var accentHex: String {
-        habits.first?.colorHex ?? HabitColor.default.hex
-    }
-
     var body: some View {
         ScrollView {
             if let snapshot {
                 VStack(alignment: .leading, spacing: GlobalInsightsSpacing.section) {
-                    GlobalInsightsHeroSection(hero: snapshot.hero, accentHex: accentHex)
-                    GlobalInsightsMetricsSection(metrics: snapshot.metrics, accentHex: accentHex)
-                    GlobalInsightsHabitSnapshotSection(rows: snapshot.topHabits, accentHex: accentHex)
-                    GlobalInsightsGreigSection(greig: snapshot.greig, accentHex: accentHex)
+                    GlobalInsightsHeroSection(hero: snapshot.hero)
+                    GlobalInsightsMetricsSection(metrics: snapshot.metrics)
+                    GlobalInsightsHabitSnapshotSection(rows: snapshot.topHabits)
+                    GlobalInsightsGreigSection(greig: snapshot.greig)
                 }
                 .padding(.horizontal, CadenceTokens.Space.xl)
                 .padding(.top, CadenceTokens.Space.x2l)
@@ -43,7 +39,7 @@ struct GlobalInsightsView: View {
             }
         }
         .cadenceSurface(
-            accent: Color.systemAccent,
+            accent: CadenceTokens.Color.Global.cadenceGlobalAccentPrimary,
             accentKey: "global-insights",
             motionEnabled: userSettings.ambientSurfaceMotionEnabled
         )
@@ -60,10 +56,9 @@ struct GlobalInsightsView: View {
 private struct GlobalInsightsHeroSection: View {
     @Environment(\.colorScheme) private var colorScheme
     let hero: GlobalInsightsHero
-    let accentHex: String
 
     private var semanticAccent: CadenceSemanticAccentTokens {
-        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
     }
 
     var body: some View {
@@ -112,10 +107,9 @@ private struct GlobalInsightsHeroSection: View {
 private struct GlobalInsightsMetricsSection: View {
     @Environment(\.colorScheme) private var colorScheme
     let metrics: GlobalInsightsMetrics
-    let accentHex: String
 
     private var semanticAccent: CadenceSemanticAccentTokens {
-        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
     }
 
     var body: some View {
@@ -176,10 +170,9 @@ private struct GlobalInsightsMetricsSection: View {
 private struct GlobalInsightsHabitSnapshotSection: View {
     @Environment(\.colorScheme) private var colorScheme
     let rows: [GlobalInsightHabitRow]
-    let accentHex: String
 
     private var semanticAccent: CadenceSemanticAccentTokens {
-        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
     }
 
     var body: some View {
@@ -229,10 +222,9 @@ private struct GlobalInsightsHabitSnapshotSection: View {
 private struct GlobalInsightsGreigSection: View {
     @Environment(\.colorScheme) private var colorScheme
     let greig: GlobalInsightsGreig
-    let accentHex: String
 
     private var semanticAccent: CadenceSemanticAccentTokens {
-        CadenceTokens.Color.semanticAccent(from: accentHex, colorScheme: colorScheme)
+        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
     }
 
     var body: some View {
