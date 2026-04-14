@@ -14,12 +14,12 @@ final class PaywallViewTests: XCTestCase {
             ]
         }
 
-        XCTAssertEqual(titles[0], "Unlock Advanced Insights")
+        XCTAssertEqual(titles[0], "See your full pattern")
         XCTAssertEqual(titles[1], "Track Unlimited Cadences")
-        XCTAssertEqual(titles[2], "Unlock Your Full Cadence History")
-        XCTAssertEqual(titles[3], "Export Your Cadence Data")
+        XCTAssertEqual(titles[2], "View your full cadence history")
+        XCTAssertEqual(titles[3], "Export your cadence data")
         XCTAssertEqual(titles[4], "Stay in rhythm throughout the day")
-        XCTAssertEqual(titles[5], "Upgrade to Pro")
+        XCTAssertEqual(titles[5], "View deeper insights with Pro")
     }
 
     func testTriggeredFeatureAppearsFirstInBenefits() async {

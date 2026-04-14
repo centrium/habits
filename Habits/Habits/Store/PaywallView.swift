@@ -22,6 +22,7 @@ struct PaywallView: View {
         let icon: String
         let title: String
         let description: String
+        let accentPhrase: String?
 
         var id: PremiumFeature { feature }
     }
@@ -106,17 +107,17 @@ struct PaywallView: View {
     static func title(for feature: PremiumFeature?) -> String {
         switch feature {
         case .advancedInsights:
-            return "Unlock Advanced Insights"
+            return "See your full pattern"
         case .unlimitedHabits:
             return "Track Unlimited Cadences"
         case .fullHeatmapHistory:
-            return "Unlock Your Full Cadence History"
+            return "View your full cadence history"
         case .dataExport:
-            return "Export Your Cadence Data"
+            return "Export your cadence data"
         case .multipleReminders:
             return title(for: PaywallContext.multipleReminders)
         case nil:
-            return "Upgrade to Pro"
+            return "View deeper insights with Pro"
         }
     }
 
@@ -127,7 +128,7 @@ struct PaywallView: View {
         case .dataExport:
             return "Export your progress"
         case .general:
-            return "Unlock with Pro"
+            return "View deeper insights with Pro"
         }
     }
 
@@ -137,31 +138,36 @@ struct PaywallView: View {
                 feature: .unlimitedHabits,
                 icon: "infinity",
                 title: "Unlimited Cadences",
-                description: "Track as many cadences as you like."
+                description: "Track as many cadences as you like.",
+                accentPhrase: "as many cadences"
             ),
             BenefitContent(
                 feature: .advancedInsights,
                 icon: "sparkles",
-                title: "Advanced Insights",
-                description: "Understand identity state, risk, and pattern strength."
+                title: "Deeper Insights",
+                description: "Understand identity state, risk, and pattern strength.",
+                accentPhrase: "pattern strength"
             ),
             BenefitContent(
                 feature: .fullHeatmapHistory,
                 icon: "calendar",
                 title: "Full Heatmap History",
-                description: "Scroll through your entire 365-day journey."
+                description: "Review your complete 365-day journey.",
+                accentPhrase: "365-day journey"
             ),
             BenefitContent(
                 feature: .dataExport,
                 icon: "square.and.arrow.up",
                 title: "Data Export",
-                description: "Export your cadence data whenever you need."
+                description: "Keep a portable copy of your cadence data.",
+                accentPhrase: "portable copy"
             ),
             BenefitContent(
                 feature: .multipleReminders,
                 icon: "bell.badge",
                 title: "Multiple reminders to stay in rhythm throughout the day",
-                description: "Add more than one reminder to reinforce a cadence when it matters."
+                description: "Add more than one reminder to reinforce a cadence when it matters.",
+                accentPhrase: "when it matters"
             )
         ]
 
@@ -308,11 +314,11 @@ private extension PaywallView {
                 HStack(spacing: 8) {
                     Image(systemName: "eye")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                     Text("Preview")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(colorScheme == .dark ? semanticAccent.cadenceAccentPrimary : semanticAccent.cadenceAccentSecondary)
                 }
 
                 Text(preview.title)
@@ -329,7 +335,7 @@ private extension PaywallView {
                         .padding(10)
                         .background(
                             Circle()
-                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.15 : 0.1))
+                                .fill((colorScheme == .dark ? semanticAccent.cadenceAccentPrimary : semanticAccent.cadenceAccentSecondary).opacity(colorScheme == .dark ? 0.24 : 0.12))
                                 .blur(radius: 8)
                         )
                         .background(
@@ -361,6 +367,7 @@ private extension PaywallView {
                     icon: benefit.icon,
                     title: benefit.title,
                     description: benefit.description,
+                    accentPhrase: benefit.accentPhrase,
                     isRecommended: index == 0 && benefit.feature == highlightedFeature
                 )
                 .opacity(index == 0 && benefit.feature == highlightedFeature && !highlightedBenefitVisible ? 0.84 : 1)
@@ -469,19 +476,53 @@ private extension PaywallView {
         VStack(alignment: .leading, spacing: 12) {
             Text("Insights Snapshot")
                 .font(.subheadline.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+            HStack(spacing: 8) {
+                previewSignalPill(label: "Pattern", value: "82")
+                previewSignalPill(label: "Risk", value: "Low")
+                previewSignalPill(label: "State", value: "Stable")
+            }
 
             ForEach(rows, id: \.self) { row in
-                HStack {
+                HStack(spacing: 10) {
                     Text(row)
                         .font(.caption.weight(.medium))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
 
                     Spacer()
 
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.accentColor.opacity(0.22))
-                        .frame(width: 54, height: 10)
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(semanticAccent.cadenceAccentSecondary.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                            .frame(width: 54, height: 10)
+
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.5 : 0.34))
+                            .frame(width: rowSignalWidth(for: row), height: 10)
+                    }
                 }
             }
+
+            VStack(spacing: 6) {
+                ForEach(0..<3, id: \.self) { index in
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    semanticAccent.cadenceAccentSecondary.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                                    semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.32 : 0.24),
+                                    .clear
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(height: 3)
+                        .scaleEffect(x: 1 + (CGFloat(index) * 0.12), y: 1, anchor: .leading)
+                }
+            }
+            .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -494,7 +535,7 @@ private extension PaywallView {
             ForEach(rows, id: \.self) { row in
                 HStack(spacing: 10) {
                     Circle()
-                        .fill(Color.accentColor.opacity(0.28))
+                        .fill(semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.52 : 0.3))
                         .frame(width: 8, height: 8)
 
                     Text(row)
@@ -518,7 +559,7 @@ private extension PaywallView {
                         ForEach(0..<8, id: \.self) { column in
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(
-                                    Color.accentColor.opacity(
+                                    semanticAccent.cadenceAccentSecondary.opacity(
                                         0.14 + (Double((row + column) % 4) * 0.08)
                                     )
                                 )
@@ -550,7 +591,7 @@ private extension PaywallView {
                         .fill(Color.appBackground.opacity(colorScheme == .dark ? 0.58 : 0.88))
                         .overlay {
                             RoundedRectangle(cornerRadius: 10)
-                                .stroke(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                                .stroke(semanticAccent.cadenceAccentSecondary.opacity(colorScheme == .dark ? 0.2 : 0.12))
                         }
                 )
             }
@@ -562,6 +603,7 @@ private extension PaywallView {
         icon: String,
         title: String,
         description: String,
+        accentPhrase: String?,
         isRecommended: Bool
     ) -> some View {
 
@@ -569,7 +611,7 @@ private extension PaywallView {
 
             Image(systemName: icon)
                 .font(.headline)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.98 : 0.78))
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -585,15 +627,14 @@ private extension PaywallView {
                             .padding(.vertical, 3)
                             .background(
                                 Capsule()
-                                    .fill(Color.secondary.opacity(0.14))
+                                    .fill((colorScheme == .dark ? semanticAccent.cadenceAccentPrimary : semanticAccent.cadenceAccentSecondary).opacity(colorScheme == .dark ? 0.26 : 0.12))
                             )
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(semanticAccent.cadenceAccentPrimary)
                     }
                 }
 
-                Text(description)
+                Text(highlightedDescription(description: description, accentPhrase: accentPhrase))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
 
             }
 
@@ -626,7 +667,7 @@ private extension PaywallView {
         switch feature {
 
         case .advancedInsights:
-            return "See deeper behavioural analytics about your cadence."
+            return "Understand your rhythm with deeper insight signals."
 
         case .unlimitedHabits:
             return "Remove the 3-cadence limit and track as many cadences as you want."
@@ -641,7 +682,61 @@ private extension PaywallView {
             return "Add multiple reminders to reinforce your cadence without missing the moments that matter."
 
         case nil:
-            return "Get more out of your cadence with Pro features."
+            return "See your full pattern with premium insight tools."
         }
+    }
+
+    private var semanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.semanticAccent(from: HabitColor.default.hex, colorScheme: colorScheme)
+    }
+
+    private func rowSignalWidth(for row: String) -> CGFloat {
+        switch row {
+        case "Identity Signal":
+            return 46
+        case "Habit Strength":
+            return 41
+        case "Risk Indicator":
+            return 34
+        default:
+            return 38
+        }
+    }
+
+    private func previewSignalPill(label: String, value: String) -> some View {
+        HStack(spacing: 5) {
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+            Text(value)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(semanticAccent.cadenceAccentPrimary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(semanticAccent.cadenceAccentSecondary.opacity(colorScheme == .dark ? 0.14 : 0.09))
+        )
+    }
+
+    private func highlightedDescription(description: String, accentPhrase: String?) -> AttributedString {
+        var attributed = AttributedString(description)
+        attributed.foregroundColor = CadenceTokens.Color.Text.secondary
+
+        guard let accentPhrase,
+              let stringRange = description.range(of: accentPhrase, options: [.caseInsensitive, .diacriticInsensitive]),
+              let lower = AttributedString.Index(stringRange.lowerBound, within: attributed),
+              let upper = AttributedString.Index(stringRange.upperBound, within: attributed) else {
+            return attributed
+        }
+
+        let range = lower..<upper
+        attributed[range].foregroundColor = colorScheme == .dark
+            ? semanticAccent.cadenceAccentPrimary
+            : semanticAccent.cadenceAccentSecondary
+
+        return attributed
     }
 }
