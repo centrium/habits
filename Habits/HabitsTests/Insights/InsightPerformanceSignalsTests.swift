@@ -382,6 +382,104 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertLessThan(value, 0.8)
     }
 
+    func testIdentityCalibrationKeepsMarkerInsideSteadyBandAndPullsOffDivider() {
+        let result = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.595,
+                labels: ["Start", "Build", "Steady", "Strong", "Slip", "Rebuild"],
+                activeBandLabel: "Steady",
+                safeInset: 0.03,
+                profile: .identity
+            )
+        )
+
+        XCTAssertEqual(result.activeBand.label, "Steady")
+        XCTAssertLessThan(result.adjustedPosition, 0.60)
+        XCTAssertLessThanOrEqual(result.visibleMax, result.activeBand.upper)
+        XCTAssertGreaterThanOrEqual(result.visibleMin, result.activeBand.lower)
+    }
+
+    func testCalibrationBiasStrengthIncreasesNearDivider() {
+        let labels = ["Low", "Moderate", "High", "Critical"]
+        let center = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.375,
+                labels: labels,
+                activeBandLabel: nil,
+                safeInset: 0.025,
+                profile: .risk
+            )
+        )
+        let edge = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.26,
+                labels: labels,
+                activeBandLabel: nil,
+                safeInset: 0.025,
+                profile: .risk
+            )
+        )
+
+        XCTAssertGreaterThan(edge.biasStrength, center.biasStrength)
+        XCTAssertGreaterThan(edge.adjustedPosition - edge.rawPosition, 0)
+        XCTAssertLessThan(center.adjustedPosition - center.rawPosition, edge.adjustedPosition - edge.rawPosition)
+    }
+
+    func testStrengthCalibrationPreservesOrderingWithinBand() {
+        let labels = ["Weak", "Developing", "Strong", "Automatic"]
+        let lower = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.52,
+                labels: labels,
+                activeBandLabel: nil,
+                safeInset: 0.025,
+                profile: .strength
+            )
+        )
+        let upper = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.70,
+                labels: labels,
+                activeBandLabel: nil,
+                safeInset: 0.025,
+                profile: .strength
+            )
+        )
+
+        XCTAssertEqual(lower.activeBand.label, "Strong")
+        XCTAssertEqual(upper.activeBand.label, "Strong")
+        XCTAssertLessThan(lower.adjustedPosition, upper.adjustedPosition)
+        XCTAssertLessThanOrEqual(lower.visibleMax, lower.activeBand.upper)
+        XCTAssertLessThanOrEqual(upper.visibleMax, upper.activeBand.upper)
+    }
+
+    func testTerminalBandsBiasInwardFromOuterEdge() {
+        let labels = ["Weak", "Developing", "Strong", "Automatic"]
+        let weak = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.02,
+                labels: labels,
+                activeBandLabel: nil,
+                safeInset: 0.025,
+                profile: .strength
+            )
+        )
+        let automatic = try XCTUnwrap(
+            SignalMarkerCalibration.calibrate(
+                rawPosition: 0.98,
+                labels: labels,
+                activeBandLabel: nil,
+                safeInset: 0.025,
+                profile: .strength
+            )
+        )
+
+        XCTAssertGreaterThan(weak.adjustedPosition, weak.rawPosition)
+        XCTAssertLessThan(automatic.adjustedPosition, automatic.rawPosition)
+        XCTAssertGreaterThanOrEqual(weak.visibleMin, weak.activeBand.lower)
+        XCTAssertLessThanOrEqual(automatic.visibleMax, automatic.activeBand.upper)
+    }
+
     private func makeHabit(
         now: Date,
         createdAtOffset: Int = -60,

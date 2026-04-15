@@ -10,6 +10,7 @@ struct GradientGaugeView: View {
     let labels: [String]
     var emphasizeActiveZone: Bool = false
     var activeBandLabel: String? = nil
+    var calibrationProfile: SignalMarkerCalibration.Profile = .none
 
     @State private var displayedValue = 0.0
     @State private var isActiveMarker = false
@@ -19,13 +20,14 @@ struct GradientGaugeView: View {
     private let markerStrokeWidth: CGFloat = 1.6
     private let markerHaloScale: CGFloat = 1.75
     private let markerShadowRadius: CGFloat = 4
+    private let activeMarkerScale: CGFloat = 1.1
 
     private var clampedValue: Double {
         min(max(value, 0), 1)
     }
 
     private var targetSoftMarkerValue: Double {
-        softMarkerValue(for: clampedValue)
+        clampedValue
     }
 
     private var activeLabelIndex: Int? {
@@ -40,11 +42,7 @@ struct GradientGaugeView: View {
     }
 
     private var dividerPositions: [Double] {
-        if emphasizeActiveZone, labels.count == 6 {
-            return [0.20, 0.40, 0.60, 0.75, 0.90]
-        }
-        guard labels.count > 1 else { return [] }
-        return (1..<labels.count).map { Double($0) / Double(labels.count) }
+        calibrationProfile.dividerPositions(labelCount: labels.count)
     }
 
     private var gradient: LinearGradient {
@@ -101,7 +99,7 @@ struct GradientGaugeView: View {
                             radius: markerShadowRadius,
                             y: 1
                         )
-                        .scaleEffect(isActiveMarker ? 1.1 : 1.0)
+                        .scaleEffect(isActiveMarker ? activeMarkerScale : 1.0)
                         .offset(x: indicatorX - (indicatorSize / 2))
                 }
             }
@@ -129,7 +127,7 @@ struct GradientGaugeView: View {
         }
         .onChange(of: clampedValue) { _, newValue in
             withAnimation(.spring(response: 0.55, dampingFraction: 0.82, blendDuration: 0.2)) {
-                displayedValue = softMarkerValue(for: newValue)
+                displayedValue = min(max(newValue, 0), 1)
             }
         }
     }
@@ -168,67 +166,30 @@ struct GradientGaugeView: View {
         return min(max(rawPosition, indicatorSize / 2), width - (indicatorSize / 2))
     }
 
-    private func softMarkerValue(for raw: Double) -> Double {
-        guard emphasizeActiveZone, let band = resolvedIdentityBand(for: raw) else {
-            return min(max(raw, 0), 1)
-        }
-
-        let clamped = min(max(raw, 0), 1)
-        let centerAttraction: Double = activeBandLabel == nil ? 0.20 : 0.28
-        var softened = clamped + ((band.center - clamped) * centerAttraction)
-        softened = min(max(softened, band.lower), band.upper)
-
-        if activeBandLabel != nil {
-            // Keep state markers optically central so Steady/Strong do not feel ambiguous.
-            let clarityInset = band.span * 0.30
-            let clarityMin = band.lower + clarityInset
-            let clarityMax = band.upper - clarityInset
-            if clarityMin < clarityMax {
-                softened = min(max(softened, clarityMin), clarityMax)
-            }
-        }
-
-        return softened
-    }
-
-    private func renderedMarkerValue(for softValue: Double, width: CGFloat) -> Double {
-        guard emphasizeActiveZone, let band = resolvedIdentityBand(for: softValue) else {
-            return min(max(softValue, 0), 1)
-        }
-
+    private func renderedMarkerValue(for rawValue: Double, width: CGFloat) -> Double {
         let safeInset = max(markerVisibleRadiusNormalized(width: width) + 0.01, 0.02)
-        var safeBandMin = band.lower + safeInset
-        var safeBandMax = band.upper - safeInset
-
-        if safeBandMin > safeBandMax {
-            let center = band.center
-            safeBandMin = center
-            safeBandMax = center
-        }
-
-        var rendered = min(max(softValue, safeBandMin), safeBandMax)
-
-        if band.kind != .rebuild {
-            let rightInwardBias = band.kind == .strong ? 0.015 : 0.004
-            rendered = min(rendered, safeBandMax - rightInwardBias)
-            rendered = max(rendered, safeBandMin)
+        guard let calibration = SignalMarkerCalibration.calibrate(
+            rawPosition: rawValue,
+            labels: labels,
+            activeBandLabel: activeBandLabel,
+            safeInset: safeInset,
+            profile: calibrationProfile
+        ) else {
+            return min(max(rawValue, 0), 1)
         }
 
         #if DEBUG
         debugValidateMarkerContainment(
-            width: width,
-            band: band,
-            markerCenter: rendered,
-            safeBandMin: safeBandMin,
-            safeBandMax: safeBandMax
+            calibration,
+            width: width
         )
         #endif
 
-        return min(max(rendered, 0), 1)
+        return min(max(calibration.adjustedPosition, 0), 1)
     }
 
     private func markerVisibleRadiusNormalized(width: CGFloat) -> Double {
-        let baseRadius = indicatorSize / 2
+        let baseRadius = (indicatorSize * activeMarkerScale) / 2
         let strokeRadius = baseRadius + (markerStrokeWidth / 2)
         let haloRadius = baseRadius * markerHaloScale
         let visibleRadius = max(strokeRadius, haloRadius) + markerShadowRadius + 0.5
@@ -293,82 +254,47 @@ struct GradientGaugeView: View {
         return 0.45
     }
 
-    private func resolvedIdentityBand(for value: Double) -> IdentityBand? {
-        if let activeBandLabel,
-           let byLabel = identityBand(forLabel: activeBandLabel) {
-            return byLabel
-        }
-        return identityBand(for: value)
-    }
-
-    private func identityBand(forLabel label: String) -> IdentityBand? {
-        switch label {
-        case "Start":
-            return IdentityBand(kind: .start, lower: 0.00, upper: 0.20)
-        case "Build":
-            return IdentityBand(kind: .build, lower: 0.20, upper: 0.40)
-        case "Steady":
-            return IdentityBand(kind: .steady, lower: 0.40, upper: 0.60)
-        case "Strong":
-            return IdentityBand(kind: .strong, lower: 0.60, upper: 0.75)
-        case "Slip":
-            return IdentityBand(kind: .slip, lower: 0.75, upper: 0.90)
-        case "Rebuild":
-            return IdentityBand(kind: .rebuild, lower: 0.90, upper: 1.00)
-        default:
-            return nil
-        }
-    }
-
-    private func identityBand(for value: Double) -> IdentityBand {
-        switch value {
-        case ..<0.20:
-            return IdentityBand(kind: .start, lower: 0.00, upper: 0.20)
-        case ..<0.40:
-            return IdentityBand(kind: .build, lower: 0.20, upper: 0.40)
-        case ..<0.60:
-            return IdentityBand(kind: .steady, lower: 0.40, upper: 0.60)
-        case ..<0.75:
-            return IdentityBand(kind: .strong, lower: 0.60, upper: 0.75)
-        case ..<0.90:
-            return IdentityBand(kind: .slip, lower: 0.75, upper: 0.90)
-        default:
-            return IdentityBand(kind: .rebuild, lower: 0.90, upper: 1.00)
-        }
-    }
-
     #if DEBUG
     private func debugValidateMarkerContainment(
-        width: CGFloat,
-        band: IdentityBand,
-        markerCenter: Double,
-        safeBandMin: Double,
-        safeBandMax: Double
+        _ calibration: SignalMarkerCalibration.Result,
+        width: CGFloat
     ) {
         let visibleRadius = markerVisibleRadiusNormalized(width: width)
-        let visibleMin = markerCenter - visibleRadius
-        let visibleMax = markerCenter + visibleRadius
-        let strongSlipDivider = 0.75
-        let canFitInsideBand = (visibleRadius * 2) <= (band.upper - band.lower)
+        let canFitInsideBand = (visibleRadius * 2) <= calibration.activeBand.span
 
         guard canFitInsideBand else {
             print(
-                "[SignalMarker] containment_skipped band=\(band.label) " +
-                    "width=\(format(band.upper - band.lower)) required=\(format(visibleRadius * 2))"
+                "[SignalMarker] containment_skipped profile=\(calibration.profile.name) " +
+                    "band=\(calibration.activeBand.label) width=\(format(calibration.activeBand.span)) " +
+                    "required=\(format(visibleRadius * 2))"
             )
             return
         }
 
-        let contained = visibleMin >= band.lower && visibleMax <= band.upper
-        let strongContained = band.kind != .strong || visibleMax < strongSlipDivider
+        let contained = calibration.visibleMin >= calibration.activeBand.lower &&
+            calibration.visibleMax <= calibration.activeBand.upper
 
-        if !(contained && strongContained) {
+        if !contained {
             print(
-                "[SignalMarker] band=\(band.label) divider=[\(format(band.lower)),\(format(band.upper))] " +
-                    "safe=[\(format(safeBandMin)),\(format(safeBandMax))] " +
-                    "center=\(format(markerCenter)) visible=[\(format(visibleMin)),\(format(visibleMax))]"
+                "[SignalMarker] containment_failure profile=\(calibration.profile.name) " +
+                    "band=\(calibration.activeBand.label) divider=[\(format(calibration.activeBand.lower)),\(format(calibration.activeBand.upper))] " +
+                    "safe=[\(format(calibration.safeBandMin)),\(format(calibration.safeBandMax))] " +
+                    "raw=\(format(calibration.rawPosition)) adjusted=\(format(calibration.adjustedPosition)) " +
+                    "nearestDividerDistance=\(format(calibration.nearestDividerDistance)) " +
+                    "bias=\(format(calibration.biasStrength)) visible=[\(format(calibration.visibleMin)),\(format(calibration.visibleMax))]"
             )
             assertionFailure("Marker footprint crossed band boundary")
+        }
+
+        if ProcessInfo.processInfo.environment["HABITS_DEBUG_SIGNAL_MARKERS"] == "1" {
+            print(
+                "[SignalMarker] profile=\(calibration.profile.name) band=\(calibration.activeBand.label) " +
+                    "raw=\(format(calibration.rawPosition)) adjusted=\(format(calibration.adjustedPosition)) " +
+                    "nearestDividerDistance=\(format(calibration.nearestDividerDistance)) " +
+                    "bias=\(format(calibration.biasStrength)) " +
+                    "safe=[\(format(calibration.safeBandMin)),\(format(calibration.safeBandMax))] " +
+                    "visible=[\(format(calibration.visibleMin)),\(format(calibration.visibleMax))]"
+            )
         }
     }
 
@@ -377,43 +303,153 @@ struct GradientGaugeView: View {
     }
     #endif
 
-    private struct IdentityBand {
-        enum Kind {
-            case start
-            case build
-            case steady
-            case strong
-            case slip
-            case rebuild
+}
+
+struct SignalMarkerCalibration {
+    enum Profile: Equatable {
+        case none
+        case identity
+        case risk
+        case strength
+
+        var name: String {
+            switch self {
+            case .none:
+                return "none"
+            case .identity:
+                return "identity"
+            case .risk:
+                return "risk"
+            case .strength:
+                return "strength"
+            }
         }
 
-        let kind: Kind
+        func dividerPositions(labelCount: Int) -> [Double] {
+            switch self {
+            case .identity:
+                return [0.20, 0.40, 0.60, 0.75, 0.90]
+            case .none, .risk, .strength:
+                guard labelCount > 1 else { return [] }
+                return (1..<labelCount).map { Double($0) / Double(labelCount) }
+            }
+        }
+    }
+
+    struct Band: Equatable {
+        let index: Int
+        let label: String
         let lower: Double
         let upper: Double
 
-        var center: Double {
-            (lower + upper) / 2
+        var center: Double { (lower + upper) / 2 }
+        var span: Double { upper - lower }
+        var isFirst: Bool { index == 0 }
+        var isLast: Bool { upper >= 1 }
+    }
+
+    struct Result: Equatable {
+        let profile: Profile
+        let activeBand: Band
+        let rawPosition: Double
+        let adjustedPosition: Double
+        let nearestDividerDistance: Double
+        let biasStrength: Double
+        let safeBandMin: Double
+        let safeBandMax: Double
+        let visibleMin: Double
+        let visibleMax: Double
+    }
+
+    static func calibrate(
+        rawPosition: Double,
+        labels: [String],
+        activeBandLabel: String?,
+        safeInset: Double,
+        profile: Profile
+    ) -> Result? {
+        guard profile != .none else { return nil }
+        let bands = makeBands(labels: labels, profile: profile)
+        guard !bands.isEmpty else { return nil }
+
+        let raw = clamp(rawPosition, lower: 0, upper: 1)
+        guard let band = resolveBand(for: raw, activeBandLabel: activeBandLabel, bands: bands) else {
+            return nil
         }
 
-        var span: Double {
-            upper - lower
-        }
-
-        var label: String {
-            switch kind {
-            case .start:
-                return "Start"
-            case .build:
-                return "Build"
-            case .steady:
-                return "Steady"
-            case .strong:
-                return "Strong"
-            case .slip:
-                return "Slip"
-            case .rebuild:
-                return "Rebuild"
+        let safeBounds = safeBounds(for: band, safeInset: safeInset)
+        let edgeDistance = max(min(raw - band.lower, band.upper - raw), 0)
+        let centerDistance = band.span / 2
+        let proximityToDivider = 1 - clamp(edgeDistance / max(centerDistance, 0.0001), lower: 0, upper: 1)
+        let terminalOuterEdgeProximity: Double = {
+            if band.isFirst {
+                return 1 - clamp((raw - band.lower) / max(band.span, 0.0001), lower: 0, upper: 1)
             }
+            if band.isLast {
+                return 1 - clamp((band.upper - raw) / max(band.span, 0.0001), lower: 0, upper: 1)
+            }
+            return 0
+        }()
+        let adaptiveBias = clamp(
+            0.12 + (0.08 * proximityToDivider) + (0.02 * terminalOuterEdgeProximity),
+            lower: 0.12,
+            upper: 0.22
+        )
+        let softCenteredPosition = raw + ((band.center - raw) * adaptiveBias)
+        let adjusted = clamp(softCenteredPosition, lower: safeBounds.min, upper: safeBounds.max)
+
+        return Result(
+            profile: profile,
+            activeBand: band,
+            rawPosition: raw,
+            adjustedPosition: adjusted,
+            nearestDividerDistance: edgeDistance,
+            biasStrength: adaptiveBias,
+            safeBandMin: safeBounds.min,
+            safeBandMax: safeBounds.max,
+            visibleMin: adjusted - safeInset,
+            visibleMax: adjusted + safeInset
+        )
+    }
+
+    static func makeBands(labels: [String], profile: Profile) -> [Band] {
+        let dividers = profile.dividerPositions(labelCount: labels.count)
+        guard labels.count >= 2, dividers.count == labels.count - 1 else { return [] }
+
+        var lower = 0.0
+        return labels.enumerated().map { index, label in
+            let upper = index < dividers.count ? dividers[index] : 1.0
+            defer { lower = upper }
+            return Band(index: index, label: label, lower: lower, upper: upper)
         }
+    }
+
+    private static func resolveBand(
+        for rawPosition: Double,
+        activeBandLabel: String?,
+        bands: [Band]
+    ) -> Band? {
+        if let activeBandLabel,
+           let explicit = bands.first(where: { $0.label == activeBandLabel }) {
+            return explicit
+        }
+
+        return bands.first(where: { rawPosition < $0.upper || $0.isLast })
+    }
+
+    private static func safeBounds(for band: Band, safeInset: Double) -> (min: Double, max: Double) {
+        var safeBandMin = band.lower + safeInset
+        var safeBandMax = band.upper - safeInset
+
+        if safeBandMin > safeBandMax {
+            safeBandMin = band.center
+            safeBandMax = band.center
+        }
+
+        return (safeBandMin, safeBandMax)
+    }
+
+    private static func clamp(_ value: Double, lower: Double, upper: Double) -> Double {
+        min(max(value, lower), upper)
     }
 }

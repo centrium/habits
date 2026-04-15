@@ -423,7 +423,8 @@ private struct PerformanceSignalsCardView: View {
                             value: signal.gauge.value,
                             labels: signal.gauge.labels,
                             emphasizeActiveZone: signal.gauge.title == "Identity Signal",
-                            activeBandLabel: signal.gauge.title == "Identity Signal" ? signal.displayValue : nil
+                            activeBandLabel: signal.gauge.title == "Identity Signal" ? signal.displayValue : nil,
+                            calibrationProfile: calibrationProfile(for: signal.gauge.title)
                         )
 
                         Text(signal.gauge.explanation)
@@ -453,6 +454,19 @@ private struct PerformanceSignalsCardView: View {
             return "Pattern reset"
         default:
             return nil
+        }
+    }
+
+    private func calibrationProfile(for title: String) -> SignalMarkerCalibration.Profile {
+        switch title {
+        case "Identity Signal":
+            return .identity
+        case "Habit Risk":
+            return .risk
+        case "Habit Strength":
+            return .strength
+        default:
+            return .none
         }
     }
 }
