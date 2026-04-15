@@ -704,7 +704,8 @@ final class InsightEngineTests: XCTestCase {
             now: now,
             windowDays: 7
         )
-        let canonicalLabel = CadenceLanguage.shortLabel(for: canonicalState)
+        let canonicalSignalLabel = expectedSignalLabel(for: canonicalState)
+        let canonicalGreigLabel = CadenceLanguage.shortLabel(for: canonicalState)
 
         // Then
         guard let identity = identityStateBlock(from: viewModel) else {
@@ -718,8 +719,8 @@ final class InsightEngineTests: XCTestCase {
         }
 
         XCTAssertEqual(identity.state, canonicalState)
-        XCTAssertEqual(performance.displayValue, canonicalLabel)
-        XCTAssertEqual(greig.headline, canonicalLabel)
+        XCTAssertEqual(performance.displayValue, canonicalSignalLabel)
+        XCTAssertEqual(greig.headline, canonicalGreigLabel)
     }
 
     func testNoPeriodStreakTerminology() {
@@ -886,6 +887,23 @@ final class InsightEngineTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    private func expectedSignalLabel(for state: HabitIdentityState) -> String {
+        switch state {
+        case .gettingStarted:
+            return "Start"
+        case .building:
+            return "Build"
+        case .steady:
+            return "Steady"
+        case .strong:
+            return "Strong"
+        case .slipping:
+            return "Slip"
+        case .rebuilding:
+            return "Rebuild"
+        }
     }
 
     private func flattenedCardText(from viewModel: HabitInsightsViewModel) -> String {

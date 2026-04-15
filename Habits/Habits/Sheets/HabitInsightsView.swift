@@ -68,61 +68,51 @@ private struct HabitInsightsCardsRenderer: View {
     let hasAnimatedIn: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Insights")
-                .font(CadenceTokens.Typography.title)
-                .tracking(CadenceTokens.Typography.titleTracking)
-                .foregroundStyle(.primary)
-                .padding(.top, 14)
-                .opacity(hasAnimatedIn ? 1 : 0)
-                .offset(y: hasAnimatedIn ? 0 : 6)
-                .animation(AppMotion.reveal, value: hasAnimatedIn)
-
-            VStack(spacing: 16) {
-                ForEach(Array(renderRows.enumerated()), id: \.offset) { index, row in
-                    rowView(row)
-                        .opacity(hasAnimatedIn ? 1 : 0)
-                        .offset(y: hasAnimatedIn ? 0 : 8)
-                        .animation(
-                            AppMotion.reveal.delay(0.02 * Double(index)),
-                            value: hasAnimatedIn
-                        )
-                }
-
-                if !viewModel.notes.isEmpty {
-                    HabitInsightsPanel {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(viewModel.notes, id: \.self) { note in
-                                Text(note)
-                                    .font(CadenceTokens.Typography.microCopy)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
+        VStack(spacing: 22) {
+            ForEach(Array(renderRows.enumerated()), id: \.offset) { index, row in
+                rowView(row)
                     .opacity(hasAnimatedIn ? 1 : 0)
                     .offset(y: hasAnimatedIn ? 0 : 8)
-                    .animation(AppMotion.reveal.delay(0.15), value: hasAnimatedIn)
+                    .animation(
+                        AppMotion.reveal.delay(0.02 * Double(index)),
+                        value: hasAnimatedIn
+                    )
+            }
+
+            if !viewModel.notes.isEmpty {
+                HabitInsightsPanel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(viewModel.notes, id: \.self) { note in
+                            Text(note)
+                                .font(CadenceTokens.Typography.microCopy)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
+                .opacity(hasAnimatedIn ? 1 : 0)
+                .offset(y: hasAnimatedIn ? 0 : 8)
+                .animation(AppMotion.reveal.delay(0.15), value: hasAnimatedIn)
             }
         }
     }
 
     private var renderRows: [HabitInsightsRenderRow] {
         var rows: [HabitInsightsRenderRow] = []
-        var index = 0
 
-        while index < viewModel.cards.count {
-            let card = viewModel.cards[index]
-            if case .achievement(let achievement) = card,
-               index + 1 < viewModel.cards.count,
-               case .identityState(let identityState) = viewModel.cards[index + 1] {
-                rows.append(.paired(achievement, identityState))
-                index += 2
-                continue
-            }
-
-            rows.append(.single(card))
-            index += 1
+        if let coaching {
+            rows.append(.single(.motivation(coaching)))
+        }
+        if let summary {
+            rows.append(.single(.overview(summary)))
+        }
+        if let signals {
+            rows.append(.single(.performanceSignals(signals)))
+        }
+        if weeklyRhythm != nil || behaviourInsights != nil {
+            rows.append(.behaviour(weeklyRhythm, behaviourInsights))
+        }
+        if let greigMode {
+            rows.append(.single(.greigMode(greigMode)))
         }
 
         return rows
@@ -133,21 +123,77 @@ private struct HabitInsightsCardsRenderer: View {
         switch row {
         case .single(let card):
             cardView(card)
-        case .paired(let achievement, let identityState):
-            HStack(alignment: .top, spacing: 16) {
-                AchievementCardView(block: achievement, accent: accent, minHeight: 210)
-                    .frame(maxWidth: .infinity)
-                IdentityStateCardView(block: identityState, minHeight: 210)
-                    .frame(maxWidth: .infinity)
+        case .behaviour(let rhythm, let insights):
+            VStack(spacing: 16) {
+                if let rhythm {
+                    WeeklyRhythmCardView(block: rhythm, accent: accent, hasAnimatedIn: hasAnimatedIn)
+                }
+                if let insights {
+                    BehaviourInsightsCardView(block: insights)
+                }
             }
         }
+    }
+
+    private var coaching: MotivationCard? {
+        for card in viewModel.cards {
+            if case .motivation(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private var summary: HabitInsightsOverviewBlock? {
+        for card in viewModel.cards {
+            if case .overview(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private var signals: HabitInsightsPerformanceSignalsBlock? {
+        for card in viewModel.cards {
+            if case .performanceSignals(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private var weeklyRhythm: HabitInsightsWeeklyRhythmBlock? {
+        for card in viewModel.cards {
+            if case .weeklyRhythm(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private var behaviourInsights: HabitInsightsBehaviourBlock? {
+        for card in viewModel.cards {
+            if case .behaviourInsights(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
+    private var greigMode: HabitInsightsGreigModeBlock? {
+        for card in viewModel.cards {
+            if case .greigMode(let block) = card {
+                return block
+            }
+        }
+        return nil
     }
 
     @ViewBuilder
     private func cardView(_ card: HabitInsightsCard) -> some View {
         switch card {
         case .overview(let block):
-            OverviewCardView(block: block)
+            OverviewCardView(block: block, accent: accent)
         case .achievement(let block):
             AchievementCardView(block: block, accent: accent)
         case .goalPace(let block):
@@ -182,7 +228,7 @@ private struct HabitInsightsCardsRenderer: View {
 
 private enum HabitInsightsRenderRow {
     case single(HabitInsightsCard)
-    case paired(HabitInsightsAchievementBlock, HabitInsightsIdentityStateBlock)
+    case behaviour(HabitInsightsWeeklyRhythmBlock?, HabitInsightsBehaviourBlock?)
 }
 
 private struct AchievementCardView: View {
@@ -341,9 +387,10 @@ private struct PerformanceSignalsCardView: View {
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 18) {
-                Text(block.heading)
-                    .font(.headline)
+                Text("Signals")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .opacity(0.92)
 
                 ForEach(block.signals) { signal in
                     VStack(alignment: .leading, spacing: 12) {
@@ -352,14 +399,31 @@ private struct PerformanceSignalsCardView: View {
                             .foregroundStyle(.primary)
 
                         if !signal.displayValue.isEmpty {
-                            Text(signal.displayValue)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                            if signal.gauge.title == "Identity Signal" {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(signal.displayValue)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    if let descriptor = identitySecondaryDescriptor(for: signal.displayValue) {
+                                        Text(descriptor)
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundStyle(.secondary)
+                                            .opacity(0.8)
+                                    }
+                                }
+                            } else {
+                                Text(signal.displayValue)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
 
                         GradientGaugeView(
                             value: signal.gauge.value,
-                            labels: signal.gauge.labels
+                            labels: signal.gauge.labels,
+                            emphasizeActiveZone: signal.gauge.title == "Identity Signal",
+                            activeBandLabel: signal.gauge.title == "Identity Signal" ? signal.displayValue : nil
                         )
 
                         Text(signal.gauge.explanation)
@@ -372,10 +436,30 @@ private struct PerformanceSignalsCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+
+    private func identitySecondaryDescriptor(for label: String) -> String? {
+        switch label {
+        case "Start":
+            return "Early pattern"
+        case "Build":
+            return "Routine forming"
+        case "Steady":
+            return "Reliable pattern"
+        case "Strong":
+            return "Consistent pattern"
+        case "Slip":
+            return "Recent dip"
+        case "Rebuild":
+            return "Pattern reset"
+        default:
+            return nil
+        }
+    }
 }
 
 private struct OverviewCardView: View {
     let block: HabitInsightsOverviewBlock
+    let accent: Color
 
     private let columns = [
         GridItem(.flexible(minimum: 120), spacing: 14, alignment: .leading),
@@ -385,26 +469,35 @@ private struct OverviewCardView: View {
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Overview")
-                    .font(.headline)
+                Text("Summary")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .opacity(0.92)
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                     OverviewMetricCell(
                         title: "Consistency",
-                        value: "\(block.consistency)%"
-                    )
-                    OverviewMetricCell(
-                        title: "Best Month",
-                        value: block.bestMonth
-                    )
-                    OverviewMetricCell(
-                        title: "Most Missed Day",
-                        value: block.mostMissedDay
+                        value: "\(block.consistency)%",
+                        style: .primary,
+                        accent: accent
                     )
                     OverviewMetricCell(
                         title: "Average Streak",
-                        value: "\(block.averageStreak) \(block.averageStreak == 1 ? "day" : "days")"
+                        value: "\(block.averageStreak) \(block.averageStreak == 1 ? "day" : "days")",
+                        style: .secondary,
+                        accent: accent
+                    )
+                    OverviewMetricCell(
+                        title: "Entries this week",
+                        value: "\(block.entriesThisWeek) \(block.entriesThisWeek == 1 ? "entry" : "entries")",
+                        style: .secondary,
+                        accent: accent
+                    )
+                    OverviewMetricCell(
+                        title: "Best Month",
+                        value: block.bestMonth,
+                        style: .secondary,
+                        accent: accent
                     )
                 }
             }
@@ -414,22 +507,48 @@ private struct OverviewCardView: View {
 }
 
 private struct OverviewMetricCell: View {
+    enum Style {
+        case primary
+        case secondary
+    }
+
     let title: String
     let value: String
+    let style: Style
+    let accent: Color
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .opacity(0.9)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
+                .font(valueFont)
+                .foregroundStyle(valueColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var valueFont: Font {
+        switch style {
+        case .primary:
+            return .title3.weight(.medium)
+        case .secondary:
+            return .title3.weight(.regular)
+        }
+    }
+
+    private var valueColor: Color {
+        switch style {
+        case .primary:
+            return accent.opacity(0.92)
+        case .secondary:
+            return .primary
+        }
     }
 }
 
@@ -534,6 +653,21 @@ private struct MotivationCardView: View {
         accent
     }
 
+    private var headlineText: Text {
+        let headline = block.headline
+        guard let range = headline.range(of: #"\d+\s+days?\s+in\s+a\s+row"#, options: .regularExpression) else {
+            return Text(headline).foregroundStyle(.primary)
+        }
+
+        let prefix = String(headline[..<range.lowerBound])
+        let highlighted = String(headline[range])
+        let suffix = String(headline[range.upperBound...])
+
+        return Text(prefix).foregroundStyle(.primary)
+            + Text(highlighted).foregroundStyle(accent.opacity(0.74))
+            + Text(suffix).foregroundStyle(.primary)
+    }
+
     var body: some View {
         HabitInsightsPanel {
             HStack(alignment: .top, spacing: 12) {
@@ -546,9 +680,8 @@ private struct MotivationCardView: View {
                     Text("Coaching")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(block.headline)
+                    headlineText
                         .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
                     Text(block.supportingText)
                         .font(.body)
                         .foregroundStyle(.secondary)
@@ -828,16 +961,67 @@ private struct WeeklyRhythmCardView: View {
     private let chartHeight: CGFloat = 116
     private let barWidth: CGFloat = 24
 
+    private var rawMaxEntries: Int {
+        block.days.map(\.entries).max() ?? 0
+    }
+
     private var maxEntries: Int {
-        max(block.days.map(\.entries).max() ?? 0, 1)
+        max(rawMaxEntries, 1)
+    }
+
+    private var primaryDayID: Int? {
+        guard rawMaxEntries > 0 else { return nil }
+        return block.days.first(where: { $0.entries == rawMaxEntries })?.id
+    }
+
+    private var secondaryDayIDs: Set<Int> {
+        guard rawMaxEntries > 0 else { return [] }
+        let low = Double(rawMaxEntries) * 0.7
+        let high = Double(rawMaxEntries) * 0.9
+        return Set(
+            block.days
+                .filter { day in
+                    let value = Double(day.entries)
+                    return day.id != primaryDayID && value >= low && value <= high
+                }
+                .map(\.id)
+        )
+    }
+
+    private var lowDayIDs: Set<Int> {
+        guard rawMaxEntries > 0 else { return [] }
+        let cutoff = Double(rawMaxEntries) * 0.4
+        return Set(
+            block.days
+                .filter { day in
+                    day.entries > 0 && Double(day.entries) < cutoff
+                }
+                .map(\.id)
+        )
+    }
+
+    private var secondaryClusterDayIDs: Set<Int> {
+        let secondary = block.days.enumerated().filter { secondaryDayIDs.contains($0.element.id) }
+        guard secondary.count >= 2 else { return [] }
+
+        var clustered: Set<Int> = []
+        for (index, day) in secondary {
+            let prevIsSecondary = index > 0 && secondaryDayIDs.contains(block.days[index - 1].id)
+            let nextIsSecondary = index + 1 < block.days.count && secondaryDayIDs.contains(block.days[index + 1].id)
+            if prevIsSecondary || nextIsSecondary {
+                clustered.insert(day.id)
+            }
+        }
+        return clustered
     }
 
     var body: some View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 14) {
                 Text(block.heading)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .opacity(0.92)
 
                 HStack(alignment: .bottom, spacing: 10) {
                     ForEach(Array(block.days.enumerated()), id: \.element.id) { idx, day in
@@ -847,7 +1031,13 @@ private struct WeeklyRhythmCardView: View {
                                     .fill(dayColor(for: day))
                                     .frame(width: barWidth, height: barHeight(for: day))
                                     .scaleEffect(y: hasAnimatedIn ? 1 : 0, anchor: .bottom)
-                                    .animation(.easeOut(duration: 0.5).delay(0.03 * Double(idx)), value: hasAnimatedIn)
+                                    .shadow(
+                                        color: isPrimary(day) ? accent.opacity(0.09) : .clear,
+                                        radius: isPrimary(day) ? 3 : 0,
+                                        x: 0,
+                                        y: isPrimary(day) ? 1 : 0
+                                    )
+                                    .animation(barAnimation(for: day, index: idx), value: hasAnimatedIn)
                                     .contentShape(Rectangle())
                                     .onTapGesture {
                                         withAnimation(.easeOut(duration: 0.18)) {
@@ -872,6 +1062,7 @@ private struct WeeklyRhythmCardView: View {
                             Text(day.dayLabel)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
+                                .opacity(labelOpacity(for: day))
                         }
                     }
                 }
@@ -884,21 +1075,46 @@ private struct WeeklyRhythmCardView: View {
         if day.entries == 0 {
             return 10
         }
-        return max(12, CGFloat(Double(day.entries) / Double(maxEntries)) * (chartHeight - 14))
+        let minimumNonZeroHeight = chartHeight * 0.12
+        let proportionalHeight = CGFloat(Double(day.entries) / Double(maxEntries)) * (chartHeight - 14)
+        return max(minimumNonZeroHeight, proportionalHeight)
     }
 
     private func dayColor(for day: HabitInsightsWeeklyRhythmDay) -> Color {
         guard day.entries > 0 else {
-            return accent.opacity(0.25)
+            return accent.opacity(0.22)
         }
-        let ratio = Double(day.entries) / Double(maxEntries)
-        if ratio >= 0.85 {
+        if isPrimary(day) {
             return accent
         }
-        if ratio >= 0.5 {
-            return accent.opacity(0.7)
+        if secondaryDayIDs.contains(day.id) {
+            return accent.opacity(secondaryClusterDayIDs.contains(day.id) ? 0.78 : 0.72)
         }
-        return accent.opacity(0.4)
+        if lowDayIDs.contains(day.id) {
+            return accent.opacity(0.24)
+        }
+        return accent.opacity(0.5)
+    }
+
+    private func isPrimary(_ day: HabitInsightsWeeklyRhythmDay) -> Bool {
+        primaryDayID == day.id
+    }
+
+    private func labelOpacity(for day: HabitInsightsWeeklyRhythmDay) -> Double {
+        if isPrimary(day) {
+            return 0.95
+        }
+        if secondaryDayIDs.contains(day.id) {
+            return 0.7
+        }
+        return 0.52
+    }
+
+    private func barAnimation(for day: HabitInsightsWeeklyRhythmDay, index: Int) -> Animation {
+        let duration = isPrimary(day) ? 0.56 : 0.46
+        let baseDelay = 0.03 * Double(index)
+        let primaryLag = isPrimary(day) ? 0.03 : 0
+        return .easeOut(duration: duration).delay(baseDelay + primaryLag)
     }
 }
 
@@ -980,8 +1196,9 @@ private struct BehaviourInsightsCardView: View {
         HabitInsightsPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text(block.heading)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .opacity(0.92)
 
                 ForEach(block.observations, id: \.self) { item in
                     Text(item)
@@ -992,6 +1209,7 @@ private struct BehaviourInsightsCardView: View {
                 Text(block.suggestion)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .opacity(0.82)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1029,7 +1247,7 @@ private struct GreigModeCardView: View {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(block.heading)
-                        .font(.headline)
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(.primary)
 
                     Text("beta")
@@ -1060,7 +1278,7 @@ private struct GreigModeCardView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(block.headline)
                             .font(.body)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(accent.opacity(0.85))
                             .fixedSize(horizontal: false, vertical: true)
 
                         Text(block.supportText)

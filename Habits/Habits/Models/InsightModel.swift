@@ -212,6 +212,7 @@ struct HabitInsightsOverviewBlock {
     let bestMonth: String
     let mostMissedDay: String
     let averageStreak: Int
+    let entriesThisWeek: Int
 }
 
 struct HabitInsightsAchievementBlock {

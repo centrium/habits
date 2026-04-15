@@ -185,7 +185,8 @@ struct HabitInsightsEngine {
                     consistency: overviewSnapshot.consistency,
                     bestMonth: overviewSnapshot.bestMonth,
                     mostMissedDay: overviewSnapshot.mostMissedDay,
-                    averageStreak: overviewSnapshot.averageStreak
+                    averageStreak: overviewSnapshot.averageStreak,
+                    entriesThisWeek: behaviour.activitySummary?.entriesThisWeek ?? 0
                 )
             )
         )
@@ -247,7 +248,7 @@ struct HabitInsightsEngine {
         cards.append(
             .performanceSignals(
                 HabitInsightsPerformanceSignalsBlock(
-                    heading: "Performance Signals",
+                    heading: "Signals",
                     signals: performanceSignals
                 )
             )

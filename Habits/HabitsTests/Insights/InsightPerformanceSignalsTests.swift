@@ -5,11 +5,12 @@ import XCTest
 final class InsightPerformanceSignalsTests: XCTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
-    func testIdentityStateIsStrongForStrongRecentStreak() {
+    func testIdentityStateIsStrongForLongTermStablePattern() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
-            offsets: [0, -1, -2, -3, -4, -5]
+            createdAtOffset: -45,
+            offsets: Array(0...34).map { -$0 }
         )
 
         let state = PerformanceSignalsCalculator.identityState(
@@ -26,7 +27,8 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
-            offsets: [0, -8, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -19, -20, -21, -22]
+            createdAtOffset: -90,
+            offsets: [-2, -20, -36, -50, -64, -79]
         )
 
         let state = PerformanceSignalsCalculator.identityState(
@@ -39,11 +41,12 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is getting back on track")
     }
 
-    func testIdentityStateIsBuildingForModerateRecentConsistency() {
+    func testIdentityStateIsSteadyForModerateLongTermConsistency() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
-            offsets: [0, -1, -3, -5]
+            createdAtOffset: -45,
+            offsets: Array(stride(from: 0, through: 28, by: 2)).map { -$0 }
         )
 
         let state = PerformanceSignalsCalculator.identityState(
@@ -274,7 +277,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             return block
         }.first
 
-        XCTAssertEqual(block?.heading, "Performance Signals")
+        XCTAssertEqual(block?.heading, "Signals")
         XCTAssertEqual(block?.signals.map(\.gauge.title), ["Identity Signal", "Habit Risk", "Habit Strength"])
         XCTAssertEqual(block?.signals.first?.gauge.labels, ["Start", "Build", "Steady", "Strong", "Slip", "Rebuild"])
     }
@@ -296,7 +299,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertEqual(state, .gettingStarted)
     }
 
-    func testIdentityStateForOneOfLastSevenDaysIsRebuilding() {
+    func testIdentityStateForOneOfLastSevenDaysStaysBelowStrongWithoutDegradationBand() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
@@ -310,15 +313,15 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(state, .rebuilding)
+        XCTAssertEqual(state, .building)
     }
 
-    func testIdentityStateForRecentDeclineIsSlipping() {
+    func testIdentityStateForRecentDeclineUsesSlipOnlyWhenGated() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
         let habit = makeHabit(
             now: now,
             createdAtOffset: -45,
-            offsets: [-1, -10, -11, -12, -13, -14, -15, -16, -17]
+            offsets: [-1] + Array(8...44).map { -$0 }
         )
 
         let state = PerformanceSignalsCalculator.identityState(
@@ -335,7 +338,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         let habit = makeHabit(
             now: now,
             createdAtOffset: -45,
-            offsets: [0, -1, -2, -3, -4, -5, -6]
+            offsets: Array(0...32).map { -$0 }
         )
 
         let state = PerformanceSignalsCalculator.identityState(
@@ -345,6 +348,38 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         )
 
         XCTAssertEqual(state, .strong)
+    }
+
+    func testIdentitySignalUsesAlignedBandForValueLabelAndExplanation() {
+        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
+        let habit = makeHabit(
+            now: now,
+            createdAtOffset: -60,
+            offsets: Array(0...42).map { -$0 }
+        )
+
+        let signals = PerformanceSignalsCalculator.calculate(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+        guard let identity = signals.first(where: { $0.gauge.title == "Identity Signal" }) else {
+            return XCTFail("Expected identity signal")
+        }
+
+        let derivedState = PerformanceSignalsCalculator.identityState(
+            for: habit,
+            calendar: calendar,
+            now: now
+        )
+        XCTAssertEqual(identity.displayValue, expectedScaleLabel(for: derivedState))
+        XCTAssertEqual(identity.gauge.explanation, expectedBehaviourDescription(for: derivedState))
+        XCTAssertEqual(identity.gauge.value, 0.7, accuracy: 0.1)
+    }
+
+    func testStrongLabelNeverUsesRebuildBandValue() {
+        let value = PerformanceSignalsCalculator.identitySignalValue(for: .strong)
+        XCTAssertLessThan(value, 0.8)
     }
 
     private func makeHabit(
@@ -361,5 +396,39 @@ final class InsightPerformanceSignalsTests: XCTestCase {
             },
             calendar: calendar
         )
+    }
+
+    private func expectedScaleLabel(for state: HabitIdentityState) -> String {
+        switch state {
+        case .gettingStarted:
+            return "Start"
+        case .building:
+            return "Build"
+        case .steady:
+            return "Steady"
+        case .strong:
+            return "Strong"
+        case .slipping:
+            return "Slip"
+        case .rebuilding:
+            return "Rebuild"
+        }
+    }
+
+    private func expectedBehaviourDescription(for state: HabitIdentityState) -> String {
+        switch state {
+        case .gettingStarted:
+            return "You are beginning to establish this habit."
+        case .building:
+            return "This habit is taking shape."
+        case .steady:
+            return "You have built a reliable pattern."
+        case .strong:
+            return "You are showing up consistently."
+        case .slipping:
+            return "Recent consistency has softened."
+        case .rebuilding:
+            return "Recent follow-through has been interrupted."
+        }
     }
 }
