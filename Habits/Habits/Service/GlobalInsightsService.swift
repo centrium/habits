@@ -5,7 +5,7 @@ struct GlobalInsightsSnapshot: Equatable {
     let metrics: GlobalInsightsMetrics
     let topHabits: [GlobalInsightHabitRow]
     let greig: GlobalInsightsGreig
-    let stripSummary: PremiumInsightsStripSummary
+    let introSummary: TodayIntroSummary
 }
 
 struct GlobalInsightsHero: Equatable {
@@ -33,12 +33,9 @@ struct GlobalInsightsGreig: Equatable {
     let outcomeText: String
 }
 
-struct PremiumInsightsStripSummary: Equatable {
-    let primaryLabel: String
-    let primaryValue: String
-    let secondaryLabel: String
-    let secondaryValue: String
-    let secondarySuffix: String?
+struct TodayIntroSummary: Equatable {
+    let typicalLoggingTime: String
+    let lowActivityWindow: String
 }
 
 struct GlobalInsightsService {
@@ -86,12 +83,9 @@ struct GlobalInsightsService {
         let rankedHabits = rankedHabitRows(from: metricsByHabit)
         let greig = greigSummary(from: metricsByHabit, now: now)
         let globalTiming = globalLoggingTiming(for: habits, now: now)
-        let stripSummary = PremiumInsightsStripSummary(
-            primaryLabel: "You tend to log habits most around ",
-            primaryValue: humanTime(for: globalTiming.peakHour),
-            secondaryLabel: "Logging activity dips between ",
-            secondaryValue: "\(humanTime(for: globalTiming.dipStart)) and \(humanTime(for: globalTiming.dipEnd))",
-            secondarySuffix: nil
+        let introSummary = TodayIntroSummary(
+            typicalLoggingTime: humanTime(for: globalTiming.peakHour),
+            lowActivityWindow: "\(humanTime(for: globalTiming.dipStart)) and \(humanTime(for: globalTiming.dipEnd))"
         )
 
         return GlobalInsightsSnapshot(
@@ -99,7 +93,7 @@ struct GlobalInsightsService {
             metrics: metrics,
             topHabits: rankedHabits,
             greig: greig,
-            stripSummary: stripSummary
+            introSummary: introSummary
         )
     }
 }

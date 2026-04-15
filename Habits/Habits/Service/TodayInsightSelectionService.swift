@@ -231,10 +231,10 @@ final class TodayInsightSelectionService {
         }
 
         if currentHour <= rhythm.peakHour {
-            return "Best time to \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+            return "Best time for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
         }
 
-        return "Best time tomorrow to \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+        return "Best time tomorrow for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {

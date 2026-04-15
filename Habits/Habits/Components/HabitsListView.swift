@@ -10,6 +10,19 @@ import SwiftUI
 import SwiftData
 import UIKit
 
+private enum TodayIntroDisclosureState {
+    private static let key = "today.intro.isExpanded"
+
+    static func isExpanded(defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: key) != nil else { return true }
+        return defaults.bool(forKey: key)
+    }
+
+    static func setExpanded(_ isExpanded: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(isExpanded, forKey: key)
+    }
+}
+
 private enum ActiveSheet: Identifiable {
     case addHabit
     case paywall(PremiumFeature)
@@ -52,12 +65,15 @@ struct HabitsListView: View {
     @State private var rhythmData: [HourValue] = []
     @State private var selectedInsightHabitID: Habit.ID?
     @State private var todayInsight: TodayInsight?
-    @State private var cachedGlobalInsightsSnapshot: GlobalInsightsSnapshot?
-    @State private var greetingText: String = GreetingService.shared.sessionGreeting()
-    @State private var hasLoadedGreeting = false
-    private let homeGreetingViewModel = HomeGreetingViewModel()
+    @State private var globalInsightsSnapshot: GlobalInsightsSnapshot?
+    @State private var coachingInsight: TodayCoachingInsight?
+    @State private var isIntroExpanded: Bool = TodayIntroDisclosureState.isExpanded()
 
     init() {}
+
+    private var globalSemanticAccent: CadenceSemanticAccentTokens {
+        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
+    }
 
     var body: some View {
         NavigationStack {
@@ -89,8 +105,8 @@ struct HabitsListView: View {
                 Text(HabitDeletionConfirmationState.message(for: habit))
             }
             .contentMargins(.top, 12, for: .scrollContent)
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle("")
+            .navigationTitle("Today")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -122,7 +138,7 @@ struct HabitsListView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
                                 .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                                .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary)
+                                .foregroundStyle(globalSemanticAccent.cadenceAccentPrimary)
 
                             if purchaseService.premiumStatus == .free {
                                 Image(systemName: "lock.fill")
@@ -200,13 +216,6 @@ struct HabitsListView: View {
         .onAppear {
             habitLogService.updateCalendar(calculationCalendar)
             appTime.refreshIfNeeded()
-            if !hasLoadedGreeting {
-                hasLoadedGreeting = true
-                greetingText = homeGreetingViewModel.initialDisplayText()
-                homeGreetingViewModel.resolveDisplayText { resolved in
-                    greetingText = resolved
-                }
-            }
             presentHabitDetailForDeepLinkIfNeeded()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
@@ -232,8 +241,8 @@ struct HabitsListView: View {
         .task(id: rhythmPrefetchTaskKey) {
             await prefetchRhythmDataForVisibleHabits()
         }
-        .task(id: premiumInsightsTaskKey) {
-            refreshPremiumInsightsSummary()
+        .task(id: globalInsightsTaskKey) {
+            refreshGlobalInsightsSummary()
         }
         .onDisappear {
             flushPendingReorderPersistence()
@@ -270,24 +279,16 @@ struct HabitsListView: View {
     private var listContent: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                CustomHomeHeader(greetingText: greetingText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, CadenceTokens.Space.xs)
-                    .padding(.bottom, CadenceTokens.Space.md)
-
-                if let heroInsightSummary {
-                    Button {
-                        openGlobalInsights()
-                    } label: {
-                        HeroInsightCardView(
-                            summary: heroInsightSummary
-                        )
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
-                    .padding(.bottom, CadenceTokens.Space.md)
-                }
+                TodayIntroBlock(
+                    symbolName: greetingPresentation.symbolName,
+                    greeting: greetingLine,
+                    insightParagraph: coachingParagraph,
+                    isExpanded: isIntroExpanded,
+                    onToggle: toggleIntroExpansion
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, CadenceTokens.Space.xs)
+                .padding(.bottom, isIntroExpanded ? 12 : 8)
 
                 if !visibleHabits.isEmpty {
                     Text("Growth Plan")
@@ -297,7 +298,7 @@ struct HabitsListView: View {
                         .padding(.bottom, CadenceTokens.Space.xs)
                         .accessibilityAddTraits(.isHeader)
                 }
-                
+
                 if let todayInsightLine {
                     Text(todayInsightLine)
                         .font(CadenceTokens.Typography.body)
@@ -427,24 +428,6 @@ struct HabitsListView: View {
         }
     }
 
-    private var heroInsightSummary: HeroInsightCardSummary? {
-        guard purchaseService.premiumStatus == .premium,
-              userSettings.showPremiumInsightsView,
-              userSettings.greigModeEnabled,
-              !habits.isEmpty,
-              let snapshot = cachedGlobalInsightsSnapshot else {
-            return nil
-        }
-
-        return HeroInsightCardSummary(
-            timing: snapshot.stripSummary,
-            title: CadenceLanguage.shortLabel(for: snapshot.hero.dominantState),
-            consistency: snapshot.hero.consistency,
-            status: identityStatus(for: snapshot.hero.dominantState),
-            detail: identityDetail(for: snapshot.hero.dominantState, fallback: snapshot.hero.summaryText)
-        )
-    }
-
     private var momentumHabit: Habit? {
         if let selectedInsightHabitID,
            let selected = visibleHabits.first(where: { $0.id == selectedInsightHabitID }) {
@@ -454,28 +437,23 @@ struct HabitsListView: View {
         return visibleHabits.first
     }
 
-    private var todayInsightLine: AttributedString? {
-        guard let todayInsight else {
-            return nil
-        }
+    private var greetingPresentation: TodayGreetingPresentation {
+        let hour = calculationCalendar.component(.hour, from: appTime.now)
 
-        var line = AttributedString(todayInsight.message)
-        line.foregroundColor = CadenceTokens.Color.Text.secondary
-
-        guard let momentumHabit,
-              !rhythmData.isEmpty else {
-            return line
+        switch hour {
+        case 5..<12:
+            return TodayGreetingPresentation(greeting: "Good morning.", symbolName: "sun.max.fill")
+        case 12..<17:
+            return TodayGreetingPresentation(greeting: "Good afternoon.", symbolName: "sun.and.horizon.fill")
+        case 17..<22:
+            return TodayGreetingPresentation(greeting: "Good evening.", symbolName: "moon.fill")
+        default:
+            return TodayGreetingPresentation(greeting: "Hello.", symbolName: "moon.stars.fill")
         }
+    }
 
-        let semanticAccent = CadenceTokens.Color.semanticAccent(
-            for: momentumHabit,
-            colorScheme: colorScheme
-        )
-        if let highlight = todayInsightHighlightToken(for: todayInsight),
-           let range = line.range(of: highlight) {
-            line[range].foregroundColor = semanticAccent.cadenceAccentPrimary
-        }
-        return line
+    private var greetingLine: String {
+        greetingPresentation.greeting
     }
 
     private var rhythmTaskKey: String {
@@ -506,16 +484,13 @@ struct HabitsListView: View {
         return "\(premiumFlag)-\(currentHour)-\(parts.joined(separator: "|"))"
     }
 
-    private var premiumInsightsTaskKey: String {
-        let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
+    private var globalInsightsTaskKey: String {
         let currentHour = calculationCalendar.component(.hour, from: appTime.now)
-        let visibilityFlag = userSettings.showPremiumInsightsView ? "shown" : "hidden"
-        let greigFlag = userSettings.greigModeEnabled ? "greig-on" : "greig-off"
         let parts = habits.map { habit in
             let metricsRevision = habitLogService.metricsRevision(for: habit.id)
             return "\(habit.id.uuidString)-\(metricsRevision)"
         }
-        return "\(premiumFlag)-\(currentHour)-\(visibilityFlag)-\(greigFlag)-\(parts.joined(separator: "|"))"
+        return "\(currentHour)-\(parts.joined(separator: "|"))"
     }
 
     private var lockedHabitSlot: some View {
@@ -737,19 +712,28 @@ struct HabitsListView: View {
         selectedInsightHabitID = insight?.habit.id
     }
 
-    private func refreshPremiumInsightsSummary() {
-        guard purchaseService.premiumStatus == .premium,
-              userSettings.showPremiumInsightsView,
-              userSettings.greigModeEnabled,
-              !habits.isEmpty else {
-            cachedGlobalInsightsSnapshot = nil
+    private func refreshGlobalInsightsSummary() {
+        guard !habits.isEmpty else {
+            globalInsightsSnapshot = nil
+            coachingInsight = nil
             return
         }
 
-        cachedGlobalInsightsSnapshot = GlobalInsightsService(
+        let snapshot = GlobalInsightsService(
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
         ).snapshot(for: habits, now: appTime.now)
+        globalInsightsSnapshot = snapshot
+
+        if let snapshot {
+            coachingInsight = InsightSelectionService.shared.selectInsight(
+                from: snapshot,
+                now: appTime.now,
+                calendar: calculationCalendar
+            )
+        } else {
+            coachingInsight = nil
+        }
     }
 
     private func prefetchRhythmDataForVisibleHabits() async {
@@ -821,38 +805,101 @@ struct HabitsListView: View {
         habits
     }
 
-    private func todayInsightHighlightToken(for insight: TodayInsight) -> String? {
-        guard !rhythmData.isEmpty else { return nil }
-
-        switch insight.type {
-        case .strongestWindow:
-            return humanTime(for: peakHour(from: rhythmData))
-        case .dipRisk:
-            let generated = generateRhythmInsight(data: rhythmData)
-            return "\(humanTime(for: generated.lowRange.0))–\(humanTime(for: generated.lowRange.1))"
-        case .nearPeakWindow, .reinforcement, .fallback:
+    private var todayInsightLine: AttributedString? {
+        guard let todayInsight else {
             return nil
         }
+
+        let message: String
+        if case .strongestWindow = todayInsight.type,
+           let atRiskMessage = growthPlanAtRiskMessage {
+            message = "\(todayInsight.message) — \(atRiskMessage)"
+        } else {
+            message = todayInsight.message
+        }
+
+        var line = AttributedString(message)
+        line.foregroundColor = CadenceTokens.Color.Text.secondary
+
+        guard let momentumHabit,
+              !rhythmData.isEmpty else {
+            return line
+        }
+
+        let semanticAccent = CadenceTokens.Color.semanticAccent(
+            for: momentumHabit,
+            colorScheme: colorScheme
+        )
+        if let highlight = todayInsightHighlightToken(for: todayInsight),
+           let range = line.range(of: highlight) {
+            line[range].foregroundColor = semanticAccent.cadenceAccentPrimary
+        }
+        return line
+    }
+
+    private var growthPlanAtRiskMessage: String? {
+        guard let atRiskCount = globalInsightsSnapshot?.metrics.atRiskCount,
+              atRiskCount > 0 else {
+            return nil
+        }
+
+        if atRiskCount == 1 {
+            return "1 habit is ready for a quick check-in today."
+        }
+        if atRiskCount == 2 {
+            return "2 habits are ready to keep your streak going."
+        }
+        return "A couple of habits are ready when you are."
+    }
+
+    private func todayInsightHighlightToken(for insight: TodayInsight) -> String? {
+        switch insight.type {
+        case .strongestWindow:
+            return insight.habit.name
+        case .dipRisk:
+            return insight.habit.name
+        case .nearPeakWindow:
+            return insight.habit.name
+        case .reinforcement, .fallback:
+            return nil
+        }
+    }
+
+    private func toggleIntroExpansion() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.easeInOut(duration: 0.22)) {
+            isIntroExpanded.toggle()
+        }
+        TodayIntroDisclosureState.setExpanded(isIntroExpanded)
+    }
+
+    private var coachingParagraph: AttributedString? {
+        guard let coachingInsight else {
+            return nil
+        }
+
+        var message = AttributedString(coachingInsight.message)
+        message.foregroundColor = CadenceTokens.Color.Text.primary
+
+        if let highlightedText = coachingInsight.primaryHighlight,
+           let range = message.range(of: highlightedText) {
+            message[range].foregroundColor = globalSemanticAccent.cadenceAccentPrimary
+            message[range].font = CadenceTokens.Typography.body.weight(.semibold)
+        }
+
+        if let highlightedText = coachingInsight.secondaryHighlight,
+           let range = message.range(of: highlightedText) {
+            message[range].foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
+            message[range].font = CadenceTokens.Typography.body.weight(.medium)
+        }
+
+        return message
     }
 
     private var backgroundColor: Color {
         colorScheme == .light
             ? Color(white: 0.96)
             : Color(white: 0.04)
-    }
-
-    private func identityStatus(for state: HabitIdentityState) -> String {
-        if state == .steady {
-            return "Holding steady"
-        }
-        return CadenceLanguage.shortLabel(for: state)
-    }
-
-    private func identityDetail(for state: HabitIdentityState, fallback: String) -> String {
-        if state == .steady {
-            return "Most of your habits are being completed consistently"
-        }
-        return fallback.hasSuffix(".") ? String(fallback.dropLast()) : fallback
     }
 
     private func scheduleReorderPersistence() {
@@ -917,19 +964,63 @@ private struct DraggableHabitRow: View {
     }
 }
 
-private struct CustomHomeHeader: View {
-    let greetingText: String
+private struct TodayGreetingPresentation {
+    let greeting: String
+    let symbolName: String
+}
+
+private struct TodayIntroBlock: View {
+    let symbolName: String
+    let greeting: String
+    let insightParagraph: AttributedString?
+    let isExpanded: Bool
+    let onToggle: () -> Void
 
     var body: some View {
-        Text(greetingText)
-            .font(.system(size: 20, weight: .medium, design: .rounded))
-            .tracking(CadenceTokens.Typography.titleTracking)
-            .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.88))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .minimumScaleFactor(0.95)
-            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: isExpanded ? 4 : 0) {
+            HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.sm) {
+                    Image(systemName: symbolName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.accent(from: HabitColor.default.hex).secondary)
+
+                    Text(greeting)
+                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.8))
+                }
+
+                Spacer(minLength: CadenceTokens.Space.sm)
+
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                        dimensions[VerticalAlignment.center]
+                    }
+                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .animation(.easeInOut(duration: 0.22), value: isExpanded)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onToggle)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(greeting)
+            .accessibilityValue(isExpanded ? "Insights expanded" : "Insights collapsed")
+            .accessibilityHint("Double-tap to toggle insights")
+            .accessibilityAddTraits(.isButton)
+
+            if isExpanded, let insightParagraph {
+                Text(insightParagraph)
+                    .font(CadenceTokens.Typography.body.weight(.medium))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .lineSpacing(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: 6)),
+                        removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))
+                    ))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: isExpanded)
     }
 }
 
@@ -961,124 +1052,6 @@ private struct UpgradeHintRow: View {
         }
         .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.85))
         .padding(.vertical, CadenceTokens.Space.xs)
-    }
-}
-
-private struct HeroInsightCardSummary: Equatable {
-    let timing: PremiumInsightsStripSummary
-    let title: String
-    let consistency: Int
-    let status: String
-    let detail: String
-}
-
-private struct HeroInsightCardView: View {
-    let summary: HeroInsightCardSummary
-
-    private var semanticAccent: CadenceSemanticAccentTokens {
-        CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
-    }
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(alignment: .top, spacing: CadenceTokens.Space.md) {
-            LinearGradient(
-                colors: [
-                    semanticAccent.cadenceAccentPrimary.opacity(0.28),
-                    semanticAccent.cadenceAccentPrimary.opacity(0.12),
-                    .clear
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: 5)
-            .clipShape(Capsule())
-
-            VStack(alignment: .leading, spacing: 0) {
-                ProSwoosh(size: .small)
-
-                Text(globalInsightLine)
-                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                    .lineLimit(2)
-                    .lineSpacing(1)
-                    .padding(.top, CadenceTokens.Space.xs)
-                    .padding(.bottom, CadenceTokens.Space.md)
-
-                Text(timingInsightLine)
-                    .font(CadenceTokens.Typography.body)
-                    .lineSpacing(1)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, CadenceTokens.Space.md + 2)
-
-                Text(summary.title)
-                    .font(CadenceTokens.Typography.body.weight(.semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-                    .lineLimit(1)
-                    .padding(.bottom, CadenceTokens.Space.xs)
-
-                Text(consistencyLine)
-                    .font(CadenceTokens.Typography.body)
-                    .lineLimit(1)
-                    .padding(.bottom, CadenceTokens.Space.xs)
-
-                Text(summary.detail)
-                    .font(CadenceTokens.Typography.body)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.horizontal, CadenceTokens.Space.lg)
-        .padding(.vertical, CadenceTokens.Space.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
-    }
-
-    private var globalInsightLine: AttributedString {
-        var label = AttributedString(summary.timing.primaryLabel)
-        label.foregroundColor = CadenceTokens.Color.Text.primary
-
-        var value = AttributedString(summary.timing.primaryValue)
-        value.foregroundColor = semanticAccent.cadenceAccentPrimary
-
-        return label + value
-    }
-
-    private var timingInsightLine: AttributedString {
-        var line = AttributedString(summary.timing.secondaryLabel)
-        line.foregroundColor = CadenceTokens.Color.Text.secondary
-
-        let parts = summary.timing.secondaryValue.components(separatedBy: " and ")
-        if parts.count == 2 {
-            var start = AttributedString(parts[0])
-            start.foregroundColor = CadenceTokens.Color.Text.secondary
-            line += start
-
-            var connector = AttributedString(" and ")
-            connector.foregroundColor = CadenceTokens.Color.Text.secondary
-            line += connector
-
-            var end = AttributedString(parts[1])
-            end.foregroundColor = CadenceTokens.Color.Text.secondary
-            line += end
-            return line
-        }
-
-        var value = AttributedString(summary.timing.secondaryValue)
-        value.foregroundColor = CadenceTokens.Color.Text.secondary
-        line += value
-        return line
-    }
-
-    private var consistencyLine: AttributedString {
-        var line = AttributedString("Consistency \(summary.consistency)% · \(summary.status)")
-        line.foregroundColor = CadenceTokens.Color.Text.secondary
-
-        if let valueRange = line.range(of: "\(summary.consistency)%") {
-            line[valueRange].foregroundColor = semanticAccent.cadenceAccentSecondary
-        }
-
-        return line
     }
 }
 
