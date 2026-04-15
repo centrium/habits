@@ -16,6 +16,10 @@ struct RhythmCardView: View {
         generateRhythmInsight(data: data)
     }
 
+    private var bestTime: BestTimeRecommendation {
+        bestTimeRecommendation(from: data, currentHour: currentHour)
+    }
+
     private var accent: Color {
         semanticAccent.cadenceAccentPrimary
     }
@@ -61,10 +65,18 @@ struct RhythmCardView: View {
     }
 
     private var primaryInsight: AttributedString {
-        var leading = AttributedString("Best time to \(habit.name.lowercased()): ")
+        let prefix: String
+        switch bestTime.timeframe {
+        case .today:
+            prefix = "Best time to \(habit.name.lowercased()): "
+        case .tomorrow:
+            prefix = "Best time tomorrow for \(habit.name.lowercased()): "
+        }
+
+        var leading = AttributedString(prefix)
         leading.foregroundColor = CadenceTokens.Color.Text.primary
 
-        var value = AttributedString(formattedTime(insight.peakHour))
+        var value = AttributedString(formattedTime(bestTime.hour))
         value.foregroundColor = semanticAccent.cadenceAccentPrimary
 
         var trailing = AttributedString(".")

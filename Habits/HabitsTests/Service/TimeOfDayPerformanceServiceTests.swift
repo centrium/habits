@@ -44,7 +44,43 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
 
     func testHumanTimeFormatting() {
         XCTAssertEqual(humanTime(for: 0), "Midnight")
-        XCTAssertEqual(humanTime(for: 13), "1pm")
-        XCTAssertEqual(humanTime(for: 9), "9am")
+        XCTAssertEqual(humanTime(for: 13), "1PM")
+        XCTAssertEqual(humanTime(for: 9), "9AM")
+    }
+
+    func testBestTimeRecommendationUsesTodayWhenFutureSlotIsStrong() {
+        let data = [
+            HourValue(hour: 9, value: 0.4),
+            HourValue(hour: 11, value: 1.0),
+            HourValue(hour: 18, value: 0.8)
+        ]
+
+        let recommendation = bestTimeRecommendation(from: data, currentHour: 10)
+
+        XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .today))
+    }
+
+    func testBestTimeRecommendationFallsBackToTomorrowWhenAllFutureHoursPassed() {
+        let data = [
+            HourValue(hour: 8, value: 0.7),
+            HourValue(hour: 11, value: 1.0),
+            HourValue(hour: 14, value: 0.6)
+        ]
+
+        let recommendation = bestTimeRecommendation(from: data, currentHour: 20)
+
+        XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .tomorrow))
+    }
+
+    func testBestTimeRecommendationFallsBackToTomorrowWhenFutureSignalIsWeak() {
+        let data = [
+            HourValue(hour: 11, value: 1.0),
+            HourValue(hour: 17, value: 0.65),
+            HourValue(hour: 19, value: 0.6)
+        ]
+
+        let recommendation = bestTimeRecommendation(from: data, currentHour: 15)
+
+        XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .tomorrow))
     }
 }

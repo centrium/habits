@@ -230,7 +230,11 @@ final class TodayInsightSelectionService {
             return "You're near your peak window for \(candidate.habit.name)"
         }
 
-        return "Best time to \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+        if currentHour <= rhythm.peakHour {
+            return "Best time to \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+        }
+
+        return "Best time tomorrow to \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {

@@ -28,15 +28,52 @@ struct RhythmInsight: Equatable {
     }
 }
 
+enum BestTimeTimeframe: Equatable {
+    case today
+    case tomorrow
+}
+
+struct BestTimeRecommendation: Equatable {
+    let hour: Int
+    let timeframe: BestTimeTimeframe
+}
+
+private func bestHourValue(from data: [HourValue]) -> HourValue? {
+    data.max { lhs, rhs in
+        if lhs.value == rhs.value {
+            return lhs.hour > rhs.hour
+        }
+        return lhs.value < rhs.value
+    }
+}
+
 func peakHour(from data: [HourValue]) -> Int {
-    data
-        .max { lhs, rhs in
-            if lhs.value == rhs.value {
-                return lhs.hour > rhs.hour
-            }
-            return lhs.value < rhs.value
-        }?
-        .hour ?? 12
+    bestHourValue(from: data)?.hour ?? 12
+}
+
+func bestTimeRecommendation(
+    from data: [HourValue],
+    currentHour: Int,
+    minimumFutureStrengthRatio: Double = 0.7
+) -> BestTimeRecommendation {
+    let normalizedHour = ((currentHour % 24) + 24) % 24
+    guard let bestOverall = bestHourValue(from: data) else {
+        return BestTimeRecommendation(hour: 12, timeframe: .tomorrow)
+    }
+
+    let futureHours = data.filter { $0.hour >= normalizedHour }
+    guard let bestFuture = bestHourValue(from: futureHours) else {
+        return BestTimeRecommendation(hour: bestOverall.hour, timeframe: .tomorrow)
+    }
+
+    let clampedRatio = min(max(minimumFutureStrengthRatio, 0), 1)
+    let futureIsStrongEnough = bestFuture.value >= (bestOverall.value * clampedRatio)
+
+    if futureIsStrongEnough {
+        return BestTimeRecommendation(hour: bestFuture.hour, timeframe: .today)
+    }
+
+    return BestTimeRecommendation(hour: bestOverall.hour, timeframe: .tomorrow)
 }
 
 func generateRhythmInsight(data: [HourValue]) -> RhythmInsight {
