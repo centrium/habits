@@ -108,7 +108,8 @@ struct RhythmLineChart: View {
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 guard selectionEnabled else { return }
-                                let frame = geometry[proxy.plotAreaFrame]
+                                guard let plotFrame = proxy.plotFrame else { return }
+                                let frame = geometry[plotFrame]
                                 let xPosition = value.location.x - frame.origin.x
 
                                 guard xPosition >= 0,

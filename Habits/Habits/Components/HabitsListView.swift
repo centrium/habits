@@ -53,6 +53,9 @@ struct HabitsListView: View {
     @State private var selectedInsightHabitID: Habit.ID?
     @State private var todayInsight: TodayInsight?
     @State private var cachedGlobalInsightsSnapshot: GlobalInsightsSnapshot?
+    @State private var greetingText: String = GreetingService.shared.sessionGreeting()
+    @State private var hasLoadedGreeting = false
+    private let homeGreetingViewModel = HomeGreetingViewModel()
 
     init() {}
 
@@ -197,6 +200,13 @@ struct HabitsListView: View {
         .onAppear {
             habitLogService.updateCalendar(calculationCalendar)
             appTime.refreshIfNeeded()
+            if !hasLoadedGreeting {
+                hasLoadedGreeting = true
+                greetingText = homeGreetingViewModel.initialDisplayText()
+                homeGreetingViewModel.resolveDisplayText { resolved in
+                    greetingText = resolved
+                }
+            }
             presentHabitDetailForDeepLinkIfNeeded()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
@@ -260,10 +270,10 @@ struct HabitsListView: View {
     private var listContent: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                CustomHomeHeader(showsPremiumAccent: purchaseService.premiumStatus == .premium)
+                CustomHomeHeader(greetingText: greetingText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, CadenceTokens.Space.sm)
-                    .padding(.bottom, CadenceTokens.Space.lg)
+                    .padding(.top, CadenceTokens.Space.xs)
+                    .padding(.bottom, CadenceTokens.Space.md)
 
                 if let heroInsightSummary {
                     Button {
@@ -908,20 +918,18 @@ private struct DraggableHabitRow: View {
 }
 
 private struct CustomHomeHeader: View {
-    let showsPremiumAccent: Bool
+    let greetingText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
-            CadenceProWordmark(
-                size: .large,
-                animateSwoosh: showsPremiumAccent,
-                showsProLabel: showsPremiumAccent
-            )
-            .opacity(0.94)
+        Text(greetingText)
+            .font(.system(size: 20, weight: .medium, design: .rounded))
+            .tracking(CadenceTokens.Typography.titleTracking)
+            .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.88))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .minimumScaleFactor(0.95)
+            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, CadenceTokens.Space.xs)
     }
 }
 

@@ -38,7 +38,7 @@ struct BestTimeRecommendation: Equatable {
     let timeframe: BestTimeTimeframe
 }
 
-private func bestHourValue(from data: [HourValue]) -> HourValue? {
+nonisolated private func bestHourValue(from data: [HourValue]) -> HourValue? {
     data.max { lhs, rhs in
         if lhs.value == rhs.value {
             return lhs.hour > rhs.hour
@@ -47,11 +47,11 @@ private func bestHourValue(from data: [HourValue]) -> HourValue? {
     }
 }
 
-func peakHour(from data: [HourValue]) -> Int {
+nonisolated func peakHour(from data: [HourValue]) -> Int {
     bestHourValue(from: data)?.hour ?? 12
 }
 
-func bestTimeRecommendation(
+nonisolated func bestTimeRecommendation(
     from data: [HourValue],
     currentHour: Int,
     minimumFutureStrengthRatio: Double = 0.7
@@ -76,7 +76,7 @@ func bestTimeRecommendation(
     return BestTimeRecommendation(hour: bestOverall.hour, timeframe: .tomorrow)
 }
 
-func generateRhythmInsight(data: [HourValue]) -> RhythmInsight {
+nonisolated func generateRhythmInsight(data: [HourValue]) -> RhythmInsight {
     guard !data.isEmpty else {
         return RhythmInsight(
             peakHour: 12,
@@ -100,7 +100,7 @@ func generateRhythmInsight(data: [HourValue]) -> RhythmInsight {
     )
 }
 
-func humanTime(for hour: Int) -> String {
+nonisolated func humanTime(for hour: Int) -> String {
     let normalized = ((hour % 24) + 24) % 24
     switch normalized {
     case 0: return "Midnight"
@@ -110,7 +110,7 @@ func humanTime(for hour: Int) -> String {
     }
 }
 
-private func lowestSustainedRange(from data: [HourValue]) -> (Int, Int) {
+nonisolated private func lowestSustainedRange(from data: [HourValue]) -> (Int, Int) {
     guard data.count >= 2 else {
         return (15, 17)
     }
@@ -313,13 +313,41 @@ final class TimeOfDayPerformanceService {
     }
 
     private nonisolated static func buildRhythm(from values: [HourValue], lastUpdated: Date) -> HabitRhythm {
-        let insight = generateRhythmInsight(data: values)
+        let insight = rhythmInsight(from: values)
         return HabitRhythm(
             peakHour: insight.peakHour,
             dipStart: insight.lowRange.0,
             dipEnd: insight.lowRange.1,
             consistencyScore: consistencyScore(from: values, peakHour: insight.peakHour),
             lastUpdated: lastUpdated
+        )
+    }
+
+    private nonisolated static func rhythmInsight(from values: [HourValue]) -> RhythmInsight {
+        guard !values.isEmpty else {
+            return RhythmInsight(
+                peakHour: 12,
+                lowRange: (15, 17),
+                summary: "You're strongest around midday. Momentum dips in the afternoon."
+            )
+        }
+
+        let sortedData = values.sorted { $0.hour < $1.hour }
+        let peak = sortedData.max { lhs, rhs in
+            if lhs.value == rhs.value {
+                return lhs.hour > rhs.hour
+            }
+            return lhs.value < rhs.value
+        }?.hour ?? 12
+        let dip = lowestSustainedRange(from: sortedData)
+        let peakLabel = humanTime(for: peak)
+        let dipStart = humanTime(for: dip.0)
+        let dipEnd = humanTime(for: dip.1)
+
+        return RhythmInsight(
+            peakHour: peak,
+            lowRange: dip,
+            summary: "You're strongest around \(peakLabel). Momentum dips between \(dipStart) and \(dipEnd)."
         )
     }
 

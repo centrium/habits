@@ -663,23 +663,25 @@ private struct MotivationCardView: View {
     let block: MotivationCard
     let accent: Color
 
-    private var toneColor: Color {
-        accent
-    }
-
-    private var headlineText: Text {
+    private var headlineText: AttributedString {
         let headline = block.headline
         guard let range = headline.range(of: #"\d+\s+days?\s+in\s+a\s+row"#, options: .regularExpression) else {
-            return Text(headline).foregroundStyle(.primary)
+            var full = AttributedString(headline)
+            full.foregroundColor = .primary
+            return full
         }
 
         let prefix = String(headline[..<range.lowerBound])
         let highlighted = String(headline[range])
         let suffix = String(headline[range.upperBound...])
+        var styled = AttributedString(prefix + highlighted + suffix)
+        styled.foregroundColor = .primary
 
-        return Text(prefix).foregroundStyle(.primary)
-            + Text(highlighted).foregroundStyle(accent.opacity(0.74))
-            + Text(suffix).foregroundStyle(.primary)
+        if let highlightRange = styled.range(of: highlighted) {
+            styled[highlightRange].foregroundColor = accent.opacity(0.74)
+        }
+
+        return styled
     }
 
     var body: some View {
@@ -694,7 +696,7 @@ private struct MotivationCardView: View {
                     Text("Coaching")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    headlineText
+                    Text(headlineText)
                         .font(.headline.weight(.semibold))
                     Text(block.supportingText)
                         .font(.body)
