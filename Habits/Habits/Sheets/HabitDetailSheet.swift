@@ -649,6 +649,44 @@ struct HabitDetailSheet: View {
         let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
         let hasLoggedToday = uiStateStore.progress(habitId: habit.id, date: today).map { $0 > 0 } == true
             || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
+        let periodLabel = habit.goalPeriod.relativeLabel
+
+        if let periodProgress = habit.periodProgress(
+            now: Date(),
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+           ) {
+            let state: StreakCardConfiguration.State = {
+                switch periodProgress.state {
+                case .onTrack:
+                    return .secured
+                case .atRisk:
+                    return .atRisk
+                case .offTrack:
+                    return .offTrack
+                }
+            }()
+
+            return StreakCardConfiguration(
+                currentStreak: currentStreak,
+                hasLoggedToday: hasLoggedToday,
+                isMilestone: false,
+                state: state,
+                goalType: habit.goalType,
+                periodProgress: periodProgress,
+                periodLabel: periodLabel,
+                titleOverrideText: zeroStreakTitleText(
+                    currentStreak: currentStreak,
+                    periodProgress: periodProgress,
+                    hasLoggedToday: hasLoggedToday
+                ),
+                progressSummaryText: periodProgressSummaryText(
+                    progress: periodProgress,
+                    periodLabel: periodLabel
+                )
+            )
+        }
+
         let isMilestone = StreakCardConfiguration.milestoneThresholds.contains(currentStreak)
 
         let baseState: StreakCardConfiguration.State? = {
@@ -661,18 +699,93 @@ struct HabitDetailSheet: View {
             }
         }()
 
-        guard var resolvedState = baseState else { return nil }
-
-        if isMilestone {
-            resolvedState = .milestone
-        }
+        let resolvedState: StreakCardConfiguration.State = {
+            guard var state = baseState else { return .secured }
+            if isMilestone {
+                state = .milestone
+            }
+            return state
+        }()
 
         return StreakCardConfiguration(
             currentStreak: currentStreak,
             hasLoggedToday: hasLoggedToday,
             isMilestone: isMilestone,
-            state: resolvedState
+            state: resolvedState,
+            goalType: habit.goalType,
+            periodProgress: nil,
+            periodLabel: periodLabel,
+            titleOverrideText: zeroStreakTitleText(
+                currentStreak: currentStreak,
+                periodProgress: nil,
+                hasLoggedToday: hasLoggedToday
+            ),
+            progressSummaryText: nil
         )
+    }
+
+    private func zeroStreakTitleText(
+        currentStreak: Int,
+        periodProgress: PeriodProgress?,
+        hasLoggedToday: Bool
+    ) -> String? {
+        guard currentStreak == 0 else { return nil }
+
+        if let periodProgress {
+            switch habit.goalType {
+            case .frequency:
+                if periodProgress.completed <= 0 {
+                    return "Start your first streak"
+                }
+                return "Build your first streak"
+            case .cumulative:
+                if periodProgress.completed >= periodProgress.required {
+                    return nil
+                }
+                switch periodProgress.state {
+                case .onTrack:
+                    return "Almost there"
+                case .atRisk:
+                    return "Needs a push today"
+                case .offTrack:
+                    return "Falling behind today"
+                }
+            }
+        }
+
+        if hasLoggedToday {
+            switch habit.goalType {
+            case .frequency:
+                return "Build your first streak"
+            case .cumulative:
+                return "Needs a push today"
+            }
+        }
+
+        if hasLoggedToday == false {
+            return "Start your first streak"
+        }
+
+        return "Start your streak"
+    }
+
+    private func periodProgressSummaryText(
+        progress: PeriodProgress,
+        periodLabel: String
+    ) -> String {
+        let clampedCompleted = min(progress.completed, progress.required)
+
+        switch habit.goalType {
+        case .frequency:
+            let completedText = String(Int(clampedCompleted.rounded(.down)))
+            let requiredText = String(Int(progress.required.rounded(.down)))
+            return "\(completedText) of \(requiredText) \(periodLabel)"
+        case .cumulative:
+            let completedText = habit.formatProgressValue(clampedCompleted)
+            let requiredText = habit.formatProgressValue(progress.required)
+            let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
+            return "\(completedText) of \(requiredText)\(unitSuffix) \(periodLabel)"
+        }
     }
 
     private func heroSupportingInsightText(
@@ -991,6 +1104,7 @@ private struct StreakCardConfiguration: Equatable {
     enum State: Equatable {
         case secured
         case atRisk
+        case offTrack
         case milestone
     }
 
@@ -1000,12 +1114,41 @@ private struct StreakCardConfiguration: Equatable {
     let hasLoggedToday: Bool
     let isMilestone: Bool
     let state: State
+    let goalType: GoalType
+    let periodProgress: PeriodProgress?
+    let periodLabel: String
+    let titleOverrideText: String?
+    let progressSummaryText: String?
+
+    private var isProgressComplete: Bool {
+        guard let periodProgress else { return true }
+        return periodProgress.completed >= periodProgress.required
+    }
+
+    var usesIncompleteProgressVisuals: Bool {
+        periodProgress != nil && !isProgressComplete
+    }
 
     var iconSystemName: String {
+        if usesIncompleteProgressVisuals {
+            switch state {
+            case .secured:
+                return "circle.fill"
+            case .atRisk:
+                return "exclamationmark.circle.fill"
+            case .offTrack:
+                return "circle.dashed"
+            case .milestone:
+                return "circle.fill"
+            }
+        }
+
         switch state {
         case .secured:
             return "flame.fill"
         case .atRisk:
+            return "exclamationmark.triangle.fill"
+        case .offTrack:
             return "exclamationmark.triangle.fill"
         case .milestone:
             return "sparkles"
@@ -1013,15 +1156,34 @@ private struct StreakCardConfiguration: Equatable {
     }
 
     var titleText: String {
+        if let titleOverrideText {
+            return titleOverrideText
+        }
         let dayText = currentStreak == 1 ? "Day" : "Days"
         return "\(currentStreak) \(dayText) Streak"
     }
 
     var supportingPrimaryText: String {
+        if let periodProgress {
+            if goalType == .cumulative, periodProgress.state == .onTrack, !isProgressComplete {
+                return "Just short of your goal"
+            }
+            switch periodProgress.state {
+            case .onTrack:
+                return "On track \(periodLabel)"
+            case .atRisk:
+                return "At risk \(periodLabel)"
+            case .offTrack:
+                return "Falling behind \(periodLabel)"
+            }
+        }
+
         switch state {
         case .secured:
             return "Momentum is building"
         case .atRisk:
+            return "Don't break the chain today"
+        case .offTrack:
             return "Don't break the chain today"
         case .milestone:
             return "Strong run - keep it going"
@@ -1029,10 +1191,16 @@ private struct StreakCardConfiguration: Equatable {
     }
 
     var supportingSecondaryText: String {
+        if let progressSummaryText {
+            return progressSummaryText
+        }
+
         switch state {
         case .secured:
             return "Keep it alive tomorrow"
         case .atRisk:
+            return "Miss today and this resets"
+        case .offTrack:
             return "Miss today and this resets"
         case .milestone:
             return "You've built real consistency"
@@ -1050,7 +1218,7 @@ private struct StreakNudgeCard: View {
         VStack(alignment: .leading, spacing: CadenceTokens.Space.xs + 2) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Image(systemName: configuration.iconSystemName)
-                    .font(.system(size: configuration.state == .atRisk ? 17.1 : 18, weight: .semibold))
+                    .font(.system(size: configuration.state == .secured || configuration.state == .milestone ? 18 : 17.1, weight: .semibold))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(iconColor)
                     .alignmentGuide(.firstTextBaseline) { dimensions in
@@ -1091,8 +1259,23 @@ private struct StreakNudgeCard: View {
     }
 
     private var iconColor: Color {
+        if configuration.usesIncompleteProgressVisuals {
+            switch configuration.state {
+            case .secured:
+                return CadenceTokens.Color.Text.secondary.opacity(colorScheme == .dark ? 0.74 : 0.68)
+            case .atRisk:
+                return Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.68)
+            case .offTrack:
+                return CadenceTokens.Color.Text.secondary.opacity(colorScheme == .dark ? 0.66 : 0.6)
+            case .milestone:
+                return CadenceTokens.Color.Text.secondary.opacity(colorScheme == .dark ? 0.74 : 0.68)
+            }
+        }
+
         switch configuration.state {
         case .atRisk:
+            return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
+        case .offTrack:
             return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
         case .secured, .milestone:
             return accent.primary.opacity(colorScheme == .dark ? 1 : 0.88)

@@ -172,7 +172,7 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertEqual(streak, 1)
     }
 
-    func testCumulativeGoalAnyProgressCountsTowardStreak() {
+    func testCumulativeGoalCountsStreakOnlyWhenTargetMet() {
         // Given
         let day1 = TestDateFactory.date(2026, 3, 9, calendar: calendar)
         let day2 = TestDateFactory.date(2026, 3, 10, calendar: calendar)
@@ -197,7 +197,52 @@ final class StreakCalculationTests: XCTestCase {
         )
 
         // Then
-        XCTAssertEqual(streak, 3)
+        XCTAssertEqual(streak, 2)
+    }
+
+    func testCumulativeGoalPartialProgressDoesNotStartStreak() {
+        // Given
+        let day = TestDateFactory.date(2026, 3, 11, calendar: calendar)
+        let habit = TestHabitFactory.cumulative(
+            target: 10,
+            entries: [
+                .init(timestamp: day, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let streak = habit.currentStreak(
+            referenceDate: day,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+
+        // Then
+        XCTAssertEqual(streak, 0)
+    }
+
+    func testCumulativeGoalOnlyStartsWhenTargetMetExactly() {
+        // Given
+        let day = TestDateFactory.date(2026, 3, 11, calendar: calendar)
+        let habit = TestHabitFactory.cumulative(
+            target: 10,
+            entries: [
+                .init(timestamp: day, value: 9),
+                .init(timestamp: day, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let streak = habit.currentStreak(
+            referenceDate: day,
+            calendar: calendar,
+            weekStartPreference: .monday
+        )
+
+        // Then
+        XCTAssertEqual(streak, 1)
     }
 
     func testDailyStreakContinuesAcrossMonthBoundary() {

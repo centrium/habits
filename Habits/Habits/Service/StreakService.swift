@@ -38,7 +38,9 @@ struct StreakService {
             guard let target = goal.effectiveTargetValue else { return false }
             return goal.progressTotal(in: interval) >= target
         case .cumulative:
-            return goal.totalValue(in: interval) > 0
+            guard let target = goal.effectiveTargetValue else { return false }
+            let periodTotal = goal.totalValue(in: interval)
+            return periodTotal >= target
         }
     }
 
