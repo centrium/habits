@@ -20,8 +20,9 @@ enum HabitRowGrid {
     static let iconSize: CGFloat = 36
     static let titleRowHeight: CGFloat = 21
     static let titleToMetaSpacing: CGFloat = 3
+    static let titleToSubtitleSpacing: CGFloat = 7
     static let metaRowHeight: CGFloat = 18
-    static let subtitleToStreakSpacing: CGFloat = 4
+    static let subtitleToStreakSpacing: CGFloat = 2
     static let streakIconToValueSpacing: CGFloat = 4
     static let streakValueToDotsSpacing: CGFloat = 7
     static let headerToHeatmapSpacing: CGFloat = 12
@@ -91,11 +92,10 @@ struct HabitHeader: View {
 
     private var subtitleText: String? {
         if let secondaryTextOverride, !secondaryTextOverride.isEmpty {
-            return secondaryTextOverride
+            return normalizedSubtitleText(secondaryTextOverride)
         }
 
-        let trimmed = habit.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+        return normalizedSubtitleText(habit.subtitle)
     }
 
     private var iconName: String? {
@@ -166,6 +166,28 @@ struct HabitHeader: View {
         subtitleText != nil
     }
 
+    private var subtitleLineLimit: Int {
+        showsStreak ? 1 : 2
+    }
+
+    private func normalizedSubtitleText(_ text: String?) -> String? {
+        guard let text else { return nil }
+
+        let collapsedWhitespace = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !collapsedWhitespace.isEmpty else { return nil }
+
+        let meaningfulCharacters = collapsedWhitespace.unicodeScalars.filter { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+        }
+
+        return meaningfulCharacters.isEmpty ? nil : collapsedWhitespace
+    }
+
     private var showsStreak: Bool {
         streakContext.showBadge
     }
@@ -178,10 +200,11 @@ struct HabitHeader: View {
     private var metadataStack: some View {
         if let subtitleText {
             Text(subtitleText)
-                .font(.system(size: 14))
-                .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                .lineLimit(1)
+                .font(.system(size: 13))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.74))
+                .lineLimit(subtitleLineLimit)
                 .truncationMode(.tail)
+                .lineSpacing(0)
         }
 
         if showsStreak {
@@ -205,7 +228,7 @@ struct HabitHeader: View {
 
                 VStack(
                     alignment: .leading,
-                    spacing: hasMetadataContent ? HabitRowGrid.titleToMetaSpacing : 0
+                    spacing: hasSubtitle ? HabitRowGrid.titleToSubtitleSpacing : (hasMetadataContent ? HabitRowGrid.titleToMetaSpacing : 0)
                 ) {
                     Text(habit.name)
                         .font(.system(size: 17, weight: .semibold))
@@ -403,8 +426,19 @@ struct HabitHeaderPreview: View {
     private var accent: Color { HabitColor.from(hex: colorHex).color }
 
     private var displaySubtitle: String? {
-        let trimmed = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+        let collapsedWhitespace = subtitle?
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard !collapsedWhitespace.isEmpty else { return nil }
+
+        let meaningfulCharacters = collapsedWhitespace.unicodeScalars.filter { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+        }
+
+        return meaningfulCharacters.isEmpty ? nil : collapsedWhitespace
     }
 
     private var resolvedIcon: String? {
@@ -422,7 +456,7 @@ struct HabitHeaderPreview: View {
             )
             .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize, alignment: .top)
 
-            VStack(alignment: .leading, spacing: HabitRowGrid.titleToMetaSpacing) {
+            VStack(alignment: .leading, spacing: HabitRowGrid.titleToSubtitleSpacing) {
                 Text(name.isEmpty ? "Habit name" : name)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(CadenceTokens.Color.Text.primary)
@@ -434,10 +468,11 @@ struct HabitHeaderPreview: View {
                 Group {
                     if let displaySubtitle {
                         Text(displaySubtitle)
-                            .font(.system(size: 14))
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                            .lineLimit(1)
+                            .font(.system(size: 13))
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.74))
+                            .lineLimit(2)
                             .truncationMode(.tail)
+                            .lineSpacing(0)
                     } else {
                         Color.clear
                             .accessibilityHidden(true)

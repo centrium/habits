@@ -295,15 +295,13 @@ struct HabitsListView: View {
                         .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
                         .padding(.bottom, CadenceTokens.Space.xs)
                         .accessibilityAddTraits(.isHeader)
                 }
 
-                if let todayInsightLine {
-                    Text(todayInsightLine)
-                        .font(CadenceTokens.Typography.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if !growthPlanLines.isEmpty {
+                    GrowthPlanLineList(lines: growthPlanLines)
                         .padding(.bottom, CadenceTokens.Space.lg)
                 }
 
@@ -805,36 +803,61 @@ struct HabitsListView: View {
         habits
     }
 
-    private var todayInsightLine: AttributedString? {
+    private var growthPlanLines: [AttributedString] {
         guard let todayInsight else {
-            return nil
+            return []
         }
 
-        let message: String
-        if case .strongestWindow = todayInsight.type,
-           let atRiskMessage = growthPlanAtRiskMessage {
-            message = "\(todayInsight.message) — \(atRiskMessage)"
-        } else {
-            message = todayInsight.message
+        var lines: [String] = [
+            bestTimeSummary(from: todayInsight.message) ?? todayInsight.message
+        ]
+
+        if let atRiskMessage = growthPlanAtRiskMessage {
+            lines.append(atRiskMessage)
         }
 
-        var line = AttributedString(message)
-        line.foregroundColor = CadenceTokens.Color.Text.secondary
+        return lines.map { message in
+            var line = AttributedString(message)
+            line.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
 
-        guard let momentumHabit,
-              !rhythmData.isEmpty else {
+            guard let momentumHabit,
+                  !rhythmData.isEmpty else {
+                return line
+            }
+
+            let semanticAccent = CadenceTokens.Color.semanticAccent(
+                for: momentumHabit,
+                colorScheme: colorScheme
+            )
+            if let highlight = todayInsightHighlightToken(for: todayInsight),
+               let range = line.range(of: highlight) {
+                line[range].foregroundColor = semanticAccent.cadenceAccentPrimary
+            }
             return line
         }
+    }
 
-        let semanticAccent = CadenceTokens.Color.semanticAccent(
-            for: momentumHabit,
-            colorScheme: colorScheme
-        )
-        if let highlight = todayInsightHighlightToken(for: todayInsight),
-           let range = line.range(of: highlight) {
-            line[range].foregroundColor = semanticAccent.cadenceAccentPrimary
+    private func bestTimeSummary(from message: String) -> String? {
+        let prefixes = [
+            "Best time for ",
+            "Best time tomorrow for "
+        ]
+
+        for prefix in prefixes {
+            guard message.hasPrefix(prefix),
+                  let separatorIndex = message.lastIndex(of: ":") else {
+                continue
+            }
+
+            let timeStart = message.index(after: separatorIndex)
+            let time = message[timeStart...].trimmingCharacters(in: .whitespaces)
+            if prefix == "Best time tomorrow for " {
+                return "Best time tomorrow: \(time)"
+            }
+            return "Best time: \(time)"
         }
-        return line
+
+        return nil
     }
 
     private var growthPlanAtRiskMessage: String? {
@@ -967,6 +990,29 @@ private struct DraggableHabitRow: View {
 private struct TodayGreetingPresentation {
     let greeting: String
     let symbolName: String
+}
+
+private struct GrowthPlanLineList: View {
+    let lines: [AttributedString]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("•")
+                        .font(CadenceTokens.Typography.body)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+
+                    Text(line)
+                        .font(CadenceTokens.Typography.body)
+                        .lineSpacing(0)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 private struct TodayIntroBlock: View {
