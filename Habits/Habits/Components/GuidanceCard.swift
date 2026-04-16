@@ -19,25 +19,41 @@ struct GuidanceCard: View {
                     .fill(accentColor)
                     .frame(width: 3)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 7) {
                     Text(output.title)
                         .font(.system(size: titleSize, weight: .medium))
                         .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.98))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .minimumScaleFactor(0.92)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(output.action)
                         .font(.system(size: 13))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.88))
-                        .lineLimit(2)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     if let supportingContext = output.supportingContext {
-                        Text(supportingContext)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.72))
-                            .lineLimit(1)
-                            .padding(.top, 4)
+                        let lines = contextLines(from: supportingContext)
+                        let primaryIndex = primaryContextIndex(in: lines)
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                                let isPrimary = index == primaryIndex
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("•")
+                                        .font(CadenceTokens.Typography.body)
+                                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+                                        .opacity(isPrimary ? 0.8 : 0.5)
+
+                                    Text(line)
+                                        .font(.system(size: 11, weight: isPrimary ? .medium : .regular))
+                                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
+                                        .opacity(isPrimary ? 1.0 : 0.7)
+                                        .lineLimit(nil)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .padding(.top, 1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,5 +115,49 @@ struct GuidanceCard: View {
             return accent.primary.opacity(colorScheme == .dark ? 0.1 : 0.07)
         }
         return Color.black.opacity(0.07)
+    }
+
+    private func contextLines(from text: String) -> [String] {
+        let lines = text
+            .components(separatedBy: " • ")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return lines.isEmpty ? [text] : Array(lines.prefix(3))
+    }
+
+    private func primaryContextIndex(in lines: [String]) -> Int {
+        guard !lines.isEmpty else { return 0 }
+
+        let patternKeywords = [
+            "around",
+            "morning",
+            "midday",
+            "afternoon",
+            "evening",
+            "night",
+            "later in the day",
+            "varies throughout the day"
+        ]
+        if let patternIndex = lines.firstIndex(where: { line in
+            let normalized = line.lowercased()
+            return patternKeywords.contains(where: { normalized.contains($0) })
+        }) {
+            return patternIndex
+        }
+
+        let consistencyKeywords = [
+            "consistent",
+            "consistency",
+            "this week",
+            "of last"
+        ]
+        if let consistencyIndex = lines.firstIndex(where: { line in
+            let normalized = line.lowercased()
+            return consistencyKeywords.contains(where: { normalized.contains($0) })
+        }) {
+            return consistencyIndex
+        }
+
+        return 0
     }
 }

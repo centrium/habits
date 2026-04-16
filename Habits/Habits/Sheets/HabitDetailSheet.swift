@@ -221,6 +221,7 @@ struct HabitDetailSheet: View {
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
+            debugPrintRecentHabitLogTimestamps()
 
             guard purchaseService.premiumStatus == .free else { return }
 
@@ -338,7 +339,7 @@ struct HabitDetailSheet: View {
             streakState: streakState,
             identityState: identityState
         )
-        let identityReflectionText = reinforcement(for: guidanceOutput?.type).line
+        let identityReflectionText = pairedIdentityReflection(for: guidanceOutput)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -724,16 +725,59 @@ struct HabitDetailSheet: View {
     private func reinforcement(for guidanceType: GuidanceType?) -> IdentityReinforcement {
         switch guidanceType {
         case .momentum:
-            return IdentityReinforcement(line: "Moments like this define your consistency")
-        case .atRisk:
-            return IdentityReinforcement(line: "Even a small step reinforces who you’re becoming")
-        case .recovery:
-            return IdentityReinforcement(line: "Consistency is built in moments like this")
-        case .identity:
             return IdentityReinforcement(line: "This is becoming part of who you are")
+        case .atRisk:
+            return IdentityReinforcement(line: "Even small actions like this matter")
+        case .recovery:
+            return IdentityReinforcement(line: "This is how consistency builds")
+        case .identity:
+            return IdentityReinforcement(line: "This is starting to feel natural")
         case nil:
-            return IdentityReinforcement(line: "This is how it becomes part of who you are")
+            return IdentityReinforcement(line: "This is taking shape")
         }
+    }
+
+    private func pairedIdentityReflection(for guidanceOutput: GuidanceOutput?) -> String {
+        let candidate = reinforcement(for: guidanceOutput?.type).line
+        guard let guidanceOutput else { return candidate }
+        let guidanceVerbs = guidanceActionVerbs(from: guidanceOutput.action)
+        guard guidanceVerbs.allSatisfy({ !candidate.localizedCaseInsensitiveContains($0) }) else {
+            return "This is becoming part of who you are"
+        }
+        return candidate
+    }
+
+    private func guidanceActionVerbs(from action: String) -> Set<String> {
+        let actionWords = action.lowercased().components(separatedBy: CharacterSet.letters.inverted)
+        let trackedVerbs: Set<String> = [
+            "save",
+            "walk",
+            "read",
+            "learn",
+            "study",
+            "practice",
+            "log"
+        ]
+        return Set(actionWords.filter { trackedVerbs.contains($0) })
+    }
+
+    private func debugPrintRecentHabitLogTimestamps() {
+#if DEBUG
+        let logs = habit.logs
+            .sorted { $0.effectiveTimestamp < $1.effectiveTimestamp }
+            .suffix(14)
+
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "EEE d MMM, HH:mm"
+
+        print("---- Habit Log Debug (\(habit.name)) ----")
+        for log in logs {
+            print(formatter.string(from: log.effectiveTimestamp))
+        }
+        print("---- End ----")
+#endif
     }
 
     private func presentManualEntry(for date: Date) {
@@ -1092,27 +1136,55 @@ private struct StreakCardConfiguration: Equatable {
     }
 
     var titleText: String {
+        if streakState.currentStreak <= 0 {
+            switch state {
+            case .secured:
+                return "Ready to begin"
+            case .atRisk:
+                return "Ready to begin"
+            case .offTrack:
+                return "This is where it starts"
+            }
+        }
+
         let dayText = streakState.currentStreak == 1 ? "Day" : "Days"
-        return "\(streakState.currentStreak) \(dayText) Streak"
+        return "\(streakState.currentStreak) \(dayText.lowercased()) streak"
     }
 
     var supportingPrimaryText: String {
+        if streakState.currentStreak <= 0 {
+            return "Consistency building"
+        }
+
         switch state {
         case .secured:
-            return "Strong rhythm - keep it going"
+            return "Strong rhythm"
         case .atRisk:
-            return "Ready to continue today"
+            return "On a \(streakState.currentStreak) day run"
         case .offTrack:
-            return "Start a new streak today"
+            return "Building momentum"
         }
     }
 
     var supportingSecondaryText: String? {
+        if streakState.currentStreak <= 0 {
+            switch state {
+            case .secured:
+                return "Every habit starts with one"
+            case .atRisk:
+                return "Small start, strong finish"
+            case .offTrack:
+                return "Your first step counts"
+            }
+        }
+
         switch state {
-        case .secured, .offTrack:
+        case .secured:
             return nil
         case .atRisk:
-            return "A check-in today keeps it intact"
+            return "Building momentum"
+        case .offTrack:
+            return nil
         }
     }
 }
@@ -1246,17 +1318,17 @@ private struct HabitIdentityCard: View {
                                         .lineLimit(2)
                                 }
                             } else {
-                                Text("Someone who follows through")
+                                Text("Someone who keeps moving forward")
                                     .font(.system(size: 20, weight: .semibold))
                                     .foregroundStyle(.primary.opacity(0.9))
                                     .lineLimit(2)
 
-                                Text("This is still taking shape — keep showing up")
+                                Text("This is taking shape")
                                     .font(.system(size: 13))
                                     .foregroundStyle(.secondary.opacity(0.9))
                                     .lineLimit(2)
 
-                                Text("Each time you do this, you reinforce that identity")
+                                Text("This is how consistency builds")
                                     .font(.system(size: 13))
                                     .foregroundStyle(.secondary.opacity(0.94))
                                     .padding(.top, 3)

@@ -27,8 +27,8 @@ final class GuidanceEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(output.type, .momentum)
-        XCTAssertEqual(output.title, "You've shown up today")
-        XCTAssertEqual(output.action, "Keep your rhythm going")
+        XCTAssertEqual(output.title, "You’re in a strong rhythm")
+        XCTAssertTrue(output.action.contains("now"))
         assertNoForbiddenLanguage(in: output)
     }
 
@@ -83,7 +83,7 @@ final class GuidanceEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(output.type, .atRisk)
-        XCTAssertTrue(output.action.contains("stay consistent"))
+        XCTAssertTrue(output.action.contains("today"))
         assertNoForbiddenLanguage(in: output)
     }
 
@@ -237,7 +237,67 @@ final class GuidanceEngineTests: XCTestCase {
             rotationStore: InMemoryGuidanceRotationStore()
         )
 
-        XCTAssertEqual(output.supportingContext, "After Coffee • Window open")
+        XCTAssertEqual(output.supportingContext, "After coffee • Good timing")
+    }
+
+    func testClusteredTimingContextUsesBucketLanguage() {
+        let now = TestDateFactory.date(2026, 4, 16, hour: 12, calendar: calendar)
+        let history = [
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 10, hour: 12, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 11, hour: 12, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 12, hour: 13, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 13, hour: 12, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 14, hour: 12, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 15, hour: 13, calendar: calendar))
+        ]
+        let habit = TestHabitFactory.frequency(entries: history, calendar: calendar)
+
+        let output = GuidanceEngine.build(
+            input: GuidanceInput(
+                habit: habit,
+                now: now,
+                isCompletedToday: false,
+                streakState: streakState(for: habit, now: now),
+                completionHistory: habit.logs,
+                pattern: nil,
+                goalType: habit.goalType
+            ),
+            calendar: calendar,
+            rotationStore: InMemoryGuidanceRotationStore()
+        )
+
+        XCTAssertTrue(output.supportingContext?.contains("midday") == true)
+        XCTAssertFalse(output.supportingContext?.contains("AM") == true)
+        XCTAssertFalse(output.supportingContext?.contains("PM") == true)
+    }
+
+    func testClusteredTimingContextFallsBackWhenPatternIsEvenlySpread() {
+        let now = TestDateFactory.date(2026, 4, 16, hour: 12, calendar: calendar)
+        let history = [
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 10, hour: 6, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 11, hour: 9, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 12, hour: 12, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 13, hour: 15, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 14, hour: 18, calendar: calendar)),
+            TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 15, hour: 22, calendar: calendar))
+        ]
+        let habit = TestHabitFactory.frequency(entries: history, calendar: calendar)
+
+        let output = GuidanceEngine.build(
+            input: GuidanceInput(
+                habit: habit,
+                now: now,
+                isCompletedToday: false,
+                streakState: streakState(for: habit, now: now),
+                completionHistory: habit.logs,
+                pattern: nil,
+                goalType: habit.goalType
+            ),
+            calendar: calendar,
+            rotationStore: InMemoryGuidanceRotationStore()
+        )
+
+        XCTAssertTrue(output.supportingContext?.contains("Varies throughout the day") == true)
     }
 
     private func streakState(for habit: Habit, now: Date) -> StreakState {
@@ -249,7 +309,17 @@ final class GuidanceEngineTests: XCTestCase {
 
     private func assertNoForbiddenLanguage(in output: GuidanceOutput, file: StaticString = #filePath, line: UInt = #line) {
         let combined = "\(output.title) \(output.action)".lowercased()
-        let forbidden = ["streak", "don't break", "protect your streak", "extend your streak", "reset"]
+        let forbidden = [
+            "streak",
+            "don't break",
+            "protect your streak",
+            "extend your streak",
+            "reset",
+            "who you are",
+            "becoming",
+            "identity",
+            "part of you"
+        ]
         for fragment in forbidden {
             XCTAssertFalse(combined.contains(fragment), file: file, line: line)
         }
