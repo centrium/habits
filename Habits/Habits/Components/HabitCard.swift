@@ -33,12 +33,6 @@ struct HabitCard: View {
     }
 
     var body: some View {
-        let displayedStreak = habit.displayStreak(
-            referenceDate: Date(),
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        )
-
         VStack(alignment: .leading, spacing: HabitRowGrid.headerToHeatmapSpacing) {
             HabitHeader(
                 habit: habit,
@@ -48,7 +42,6 @@ struct HabitCard: View {
                 isReordering: isReordering,
                 showsQuickLogButton: true,
                 secondaryTextOverride: nil,
-                currentStreak: displayedStreak,
                 trailingAccessory: trailingAccessory,
                 onQuickLog: { _ in
                     let currentDay = CurrentDayResolver.currentDay(calendar: calculationCalendar)

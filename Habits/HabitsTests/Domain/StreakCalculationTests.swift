@@ -127,7 +127,7 @@ final class StreakCalculationTests: XCTestCase {
         XCTAssertTrue(shouldShowIndicator)
     }
 
-    func testCurrentStreakIsZeroWhenCurrentPeriodIsIncomplete() {
+    func testCurrentStreakKeepsPreviousRunVisibleWhileCurrentPeriodIsAtRisk() {
         // Given
         let day1 = TestDateFactory.date(2026, 3, 9, calendar: calendar)
         let day2 = TestDateFactory.date(2026, 3, 10, calendar: calendar)
@@ -149,7 +149,7 @@ final class StreakCalculationTests: XCTestCase {
         )
 
         // Then
-        XCTAssertEqual(streak, 0)
+        XCTAssertEqual(streak, 2)
     }
 
     func testFirstCompletedPeriodStartsStreakAtOne() {

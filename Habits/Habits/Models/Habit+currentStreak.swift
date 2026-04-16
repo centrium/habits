@@ -13,13 +13,10 @@ extension Habit {
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) -> Int {
-        StreakService(
+        StreakStateEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        ).currentStreak(
-            for: self,
-            referenceDate: referenceDate
-        )
+        ).currentStreak(for: self, referenceDate: referenceDate)
     }
 
     func currentStreak(
@@ -34,13 +31,10 @@ extension Habit {
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) -> Int {
-        StreakService(
+        StreakStateEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        ).displayStreak(
-            for: self,
-            referenceDate: referenceDate
-        )
+        ).currentStreak(for: self, referenceDate: referenceDate)
     }
 
     func bestStreak(
@@ -48,13 +42,10 @@ extension Habit {
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) -> Int {
-        StreakService(
+        StreakStateEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        ).bestStreak(
-            for: self,
-            through: referenceDate
-        )
+        ).bestStreak(for: self, referenceDate: referenceDate)
     }
 
     var isOnStreak: Bool {

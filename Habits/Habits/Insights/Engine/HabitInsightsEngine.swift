@@ -58,14 +58,10 @@ struct HabitInsightsEngine {
             weekStartPreference: weekStartPreference,
             now: now
         ).streak
-        let streakService = StreakService(
+        let streakState = StreakStateEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        )
-        let loggedToday = streakService.isDayComplete(
-            goal: habit,
-            on: now
-        )
+        ).streakState(for: habit, referenceDate: now)
 
         let metrics = MetricsCalculator.calculate(
             foundation: foundation,
@@ -88,7 +84,7 @@ struct HabitInsightsEngine {
         let coaching = coachingTemplate(
             habit: habit,
             metrics: metrics,
-            loggedToday: loggedToday
+            streakState: streakState
         )
 
         let isOpenEnded = foundation.achievement.target == nil
@@ -296,27 +292,27 @@ struct HabitInsightsEngine {
     private static func coachingTemplate(
         habit: Habit,
         metrics: HabitMetricsSnapshot,
-        loggedToday: Bool
+        streakState: StreakState
     ) -> CoachingTemplate {
         _ = habit
 
-        if metrics.currentStreak >= 2 {
+        if streakState.status == .atRisk, metrics.currentStreak >= 1 {
             return CoachingTemplate(
                 id: .streakProtection,
                 priority: 1,
                 headline: "You've shown up \(metrics.currentStreak) days in a row",
-                supportingText: "Keep your streak alive today",
+                supportingText: "Ready to continue today",
                 iconName: "sparkles",
                 tone: .encouragement
             )
         }
 
-        if loggedToday {
+        if streakState.status == .safe {
             return CoachingTemplate(
                 id: .generalEncouragement,
                 priority: 1,
-                headline: "Nice - you've logged today",
-                supportingText: "One more check-in tomorrow starts a streak",
+                headline: "Nice - your streak is secure today",
+                supportingText: "Strong rhythm - keep it going",
                 iconName: "sparkles",
                 tone: .encouragement
             )
@@ -325,8 +321,8 @@ struct HabitInsightsEngine {
         return CoachingTemplate(
             id: .generalEncouragement,
             priority: 1,
-            headline: "A quick check-in today keeps your streak alive",
-            supportingText: "No active streak yet",
+            headline: "A fresh check-in starts the next streak",
+            supportingText: "Start a new streak today",
             iconName: "sparkles",
             tone: .encouragement
         )
@@ -555,50 +551,6 @@ struct HabitInsightsEngine {
 
         let percent = Int(((foundation.achievement.progress / target) * 100).rounded())
         return "\(percent)% complete"
-    }
-
-    private static func streakProtectionMessage(
-        habit: Habit,
-        metrics: HabitMetricsSnapshot,
-        calendar: Calendar,
-        now: Date
-    ) -> String? {
-        guard metrics.currentStreak > 0 else { return nil }
-        let todayStart = calendar.startOfDay(for: now)
-        let loggedToday = habit.logs.contains { calendar.startOfDay(for: $0.effectiveTimestamp) == todayStart }
-        guard !loggedToday else { return nil }
-
-        if let target = metrics.target, metrics.progress >= target {
-            return nil
-        }
-
-        return "Log today to keep your \(metrics.currentStreak)-day streak alive"
-    }
-
-    private static func streakGuardMessage(
-        habit: Habit,
-        metrics: HabitMetricsSnapshot,
-        calendar: Calendar,
-        now: Date
-    ) -> String? {
-        guard metrics.currentStreak > 3 else { return nil }
-
-        let today = calendar.startOfDay(for: now)
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
-        let dayBeforeYesterday = calendar.date(byAdding: .day, value: -2, to: today) ?? today
-
-        let daySet = Set(habit.logs.map { calendar.startOfDay(for: $0.effectiveTimestamp) })
-        let hasToday = daySet.contains(today)
-        let hasYesterday = daySet.contains(yesterday)
-        let hasDayBeforeYesterday = daySet.contains(dayBeforeYesterday)
-
-        if hasToday && !hasYesterday && hasDayBeforeYesterday {
-            return "Your streak was protected yesterday"
-        }
-        if hasToday && hasYesterday {
-            return "Your streak is safe today"
-        }
-        return nil
     }
 
     private static func milestoneMessage(

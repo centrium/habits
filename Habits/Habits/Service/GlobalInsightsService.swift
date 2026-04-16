@@ -61,7 +61,7 @@ struct GlobalInsightsService {
         }
 
         let consistency = roundedAverage(metricsByHabit.map(\.consistency))
-        let atRiskCount = metricsByHabit.filter { $0.riskScore >= 0.5 }.count
+        let atRiskCount = metricsByHabit.filter { $0.streakStatus == .atRisk }.count
         let dominantState = dominantIdentityState(from: metricsByHabit)
 
         let hero = GlobalInsightsHero(
@@ -106,6 +106,7 @@ private extension GlobalInsightsService {
         let riskScore: Double
         let progressRatio: Double?
         let currentStreak: Int
+        let streakStatus: StreakStatus
         let completedDays: Set<Date>
     }
 
@@ -127,10 +128,10 @@ private extension GlobalInsightsService {
         now: Date
     ) -> HabitMetrics {
         let insightsService = HabitInsightsService(calendar: calendar)
-        let streakService = StreakService(
+        let streakState = StreakStateEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        )
+        ).streakState(for: habit, referenceDate: now)
         let progressRatio = habit.progress(
             for: now,
             calendar: calendar,
@@ -148,7 +149,8 @@ private extension GlobalInsightsService {
                 now: now
             ),
             progressRatio: progressRatio,
-            currentStreak: streakService.currentStreak(for: habit, referenceDate: now),
+            currentStreak: streakState.currentStreak,
+            streakStatus: streakState.status,
             completedDays: completedDays
         )
     }

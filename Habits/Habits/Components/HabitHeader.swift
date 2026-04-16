@@ -53,7 +53,7 @@ struct HabitHeader: View {
     let showsQuickLogButton: Bool
     let showsQuickLogForFrequencyHabits: Bool
     let secondaryTextOverride: String?
-    let currentStreak: Int?
+    let streakState: StreakState?
     let trailingAccessory: AnyView?
     let onQuickLog: (Date) -> Void
     let onQuickLogLongPress: ((Date) -> Void)?
@@ -67,7 +67,7 @@ struct HabitHeader: View {
         showsQuickLogButton: Bool,
         showsQuickLogForFrequencyHabits: Bool = true,
         secondaryTextOverride: String?,
-        currentStreak: Int? = nil,
+        streakState: StreakState? = nil,
         trailingAccessory: AnyView? = nil,
         onQuickLog: @escaping (Date) -> Void,
         onQuickLogLongPress: ((Date) -> Void)? = nil
@@ -80,7 +80,7 @@ struct HabitHeader: View {
         self.showsQuickLogButton = showsQuickLogButton
         self.showsQuickLogForFrequencyHabits = showsQuickLogForFrequencyHabits
         self.secondaryTextOverride = secondaryTextOverride
-        self.currentStreak = currentStreak
+        self.streakState = streakState
         self.trailingAccessory = trailingAccessory
         self.onQuickLog = onQuickLog
         self.onQuickLogLongPress = onQuickLogLongPress
@@ -132,28 +132,26 @@ struct HabitHeader: View {
         return "Log \(habit.name) for \(dateText)"
     }
 
-    private var validatedCurrentStreak: Int? {
-        guard let currentStreak, currentStreak > 0 else { return nil }
-        return currentStreak
-    }
-
-    private var hasLoggedToday: Bool {
+    private var resolvedStreakState: StreakState {
         let today = CurrentDayResolver.currentDay(calendar: calendar)
-        if let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today), optimisticProgress > 0 {
-            return true
-        }
-        return !habit.logs(on: today, calendar: calendar).isEmpty
+        let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
+        let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
+        let hasActivity = (optimisticProgress ?? 0) > 0 || !habit.logs(on: today, calendar: calendar).isEmpty
+
+        return streakState ?? StreakStateEngine(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).streakState(
+            for: habit,
+            referenceDate: today,
+            progressOverride: optimisticProgress,
+            isCompleteOverride: optimisticComplete,
+            hasActivityOverride: hasActivity
+        )
     }
 
     private var streakContext: StreakIndicatorPresentation.Context {
-        let displayStreak = max(0, validatedCurrentStreak ?? 0)
-
-        return StreakIndicatorPresentation.context(
-            displayStreak: displayStreak,
-            isTodayComplete: hasLoggedToday,
-            now: Date(),
-            calendar: calendar
-        )
+        StreakIndicatorPresentation.context(streakState: resolvedStreakState)
     }
 
     private var shouldShowQuickLogButton: Bool {

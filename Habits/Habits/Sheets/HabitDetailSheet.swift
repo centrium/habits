@@ -60,10 +60,20 @@ struct HabitDetailSheet: View {
         let now = Date()
         let calendar = habitLogService.calendar
         let progressRevision = habitLogService.metricsRevision(for: habit.id)
-        let displayedStreak = habit.displayStreak(
-            referenceDate: now,
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
+        let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
+        let hasActivityToday = (optimisticProgress ?? 0) > 0
+            || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
+        let streakState = StreakStateEngine(
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
+        ).streakState(
+            for: habit,
+            referenceDate: now,
+            progressOverride: optimisticProgress,
+            isCompleteOverride: optimisticComplete,
+            hasActivityOverride: hasActivityToday
         )
         let premiumHistoryGate = PremiumHistoryGate.Context(
             calendar: calendar,
@@ -96,7 +106,7 @@ struct HabitDetailSheet: View {
 
             detailContent(
                 progressSnapshot: progressSnapshot,
-                displayedStreak: displayedStreak,
+                streakState: streakState,
                 progressRevision: progressRevision,
                 earliestCalendarDate: earliestCalendarDate
             )
@@ -301,7 +311,7 @@ struct HabitDetailSheet: View {
     @ViewBuilder
     private func detailContent(
         progressSnapshot: ProgressAsOfSnapshot?,
-        displayedStreak: Int,
+        streakState: StreakState,
         progressRevision: Int,
         earliestCalendarDate: Date?
     ) -> some View {
@@ -319,7 +329,7 @@ struct HabitDetailSheet: View {
         let identityStatText = identityText == nil
             ? nil
             : CadenceLanguage.identityStat(days: identityState.activeDays, window: identityState.windowDays)
-        let streakCardConfiguration = streakCardConfiguration(displayedStreak: displayedStreak)
+        let streakCardConfiguration = streakCardConfiguration(streakState: streakState)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -644,148 +654,8 @@ struct HabitDetailSheet: View {
         )
     }
 
-    private func streakCardConfiguration(displayedStreak: Int) -> StreakCardConfiguration? {
-        let currentStreak = max(0, displayedStreak)
-        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-        let hasLoggedToday = uiStateStore.progress(habitId: habit.id, date: today).map { $0 > 0 } == true
-            || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
-        let periodLabel = habit.goalPeriod.relativeLabel
-
-        if let periodProgress = habit.periodProgress(
-            now: Date(),
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-           ) {
-            let state: StreakCardConfiguration.State = {
-                switch periodProgress.state {
-                case .onTrack:
-                    return .secured
-                case .atRisk:
-                    return .atRisk
-                case .offTrack:
-                    return .offTrack
-                }
-            }()
-
-            return StreakCardConfiguration(
-                currentStreak: currentStreak,
-                hasLoggedToday: hasLoggedToday,
-                isMilestone: false,
-                state: state,
-                goalType: habit.goalType,
-                periodProgress: periodProgress,
-                periodLabel: periodLabel,
-                titleOverrideText: zeroStreakTitleText(
-                    currentStreak: currentStreak,
-                    periodProgress: periodProgress,
-                    hasLoggedToday: hasLoggedToday
-                ),
-                progressSummaryText: periodProgressSummaryText(
-                    progress: periodProgress,
-                    periodLabel: periodLabel
-                )
-            )
-        }
-
-        let isMilestone = StreakCardConfiguration.milestoneThresholds.contains(currentStreak)
-
-        let baseState: StreakCardConfiguration.State? = {
-            if hasLoggedToday {
-                return .secured
-            } else if currentStreak > 0 {
-                return .atRisk
-            } else {
-                return nil
-            }
-        }()
-
-        let resolvedState: StreakCardConfiguration.State = {
-            guard var state = baseState else { return .secured }
-            if isMilestone {
-                state = .milestone
-            }
-            return state
-        }()
-
-        return StreakCardConfiguration(
-            currentStreak: currentStreak,
-            hasLoggedToday: hasLoggedToday,
-            isMilestone: isMilestone,
-            state: resolvedState,
-            goalType: habit.goalType,
-            periodProgress: nil,
-            periodLabel: periodLabel,
-            titleOverrideText: zeroStreakTitleText(
-                currentStreak: currentStreak,
-                periodProgress: nil,
-                hasLoggedToday: hasLoggedToday
-            ),
-            progressSummaryText: nil
-        )
-    }
-
-    private func zeroStreakTitleText(
-        currentStreak: Int,
-        periodProgress: PeriodProgress?,
-        hasLoggedToday: Bool
-    ) -> String? {
-        guard currentStreak == 0 else { return nil }
-
-        if let periodProgress {
-            switch habit.goalType {
-            case .frequency:
-                if periodProgress.completed <= 0 {
-                    return "Start your first streak"
-                }
-                return "Build your first streak"
-            case .cumulative:
-                if periodProgress.completed >= periodProgress.required {
-                    return nil
-                }
-                switch periodProgress.state {
-                case .onTrack:
-                    return "Almost there"
-                case .atRisk:
-                    return "Needs a push today"
-                case .offTrack:
-                    return "Falling behind today"
-                }
-            }
-        }
-
-        if hasLoggedToday {
-            switch habit.goalType {
-            case .frequency:
-                return "Build your first streak"
-            case .cumulative:
-                return "Needs a push today"
-            }
-        }
-
-        if hasLoggedToday == false {
-            return "Start your first streak"
-        }
-
-        return "Start your streak"
-    }
-
-    private func periodProgressSummaryText(
-        progress: PeriodProgress,
-        periodLabel: String
-    ) -> String {
-        let clampedCompleted = min(progress.completed, progress.required)
-
-        switch habit.goalType {
-        case .frequency:
-            let completedText = String(Int(clampedCompleted.rounded(.down)))
-            let requiredText = String(Int(progress.required.rounded(.down)))
-            return "\(completedText) of \(requiredText) \(periodLabel)"
-        case .cumulative:
-            let completedText = habit.formatProgressValue(clampedCompleted)
-            let requiredText = habit.formatProgressValue(progress.required)
-            let unitSuffix = habit.trimmedUnit.map { " \($0)" } ?? ""
-            return "\(completedText) of \(requiredText)\(unitSuffix) \(periodLabel)"
-        }
+    private func streakCardConfiguration(streakState: StreakState) -> StreakCardConfiguration? {
+        StreakCardConfiguration(streakState: streakState)
     }
 
     private func heroSupportingInsightText(
@@ -1105,44 +975,24 @@ private struct StreakCardConfiguration: Equatable {
         case secured
         case atRisk
         case offTrack
-        case milestone
     }
 
-    static let milestoneThresholds: Set<Int> = [7, 14, 30, 60, 90, 100, 180, 365]
-
-    let currentStreak: Int
-    let hasLoggedToday: Bool
-    let isMilestone: Bool
+    let streakState: StreakState
     let state: State
-    let goalType: GoalType
-    let periodProgress: PeriodProgress?
-    let periodLabel: String
-    let titleOverrideText: String?
-    let progressSummaryText: String?
 
-    private var isProgressComplete: Bool {
-        guard let periodProgress else { return true }
-        return periodProgress.completed >= periodProgress.required
-    }
-
-    var usesIncompleteProgressVisuals: Bool {
-        periodProgress != nil && !isProgressComplete
+    init(streakState: StreakState) {
+        self.streakState = streakState
+        switch streakState.status {
+        case .safe:
+            self.state = .secured
+        case .atRisk:
+            self.state = .atRisk
+        case .broken:
+            self.state = .offTrack
+        }
     }
 
     var iconSystemName: String {
-        if usesIncompleteProgressVisuals {
-            switch state {
-            case .secured:
-                return "circle.fill"
-            case .atRisk:
-                return "exclamationmark.circle.fill"
-            case .offTrack:
-                return "circle.dashed"
-            case .milestone:
-                return "circle.fill"
-            }
-        }
-
         switch state {
         case .secured:
             return "flame.fill"
@@ -1150,60 +1000,31 @@ private struct StreakCardConfiguration: Equatable {
             return "exclamationmark.triangle.fill"
         case .offTrack:
             return "exclamationmark.triangle.fill"
-        case .milestone:
-            return "sparkles"
         }
     }
 
     var titleText: String {
-        if let titleOverrideText {
-            return titleOverrideText
-        }
-        let dayText = currentStreak == 1 ? "Day" : "Days"
-        return "\(currentStreak) \(dayText) Streak"
+        let dayText = streakState.currentStreak == 1 ? "Day" : "Days"
+        return "\(streakState.currentStreak) \(dayText) Streak"
     }
 
     var supportingPrimaryText: String {
-        if let periodProgress {
-            if goalType == .cumulative, periodProgress.state == .onTrack, !isProgressComplete {
-                return "Just short of your goal"
-            }
-            switch periodProgress.state {
-            case .onTrack:
-                return "On track \(periodLabel)"
-            case .atRisk:
-                return "At risk \(periodLabel)"
-            case .offTrack:
-                return "Falling behind \(periodLabel)"
-            }
-        }
-
         switch state {
         case .secured:
-            return "Momentum is building"
+            return "Strong rhythm - keep it going"
         case .atRisk:
-            return "Don't break the chain today"
+            return "Ready to continue today"
         case .offTrack:
-            return "Don't break the chain today"
-        case .milestone:
-            return "Strong run - keep it going"
+            return "Start a new streak today"
         }
     }
 
-    var supportingSecondaryText: String {
-        if let progressSummaryText {
-            return progressSummaryText
-        }
-
+    var supportingSecondaryText: String? {
         switch state {
-        case .secured:
-            return "Keep it alive tomorrow"
+        case .secured, .offTrack:
+            return nil
         case .atRisk:
-            return "Miss today and this resets"
-        case .offTrack:
-            return "Miss today and this resets"
-        case .milestone:
-            return "You've built real consistency"
+            return "A check-in today keeps it intact"
         }
     }
 }
@@ -1218,7 +1039,7 @@ private struct StreakNudgeCard: View {
         VStack(alignment: .leading, spacing: CadenceTokens.Space.xs + 2) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Image(systemName: configuration.iconSystemName)
-                    .font(.system(size: configuration.state == .secured || configuration.state == .milestone ? 18 : 17.1, weight: .semibold))
+                    .font(.system(size: configuration.state == .secured ? 18 : 17.1, weight: .semibold))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(iconColor)
                     .alignmentGuide(.firstTextBaseline) { dimensions in
@@ -1237,10 +1058,12 @@ private struct StreakNudgeCard: View {
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
                     .lineLimit(1)
 
-                Text(configuration.supportingSecondaryText)
-                    .font(CadenceTokens.Typography.supporting)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    .lineLimit(1)
+                if let secondary = configuration.supportingSecondaryText {
+                    Text(secondary)
+                        .font(CadenceTokens.Typography.supporting)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .lineLimit(1)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1255,29 +1078,20 @@ private struct StreakNudgeCard: View {
         )
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(configuration.titleText). \(configuration.supportingPrimaryText). \(configuration.supportingSecondaryText)")
+        .accessibilityLabel(
+            [configuration.titleText, configuration.supportingPrimaryText, configuration.supportingSecondaryText]
+                .compactMap { $0 }
+                .joined(separator: ". ")
+        )
     }
 
     private var iconColor: Color {
-        if configuration.usesIncompleteProgressVisuals {
-            switch configuration.state {
-            case .secured:
-                return CadenceTokens.Color.Text.secondary.opacity(colorScheme == .dark ? 0.74 : 0.68)
-            case .atRisk:
-                return Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.68)
-            case .offTrack:
-                return CadenceTokens.Color.Text.secondary.opacity(colorScheme == .dark ? 0.66 : 0.6)
-            case .milestone:
-                return CadenceTokens.Color.Text.secondary.opacity(colorScheme == .dark ? 0.74 : 0.68)
-            }
-        }
-
         switch configuration.state {
         case .atRisk:
             return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
         case .offTrack:
             return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
-        case .secured, .milestone:
+        case .secured:
             return accent.primary.opacity(colorScheme == .dark ? 1 : 0.88)
         }
     }

@@ -2,8 +2,6 @@ import XCTest
 @testable import Habits
 
 final class StreakIndicatorPresentationTests: XCTestCase {
-    private let calendar = TestDateFactory.utcCalendar
-
     func testDoesNotShowIndicatorWhenStreakIsZero() {
         // Given
         let streak = 0
@@ -60,15 +58,17 @@ final class StreakIndicatorPresentationTests: XCTestCase {
     }
 
     func testBuildsAtRiskContextWhenTodayIsIncompleteAndStreakExists() {
-        // Given
-        let now = TestDateFactory.date(2026, 4, 12, hour: 10, calendar: calendar)
-
         // When
         let context = StreakIndicatorPresentation.context(
-            displayStreak: 3,
-            isTodayComplete: false,
-            now: now,
-            calendar: calendar
+            streakState: StreakState(
+                currentStreak: 3,
+                longestStreak: 3,
+                hasMetRequirementToday: false,
+                isRequiredToday: true,
+                isAtRisk: true,
+                isBroken: false,
+                status: .atRisk
+            )
         )
 
         // Then
@@ -80,15 +80,17 @@ final class StreakIndicatorPresentationTests: XCTestCase {
     }
 
     func testBuildsSafeContextWhenTodayIsComplete() {
-        // Given
-        let now = TestDateFactory.date(2026, 4, 12, hour: 10, calendar: calendar)
-
         // When
         let context = StreakIndicatorPresentation.context(
-            displayStreak: 4,
-            isTodayComplete: true,
-            now: now,
-            calendar: calendar
+            streakState: StreakState(
+                currentStreak: 4,
+                longestStreak: 4,
+                hasMetRequirementToday: true,
+                isRequiredToday: false,
+                isAtRisk: false,
+                isBroken: false,
+                status: .safe
+            )
         )
 
         // Then
@@ -99,15 +101,17 @@ final class StreakIndicatorPresentationTests: XCTestCase {
     }
 
     func testNoStreakContextKeepsDotsButHidesBadge() {
-        // Given
-        let now = TestDateFactory.date(2026, 4, 12, hour: 10, calendar: calendar)
-
         // When
         let context = StreakIndicatorPresentation.context(
-            displayStreak: 0,
-            isTodayComplete: false,
-            now: now,
-            calendar: calendar
+            streakState: StreakState(
+                currentStreak: 0,
+                longestStreak: 0,
+                hasMetRequirementToday: false,
+                isRequiredToday: false,
+                isAtRisk: false,
+                isBroken: true,
+                status: .broken
+            )
         )
 
         // Then

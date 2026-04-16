@@ -11,13 +11,14 @@ struct StreakService {
     }
 
     private let calendar: Calendar
+    private let weekStartPreference: WeekStartPreference
 
     init(
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system
     ) {
         self.calendar = calendar
-        _ = weekStartPreference
+        self.weekStartPreference = weekStartPreference
     }
 
     // Goal-type completion rules are centralized here.
@@ -48,25 +49,20 @@ struct StreakService {
         for goal: Habit,
         referenceDate: Date = .now
     ) -> Int {
-        var streak = 0
-        var cursor = calendar.startOfDay(for: referenceDate)
-
-        while isDayComplete(goal: goal, on: cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else {
-                break
-            }
-            cursor = previousDay
-        }
-
-        return streak
+        StreakStateEngine(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).currentStreak(for: goal, referenceDate: referenceDate)
     }
 
     func bestStreak(
         for goal: Habit,
         through referenceDate: Date = .now
     ) -> Int {
-        streakLengths(for: goal, through: referenceDate).max() ?? 0
+        StreakStateEngine(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).bestStreak(for: goal, referenceDate: referenceDate)
     }
 
     func streak(
@@ -83,16 +79,7 @@ struct StreakService {
         for goal: Habit,
         referenceDate: Date = .now
     ) -> Int {
-        let activeStreak = currentStreak(for: goal, referenceDate: referenceDate)
-        if activeStreak > 0 {
-            return activeStreak
-        }
-
-        let today = calendar.startOfDay(for: referenceDate)
-        guard let previousDay = calendar.date(byAdding: .day, value: -1, to: today) else {
-            return 0
-        }
-        return currentStreak(for: goal, referenceDate: previousDay)
+        currentStreak(for: goal, referenceDate: referenceDate)
     }
 
     func streakLengths(

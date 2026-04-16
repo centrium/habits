@@ -24,6 +24,7 @@ enum StreakIndicatorPresentation {
         let streak: Int
         let showBadge: Bool
         let isAtRisk: Bool
+        let status: StreakStatus
         let directionalDots: DirectionalDots
     }
 
@@ -36,34 +37,36 @@ enum StreakIndicatorPresentation {
     }
 
     static func context(
-        displayStreak: Int,
-        isTodayComplete: Bool,
-        now: Date = .now,
-        calendar: Calendar = .current
+        streakState: StreakState
     ) -> Context {
-        let streak = max(0, displayStreak)
+        let streak = max(0, streakState.currentStreak)
         let showsBadge = shouldShow(streak: streak)
-        let isAtRisk = showsBadge && !isTodayComplete && isWithinLoggingWindow(now: now, calendar: calendar)
-        let dots = directionalDots(streak: streak, isTodayComplete: isTodayComplete, isAtRisk: isAtRisk)
+        let isAtRisk = showsBadge && streakState.status == .atRisk
+        let dots = directionalDots(
+            streak: streak,
+            hasMetRequirementToday: streakState.hasMetRequirementToday,
+            isAtRisk: isAtRisk
+        )
 
         return Context(
             streak: streak,
             showBadge: showsBadge,
             isAtRisk: isAtRisk,
+            status: streakState.status,
             directionalDots: dots
         )
     }
 
     private static func directionalDots(
         streak: Int,
-        isTodayComplete: Bool,
+        hasMetRequirementToday: Bool,
         isAtRisk: Bool
     ) -> DirectionalDots {
         let dotCount = min(max(streak + 1, minimumDotCount), maximumDotCount)
         let filledCount = min(streak, dotCount)
 
         let todayIndex: Int = {
-            if isTodayComplete {
+            if hasMetRequirementToday {
                 return min(max(streak - 1, 0), dotCount - 1)
             }
             return min(streak, dotCount - 1)
@@ -78,16 +81,5 @@ enum StreakIndicatorPresentation {
         }
 
         return DirectionalDots(dots: dots)
-    }
-
-    private static func isWithinLoggingWindow(
-        now: Date,
-        calendar: Calendar
-    ) -> Bool {
-        let dayStart = calendar.startOfDay(for: now)
-        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
-            return true
-        }
-        return now >= dayStart && now < dayEnd
     }
 }
