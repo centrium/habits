@@ -307,6 +307,9 @@ extension PurchaseService {
         case .advancedInsights:
             return false
 
+        case .guidanceLayer:
+            return false
+
         case .fullHeatmapHistory:
             return false
 

@@ -29,7 +29,7 @@ final class PaywallViewTests: XCTestCase {
 
         XCTAssertEqual(
             features,
-            [.advancedInsights, .unlimitedHabits, .fullHeatmapHistory, .dataExport, .multipleReminders]
+            [.advancedInsights, .unlimitedHabits, .guidanceLayer, .fullHeatmapHistory, .dataExport, .multipleReminders]
         )
     }
 

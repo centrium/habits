@@ -21,6 +21,10 @@ private enum ActiveSheet: Identifiable {
     }
 }
 
+private struct IdentityReinforcement {
+    let line: String
+}
+
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -330,6 +334,11 @@ struct HabitDetailSheet: View {
             ? nil
             : CadenceLanguage.identityStat(days: identityState.activeDays, window: identityState.windowDays)
         let streakCardConfiguration = streakCardConfiguration(streakState: streakState)
+        let guidanceOutput = guidanceOutput(
+            streakState: streakState,
+            identityState: identityState
+        )
+        let identityReflectionText = reinforcement(for: guidanceOutput?.type).line
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -395,13 +404,24 @@ struct HabitDetailSheet: View {
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
 
+                if let guidanceOutput {
+                    GuidanceCard(
+                        output: guidanceOutput,
+                        accent: accent,
+                        variant: GuidanceEngine.visualVariant(for: guidanceOutput)
+                    )
+                    .padding(.horizontal, sectionPadding)
+                    .padding(.top, 12)
+                }
+
                 if let streakCardConfiguration {
                     StreakNudgeCard(
                         configuration: streakCardConfiguration,
                         accent: accent
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, CadenceTokens.Space.md)
+                    .padding(.top, guidanceOutput == nil ? CadenceTokens.Space.md : CadenceTokens.Space.sm + 2)
+                    .opacity(guidanceOutput == nil ? 1 : 0.94)
                 }
 
                 if !rhythmData.isEmpty {
@@ -414,12 +434,14 @@ struct HabitDetailSheet: View {
                         }
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, CadenceTokens.Space.md)
+                    .padding(.top, guidanceOutput == nil ? CadenceTokens.Space.md : CadenceTokens.Space.sm + 2)
+                    .opacity(guidanceOutput == nil ? 1 : 0.95)
                 }
 
                 HabitIdentityCard(
                     identityText: identityText,
                     statText: identityStatText,
+                    reflectionText: identityReflectionText,
                     accent: CadenceTokens.Color.accent(for: habit)
                 ) {
                     prefersIdentityFocusOnEdit = true
@@ -427,6 +449,7 @@ struct HabitDetailSheet: View {
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
+                .opacity(guidanceOutput == nil ? 1 : 0.985)
 
                 Button {
                     if let earliestCalendarDate {
@@ -481,6 +504,7 @@ struct HabitDetailSheet: View {
                 .cadenceSurface(cornerRadius: sectionCornerRadius)
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
+                .opacity(guidanceOutput == nil ? 1 : 0.97)
 
                 if showsInsightsSection {
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
@@ -658,6 +682,35 @@ struct HabitDetailSheet: View {
         StreakCardConfiguration(streakState: streakState)
     }
 
+    private func guidanceOutput(
+        streakState: StreakState,
+        identityState: HabitIdentityStateSnapshot
+    ) -> GuidanceOutput? {
+        guard purchaseService.hasAccess(to: .guidanceLayer) else {
+            return nil
+        }
+
+        return GuidanceEngine.build(
+            input: GuidanceInput(
+                habit: habit,
+                now: Date(),
+                isCompletedToday: hasActivityToday(),
+                streakState: streakState,
+                completionHistory: habit.logs,
+                pattern: guidancePattern(),
+                goalType: habit.goalType
+            ),
+            calendar: calculationCalendar,
+            identitySnapshot: identityState
+        )
+    }
+
+    private func hasActivityToday() -> Bool {
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
+        return (optimisticProgress ?? 0) > 0 || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
+    }
+
     private func heroSupportingInsightText(
         identityState: HabitIdentityStateSnapshot
     ) -> String? {
@@ -666,6 +719,21 @@ struct HabitDetailSheet: View {
         }
 
         return "Logged on \(identityState.activeDays) of the last \(identityState.windowDays) days"
+    }
+
+    private func reinforcement(for guidanceType: GuidanceType?) -> IdentityReinforcement {
+        switch guidanceType {
+        case .momentum:
+            return IdentityReinforcement(line: "Moments like this define your consistency")
+        case .atRisk:
+            return IdentityReinforcement(line: "Even a small step reinforces who you’re becoming")
+        case .recovery:
+            return IdentityReinforcement(line: "Consistency is built in moments like this")
+        case .identity:
+            return IdentityReinforcement(line: "This is becoming part of who you are")
+        case nil:
+            return IdentityReinforcement(line: "This is how it becomes part of who you are")
+        }
     }
 
     private func presentManualEntry(for date: Date) {
@@ -842,6 +910,26 @@ struct HabitDetailSheet: View {
 
     private func cueSourceHabitName(for insight: CueInsight) -> String? {
         allHabits.first(where: { $0.id == insight.sourceHabitId })?.name
+    }
+
+    private func guidancePattern() -> HabitPattern? {
+        if let triggerHabitID = habit.triggerHabitID,
+           let triggerHabit = allHabits.first(where: { $0.id == triggerHabitID }) {
+            return HabitPattern(
+                description: "after \(triggerHabit.name.lowercased())",
+                anchor: triggerHabit.name
+            )
+        }
+
+        if let cueInsight,
+           let sourceHabitName = cueSourceHabitName(for: cueInsight) {
+            return HabitPattern(
+                description: "after \(sourceHabitName.lowercased())",
+                anchor: sourceHabitName
+            )
+        }
+
+        return nil
     }
 
     private func refreshCueInsight() async {
@@ -1048,20 +1136,20 @@ private struct StreakNudgeCard: View {
 
                 Text(configuration.titleText)
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.86))
                     .lineLimit(1)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(configuration.supportingPrimaryText)
                     .font(CadenceTokens.Typography.supporting)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
                     .lineLimit(1)
 
                 if let secondary = configuration.supportingSecondaryText {
                     Text(secondary)
                         .font(CadenceTokens.Typography.supporting)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.74))
                         .lineLimit(1)
                 }
             }
@@ -1070,11 +1158,11 @@ private struct StreakNudgeCard: View {
         .padding(CadenceTokens.Space.lg)
         .background(
             RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .fill(accent.primary.opacity(colorScheme == .dark ? 0.07 : 0.04))
+                .fill(accent.primary.opacity(colorScheme == .dark ? 0.05 : 0.028))
         )
         .overlay(
             RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                .stroke(accent.primary.opacity(colorScheme == .dark ? 0.3 : 0.2), lineWidth: 1)
+                .stroke(accent.primary.opacity(colorScheme == .dark ? 0.18 : 0.11), lineWidth: 1)
         )
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
         .accessibilityElement(children: .combine)
@@ -1088,11 +1176,11 @@ private struct StreakNudgeCard: View {
     private var iconColor: Color {
         switch configuration.state {
         case .atRisk:
-            return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
+            return Color.orange.opacity(colorScheme == .dark ? 0.82 : 0.74)
         case .offTrack:
-            return Color.orange.opacity(colorScheme == .dark ? 0.95 : 0.9)
+            return Color.orange.opacity(colorScheme == .dark ? 0.82 : 0.74)
         case .secured:
-            return accent.primary.opacity(colorScheme == .dark ? 1 : 0.88)
+            return accent.primary.opacity(colorScheme == .dark ? 0.86 : 0.76)
         }
     }
 }
@@ -1120,6 +1208,7 @@ private struct HeroTopRow: View {
 private struct HabitIdentityCard: View {
     let identityText: String?
     let statText: String?
+    let reflectionText: String
     let accent: CadenceAccentTokens
     let onTap: () -> Void
 
@@ -1140,26 +1229,37 @@ private struct HabitIdentityCard: View {
                             if let identityText {
                                 Text(identityText)
                                     .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .foregroundStyle(.primary.opacity(0.9))
                                     .lineSpacing(2)
                                     .lineLimit(2)
 
                                 if let statText {
                                     Text(statText)
                                         .font(.system(size: 13))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.secondary.opacity(0.9))
                                         .lineLimit(2)
 
-                                    Text(CadenceLanguage.identityReinforcement())
+                                    Text(reflectionText)
                                         .font(.system(size: 13))
-                                        .foregroundStyle(.secondary.opacity(0.9))
+                                        .foregroundStyle(.secondary.opacity(0.94))
                                         .padding(.top, 3)
                                         .lineLimit(2)
                                 }
                             } else {
-                                Text(CadenceLanguage.identityEmptyPrompt())
+                                Text("Someone who follows through")
                                     .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .foregroundStyle(.primary.opacity(0.9))
+                                    .lineLimit(2)
+
+                                Text("This is still taking shape — keep showing up")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary.opacity(0.9))
+                                    .lineLimit(2)
+
+                                Text("Each time you do this, you reinforce that identity")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary.opacity(0.94))
+                                    .padding(.top, 3)
                                     .lineLimit(2)
                             }
                         }

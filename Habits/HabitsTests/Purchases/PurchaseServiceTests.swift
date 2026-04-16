@@ -145,6 +145,25 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertEqual(premiumStatus, .unknown)
     }
 
+    func testGuidanceLayerRequiresPremium() async {
+        let service = await makeService()
+
+        let freeAccess = await MainActor.run {
+            service.hasAccess(to: .guidanceLayer)
+        }
+
+        await MainActor.run {
+            service.unlockPremium()
+        }
+
+        let premiumAccess = await MainActor.run {
+            service.hasAccess(to: .guidanceLayer)
+        }
+
+        XCTAssertFalse(freeAccess)
+        XCTAssertTrue(premiumAccess)
+    }
+
     func testStartupEntitlementRefreshDoesNotWaitForProductLoad() async {
         let service = await MainActor.run {
             PurchaseService(

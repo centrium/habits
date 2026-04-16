@@ -74,13 +74,13 @@ struct RhythmCardView: View {
         }
 
         var leading = AttributedString(prefix)
-        leading.foregroundColor = CadenceTokens.Color.Text.primary
+        leading.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
 
         var value = AttributedString(formattedTime(bestTime.hour))
-        value.foregroundColor = semanticAccent.cadenceAccentPrimary
+        value.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.82 : 0.74)
 
         var trailing = AttributedString(".")
-        trailing.foregroundColor = CadenceTokens.Color.Text.primary
+        trailing.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
 
         return leading + value + trailing
     }
@@ -90,7 +90,7 @@ struct RhythmCardView: View {
         text.foregroundColor = CadenceTokens.Color.Text.secondary
 
         var peak = AttributedString(formattedTime(insight.peakHour))
-        peak.foregroundColor = semanticAccent.cadenceAccentPrimary
+        peak.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
         text += peak
 
         var separator = AttributedString(" · Dip: ")
@@ -98,15 +98,15 @@ struct RhythmCardView: View {
         text += separator
 
         var dipStart = AttributedString(formattedTime(insight.lowRange.0))
-        dipStart.foregroundColor = semanticAccent.cadenceAccentPrimary
+        dipStart.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
         text += dipStart
 
         var dash = AttributedString("–")
-        dash.foregroundColor = semanticAccent.cadenceAccentSecondary
+        dash.foregroundColor = semanticAccent.cadenceAccentSecondary.opacity(colorScheme == .dark ? 0.76 : 0.68)
         text += dash
 
         var dipEnd = AttributedString(formattedTime(insight.lowRange.1))
-        dipEnd.foregroundColor = semanticAccent.cadenceAccentPrimary
+        dipEnd.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
         text += dipEnd
 
         return text
@@ -143,13 +143,14 @@ struct RhythmCardView: View {
                 if isPremium {
                     Text(confidenceSignal)
                         .font(CadenceTokens.Typography.microCopy)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.82))
                 }
             }
 
             if isPremium {
                 Text(primaryInsight)
-                    .font(CadenceTokens.Typography.body.weight(.semibold))
+                    .font(CadenceTokens.Typography.body.weight(.medium))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -172,15 +173,16 @@ struct RhythmCardView: View {
             if isPremium {
                 Text(rightNowLine)
                     .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.84))
 
                 Text(secondaryDetail)
                     .font(CadenceTokens.Typography.microCopy)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(behaviouralSignal)
                     .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Button {

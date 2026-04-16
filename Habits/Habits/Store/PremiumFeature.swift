@@ -9,6 +9,7 @@
 enum PremiumFeature: Equatable, Hashable, Identifiable {
     case unlimitedHabits
     case advancedInsights
+    case guidanceLayer
     case fullHeatmapHistory
     case dataExport
     case multipleReminders

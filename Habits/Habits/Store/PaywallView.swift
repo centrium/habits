@@ -70,7 +70,7 @@ struct PaywallView: View {
         switch feature {
         case .multipleReminders:
             return .multipleReminders
-        case .advancedInsights, .unlimitedHabits, .fullHeatmapHistory, .dataExport, nil:
+        case .advancedInsights, .guidanceLayer, .unlimitedHabits, .fullHeatmapHistory, .dataExport, nil:
             return .general
         }
     }
@@ -81,6 +81,8 @@ struct PaywallView: View {
         switch feature {
         case .advancedInsights:
             title = "Unlock Advanced Insights"
+        case .guidanceLayer:
+            title = "Unlock Premium Guidance"
         case .unlimitedHabits:
             title = "Unlock Unlimited Cadences"
         case .fullHeatmapHistory:
@@ -108,6 +110,8 @@ struct PaywallView: View {
         switch feature {
         case .advancedInsights:
             return "See your full pattern"
+        case .guidanceLayer:
+            return "Get real-time guidance"
         case .unlimitedHabits:
             return "Track Unlimited Cadences"
         case .fullHeatmapHistory:
@@ -140,6 +144,13 @@ struct PaywallView: View {
                 title: "Unlimited Cadences",
                 description: "Track as many cadences as you like.",
                 accentPhrase: "as many cadences"
+            ),
+            BenefitContent(
+                feature: .guidanceLayer,
+                icon: "waveform.path.ecg.text",
+                title: "Premium Guidance",
+                description: "Get calm, time-aware prompts that tell you what to do next.",
+                accentPhrase: "what to do next"
             ),
             BenefitContent(
                 feature: .advancedInsights,
@@ -204,6 +215,12 @@ struct PaywallView: View {
                 kind: .advancedInsights,
                 title: "Insights Preview",
                 rows: ["Identity Signal", "Habit Strength", "Risk Indicator"]
+            )
+        case .guidanceLayer:
+            return PreviewContent(
+                kind: .advancedInsights,
+                title: "Guidance Preview",
+                rows: ["Time-aware prompt", "Pattern-aware prompt", "Identity-aware prompt"]
             )
         case .unlimitedHabits:
             return PreviewContent(
@@ -668,6 +685,9 @@ private extension PaywallView {
 
         case .advancedInsights:
             return "Understand your rhythm with deeper insight signals."
+
+        case .guidanceLayer:
+            return "Get calm, real-time guidance that helps you decide what to do next."
 
         case .unlimitedHabits:
             return "Remove the 3-cadence limit and track as many cadences as you want."
