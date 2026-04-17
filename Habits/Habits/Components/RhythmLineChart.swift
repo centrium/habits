@@ -1,4 +1,5 @@
 import Charts
+import Foundation
 import SwiftUI
 
 struct RhythmLineChart: View {
@@ -11,25 +12,31 @@ struct RhythmLineChart: View {
     var showNowMarker: Bool = false
     var showPeakMarker: Bool = false
     var showTrailingIncompletenessFade: Bool = false
+    private let smoothingSigma: Double = 1.75
+    private let peakPlateauBlend: Double = 0.18
+
+    private var renderedData: [HourValue] {
+        smoothedData(from: data, sigma: smoothingSigma, preferredPeakHour: peakHour)
+    }
 
     private var selectedPoint: HourValue? {
         guard let selectedHour else { return nil }
-        return data.first(where: { $0.hour == selectedHour })
+        return renderedData.first(where: { $0.hour == selectedHour })
     }
 
     private var nowPoint: HourValue? {
         guard let nowHour else { return nil }
-        return data.first(where: { $0.hour == nowHour })
+        return renderedData.first(where: { $0.hour == nowHour })
     }
 
     private var peakPoint: HourValue? {
         guard let peakHour else { return nil }
-        return data.first(where: { $0.hour == peakHour })
+        return renderedData.first(where: { $0.hour == peakHour })
     }
 
     var body: some View {
         Chart {
-            ForEach(data) { point in
+            ForEach(renderedData) { point in
                 AreaMark(
                     x: .value("Hour", point.hour),
                     yStart: .value("Baseline", 0),
@@ -166,7 +173,7 @@ struct RhythmLineChart: View {
         .onAppear {
             #if DEBUG
             guard let peakHour else { return }
-            if data.contains(where: { $0.hour == peakHour }) == false {
+            if renderedData.contains(where: { $0.hour == peakHour }) == false {
                 print("[RhythmChart][WARNING] peakHour \(peakHour) not present in chart data")
             }
             #endif
@@ -184,5 +191,58 @@ struct RhythmLineChart: View {
         default:
             return "\(hour)"
         }
+    }
+
+    private func smoothedData(from source: [HourValue], sigma: Double, preferredPeakHour: Int?) -> [HourValue] {
+        guard source.isEmpty == false else { return source }
+
+        let input = (0..<24).map { hour in
+            source.first(where: { $0.hour == hour })?.value ?? 0
+        }
+
+        let sigmaValue = max(0.1, sigma)
+        let twoSigmaSquared = 2 * sigmaValue * sigmaValue
+        var smoothed = Array(repeating: 0.0, count: 24)
+
+        for hour in 0..<24 {
+            var weightedTotal = 0.0
+            var weightSum = 0.0
+
+            for index in 0..<24 {
+                let distance = wrappedHourDistance(hour, index)
+                let exponent = -(Double(distance * distance)) / twoSigmaSquared
+                let weight = Foundation.exp(exponent)
+                weightedTotal += input[index] * weight
+                weightSum += weight
+            }
+
+            smoothed[hour] = weightSum > 0 ? (weightedTotal / weightSum) : 0
+        }
+
+        let peakIndex: Int
+        if let preferredPeakHour {
+            peakIndex = ((preferredPeakHour % 24) + 24) % 24
+        } else {
+            peakIndex = smoothed.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
+        }
+
+        let previous = smoothed[(peakIndex + 23) % 24]
+        let next = smoothed[(peakIndex + 1) % 24]
+        let neighborAverage = (previous + next) / 2.0
+        smoothed[peakIndex] = (smoothed[peakIndex] * (1 - peakPlateauBlend)) + (neighborAverage * peakPlateauBlend)
+
+        let maxValue = smoothed.max() ?? 0
+        if maxValue > 0 {
+            smoothed = smoothed.map { $0 / maxValue }
+        }
+
+        return (0..<24).map { hour in
+            HourValue(hour: hour, value: smoothed[hour])
+        }
+    }
+
+    private func wrappedHourDistance(_ lhs: Int, _ rhs: Int) -> Int {
+        let delta = abs(lhs - rhs)
+        return min(delta, 24 - delta)
     }
 }
