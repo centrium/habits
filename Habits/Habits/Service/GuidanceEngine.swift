@@ -43,6 +43,28 @@ struct GuidanceOutput: Equatable {
     let supportingContext: String?
     let emphasisLabel: String?
     let type: GuidanceType
+    let payload: GuidancePayload
+}
+
+enum GuidanceNowState: String, Codable, Equatable {
+    case before = "BEFORE"
+    case during = "DURING"
+    case after = "AFTER"
+    case forming = "FORMING"
+}
+
+enum GuidanceConfidence: String, Codable, Equatable {
+    case low = "LOW"
+    case medium = "MEDIUM"
+    case high = "HIGH"
+}
+
+struct GuidancePayload: Codable, Equatable {
+    let state: GuidanceNowState
+    let strongestWindow: String
+    let confidence: GuidanceConfidence
+    let guidance: String
+    let explanation: String
 }
 
 enum GuidanceType: String, Equatable, Codable {
@@ -128,6 +150,7 @@ struct GuidanceAssignment: Codable, Equatable {
     let templateID: String
     let type: GuidanceType
     let dayStamp: TimeInterval
+    let stateKey: String?
 }
 
 struct GuidanceHistoryEntry: Codable, Equatable {
@@ -198,7 +221,7 @@ enum GuidanceEngine {
         "This keeps your progress intact",
         "Every check-in strengthens this",
         "You’re building something steady",
-        "This helps lock it in",
+        "This locks progress in place",
         "You’re reinforcing the habit",
         "This is how consistency forms",
         "Small steps keep it moving",
@@ -242,71 +265,63 @@ enum GuidanceEngine {
             snapshot: snapshot,
             calendar: calendar
         )
+        let confidence = confidenceBand(from: selectionContext.timingConfidence)
+        let nowState = nowState(
+            timePosition: selectionContext.timePosition,
+            confidence: confidence
+        )
 
         let chosenType: GuidanceType = {
-            if input.isCompletedToday {
-                return snapshot.activeDays >= 5 || snapshot.state == .strong ? .identity : .momentum
-            }
-            if shouldUseIdentityPush(snapshot: snapshot, streakState: input.streakState) {
-                return .identity
-            }
             if selectionContext.windowPassed {
                 return .recovery
             }
-            if calendar.component(.hour, from: input.now) >= selectionContext.cutoffHour {
+            if !input.isCompletedToday,
+               calendar.component(.hour, from: input.now) >= selectionContext.cutoffHour {
                 return .atRisk
             }
             return .momentum
         }()
 
-        let candidates = templates(
-            for: chosenType,
-            input: input,
-            context: selectionContext,
-            identityState: snapshot.state
-        )
+        let candidates = nowTemplates(for: nowState)
+        let stateKey = "\(chosenType.rawValue)|\(nowState.rawValue)|\(confidence.rawValue)"
         let template = selectTemplate(
             from: candidates,
             habitID: input.habit.id,
             state: chosenType,
+            stateKey: stateKey,
             now: input.now,
             calendar: calendar,
             store: rotationStore
         )
-        let title = guidanceTitle(
-            for: selectionContext.timePosition,
-            confidence: selectionContext.timingConfidence,
-            optimalBucket: selectionContext.optimalBucket
+        let strongestWindow = strongestWindowLabel(
+            expectedHour: selectionContext.expectedHour
         )
-        let action = guidanceAction(
-            for: selectionContext.timePosition,
-            confidence: selectionContext.timingConfidence,
-            optimalBucket: selectionContext.optimalBucket
-        )
-        let support = supportingContext(
-            for: chosenType,
-            input: input,
-            context: selectionContext,
-            calendar: calendar,
-            actionLine: action
-        )
+        let guidanceLine = "\(template.title). \(template.action)"
+        let explanationLine = "State \(nowState.rawValue), confidence \(confidence.rawValue), strongest window \(strongestWindow)"
         logTimingTrace(
             habitName: input.habit.name,
             expectedHour: selectionContext.expectedHour,
             confidence: selectionContext.timingConfidence,
-            title: title,
-            action: action,
-            supportingContext: support
+            title: template.title,
+            action: template.action,
+            supportingContext: nil
         )
 
         return validated(
             GuidanceOutput(
                 id: template.id,
-                title: title,
-                action: action,
-                supportingContext: support,
+                title: template.title,
+                action: template.action,
+                supportingContext: nil,
                 emphasisLabel: emphasisLabel(for: chosenType, context: selectionContext),
-                type: chosenType
+                type: chosenType,
+                payload: GuidancePayload(
+                    state: nowState,
+                    strongestWindow: strongestWindow,
+                    confidence: confidence,
+                    guidance: guidanceLine,
+                    explanation: explanationLine
+                )
             )
         )
     }
@@ -351,6 +366,7 @@ enum GuidanceEngine {
         from templates: [GuidanceTemplate],
         habitID: UUID,
         state: GuidanceType,
+        stateKey: String,
         now: Date,
         calendar: Calendar,
         store: GuidanceRotationStoring
@@ -358,9 +374,9 @@ enum GuidanceEngine {
         guard !templates.isEmpty else {
             return GuidanceTemplate(
                 id: "fallback-momentum-1",
-                title: "Finding your rhythm",
+                title: "Your pattern is still forming",
                 action: "A short session now keeps this on track",
-                openingToken: "youre"
+                openingToken: "your"
             )
         }
 
@@ -368,29 +384,26 @@ enum GuidanceEngine {
         var snapshot = store.snapshot()
         let dayStart = calendar.startOfDay(for: now).timeIntervalSince1970
 
-        if let assignment = snapshot.currentAssignmentByHabitID[habitKey],
-           assignment.type == state,
-           assignment.dayStamp == dayStart,
-           let existing = templates.first(where: { $0.id == assignment.templateID }) {
-            return existing
-        }
-
         let recentHistory = (snapshot.historyByHabitID[habitKey] ?? [])
             .filter { now.timeIntervalSince1970 - $0.usedAt < rotationLookback }
         let recentIDs = Set(recentHistory.map(\.templateID))
         let lastTwoOpenings = Array(recentHistory.suffix(2).map(\.openingToken))
+        let lastTemplateID = recentHistory.last?.templateID
 
         let available = templates.filter { !recentIDs.contains($0.id) }
         let pool = available.isEmpty ? templates : available
         let constrained = pool.filter { candidate in
-            !(lastTwoOpenings.count == 2 && lastTwoOpenings.allSatisfy { $0 == candidate.openingToken })
+            let avoidsSameOpening = !(lastTwoOpenings.count == 2 && lastTwoOpenings.allSatisfy { $0 == candidate.openingToken })
+            let avoidsImmediateRepeat = candidate.id != lastTemplateID
+            return avoidsSameOpening && avoidsImmediateRepeat
         }
         let selected = (constrained.isEmpty ? pool : constrained)[0]
 
         snapshot.currentAssignmentByHabitID[habitKey] = GuidanceAssignment(
             templateID: selected.id,
             type: state,
-            dayStamp: dayStart
+            dayStamp: dayStart,
+            stateKey: stateKey
         )
 
         var updatedHistory = snapshot.historyByHabitID[habitKey] ?? []
@@ -405,6 +418,69 @@ enum GuidanceEngine {
         store.save(snapshot)
 
         return selected
+    }
+
+    private static func nowState(
+        timePosition: TimePosition,
+        confidence: GuidanceConfidence
+    ) -> GuidanceNowState {
+        if confidence == .low {
+            return .forming
+        }
+        switch timePosition {
+        case .beforeOptimal:
+            return .before
+        case .inOptimal:
+            return .during
+        case .afterOptimal, .unknown:
+            return .after
+        }
+    }
+
+    private static func confidenceBand(from confidence: Double) -> GuidanceConfidence {
+        switch confidence {
+        case ..<0.35:
+            return .low
+        case ..<0.75:
+            return .medium
+        default:
+            return .high
+        }
+    }
+
+    private static func strongestWindowLabel(expectedHour: Int?) -> String {
+        guard let expectedHour else { return "--:--" }
+        let normalizedHour = ((expectedHour % 24) + 24) % 24
+        return String(format: "%02d:00", normalizedHour)
+    }
+
+    private static func nowTemplates(for state: GuidanceNowState) -> [GuidanceTemplate] {
+        switch state {
+        case .before:
+            return [
+                template("before-1", "Your strongest window is approaching", "A short session now keeps this on track"),
+                template("before-2", "You’re heading into your strongest window", "Starting now builds momentum for later"),
+                template("before-3", "Your peak time is coming up", "A quick check-in now moves this forward")
+            ]
+        case .during:
+            return [
+                template("during-1", "You’re in your strongest window", "This is the best moment to log"),
+                template("during-2", "This is your peak time", "Lean into this window"),
+                template("during-3", "You’re in your peak window", "A quick check-in now moves this forward")
+            ]
+        case .after:
+            return [
+                template("after-1", "Your strongest window has passed", "A quick check-in still counts"),
+                template("after-2", "You’re outside your usual window", "Showing up now keeps the rhythm alive"),
+                template("after-3", "You’re past your peak window", "A short session now keeps momentum building")
+            ]
+        case .forming:
+            return [
+                template("forming-1", "Your pattern is still forming", "Consistent check-ins will sharpen this"),
+                template("forming-2", "Your strongest window is still emerging", "Keep showing up to define your rhythm"),
+                template("forming-3", "Your timing pattern is still emerging", "A quick check-in now moves this forward")
+            ]
+        }
     }
 
     private static func templates(
@@ -584,19 +660,27 @@ enum GuidanceEngine {
     }
 
     private static func validated(_ output: GuidanceOutput) -> GuidanceOutput {
-        let lowercased = "\(output.title) \(output.action) \(output.supportingContext ?? "")".lowercased()
+        let lowercased = "\(output.title) \(output.action)".lowercased()
         guard forbiddenFragments.allSatisfy({ !lowercased.contains($0) }) &&
                 identityFragments.allSatisfy({ !lowercased.contains($0) }) else {
+            let fallbackPayload = GuidancePayload(
+                state: .forming,
+                strongestWindow: "--:--",
+                confidence: .low,
+                guidance: "Your pattern is still forming. A short session now keeps this on track",
+                explanation: "State FORMING, confidence LOW, strongest window --:--"
+            )
             return GuidanceOutput(
                 id: "fallback-safe",
-                title: "Finding your rhythm",
+                title: "Your pattern is still forming",
                 action: "A short session now keeps this on track",
-                supportingContext: "Works well now",
+                supportingContext: nil,
                 emphasisLabel: nil,
-                type: .momentum
+                type: .momentum,
+                payload: fallbackPayload
             )
         }
-        return enforceNonDuplication(in: output)
+        return output
     }
 
     private struct GuidanceLine {
@@ -632,7 +716,8 @@ enum GuidanceEngine {
                 action: output.action,
                 supportingContext: guidanceLines.map(\.text).joined(separator: " • "),
                 emphasisLabel: output.emphasisLabel,
-                type: output.type
+                type: output.type,
+                payload: output.payload
             )
         }
 
@@ -660,7 +745,8 @@ enum GuidanceEngine {
             action: output.action,
             supportingContext: guidanceLines.map(\.text).joined(separator: " • "),
             emphasisLabel: output.emphasisLabel,
-            type: output.type
+            type: output.type,
+            payload: output.payload
         )
     }
 
@@ -684,15 +770,13 @@ enum GuidanceEngine {
     private static func containsBehaviourTiming(_ value: String) -> Bool {
         let normalized = value.lowercased()
         let keywords = [
-            "usually",
-            "tend to",
             "around midday",
             "early morning",
             "morning",
             "afternoon",
             "evening",
             "night",
-            "later at night",
+            "at night",
             "in the day"
         ]
         return keywords.contains(where: { normalized.contains($0) })
@@ -876,7 +960,7 @@ enum GuidanceEngine {
     }
 
     private static func behaviourLine(for bucket: TimeBucket) -> String {
-        "Usually \(bucketPhrase(for: bucket))"
+        "Activity clusters \(bucketPhrase(for: bucket))"
     }
 
     private static func consistencyStage(activeDays: Int, windowDays: Int) -> ConsistencyStage {
@@ -964,7 +1048,7 @@ enum GuidanceEngine {
         case .evening:
             return "in the evening"
         case .night:
-            return "later at night"
+            return "at night"
         }
     }
 
@@ -975,20 +1059,20 @@ enum GuidanceEngine {
     ) -> String {
         if confidence < 0.5 {
             if let optimalBucket {
-                return "You usually do this \(bucketPhrase(for: optimalBucket))"
+                return "Best window is \(bucketPhrase(for: optimalBucket))"
             }
-            return "Your usual window is still forming"
+            return "Your best window is still forming"
         }
 
         switch position {
         case .inOptimal:
             return "You’re in your strongest window"
         case .beforeOptimal:
-            return "Your strongest window is coming up"
+            return "Your strongest window is approaching"
         case .afterOptimal:
-            return "Your strongest window was earlier"
+            return "Your strongest window has passed"
         case .unknown:
-            return "Finding your rhythm"
+            return "Your best window is still forming"
         }
     }
 
@@ -999,18 +1083,20 @@ enum GuidanceEngine {
     ) -> String {
         if confidence < 0.5 {
             if let optimalBucket {
-                return "Usually \(bucketPhrase(for: optimalBucket)) works well"
+                return "A short session now keeps this moving"
             }
-            return "A quick check-in keeps this consistent"
+            return "A short session now keeps this on track"
         }
 
         switch position {
         case .inOptimal:
-            return "Doing this now helps lock it in"
-        case .beforeOptimal, .afterOptimal:
             return "A short session now keeps this on track"
+        case .beforeOptimal:
+            return "A short session now sets you up before peak time"
+        case .afterOptimal:
+            return "A short version now keeps momentum intact"
         case .unknown:
-            return "A quick check-in keeps this consistent"
+            return "A short session now keeps this on track"
         }
     }
 

@@ -17,10 +17,6 @@ struct RhythmCardView: View {
         generateRhythmInsight(from: resolvedInsight)
     }
 
-    private var strongestTimeframe: BestTimeTimeframe {
-        bestTimeRecommendation(from: resolvedInsight, currentHour: currentHour).timeframe
-    }
-
     private var resolvedInsight: TimeInsightResult {
         if let existing = rhythm?.timeInsight {
             return existing
@@ -74,102 +70,52 @@ struct RhythmCardView: View {
         calendar.component(.hour, from: .now)
     }
 
-    private var rightNowLine: String {
-        if resolvedInsight.confidence < 0.35 {
-            return "Right now: your pattern is still stabilising."
-        }
-
-        let peakHour = resolvedInsight.peakHour
-        if wrappedHourDistance(currentHour, peakHour) <= 2 {
-            return "Right now: you're in your strongest window."
-        }
-
-        if isBeforePeak(currentHour, peakHour: peakHour) {
-            return "Right now: your strongest window is coming up."
-        }
-
-        return "Right now: you usually do this later in the day."
-    }
-
     private var primaryInsight: AttributedString {
-        let peakHour = resolvedInsight.peakHour
+        let label: String
         if resolvedInsight.confidence < 0.35 {
-            var soft = AttributedString("Usually \(softWindowPhrase(for: peakHour)).")
-            soft.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
-            return soft
+            label = "Timing signal is still forming."
+        } else if resolvedInsight.confidence < 0.75 {
+            label = "Timing signal is becoming consistent."
+        } else {
+            label = "Timing signal is reliable."
         }
-
-        if resolvedInsight.confidence < 0.75 {
-            var leading = AttributedString("Often around ")
-            leading.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
-
-            var value = AttributedString(formattedTime(peakHour))
-            value.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.82 : 0.74)
-
-            var trailing = AttributedString(".")
-            trailing.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
-            return leading + value + trailing
-        }
-
-        let prefix = strongestTimeframe == .today ? "Strongest window: " : "Strongest window tomorrow: "
-        var leading = AttributedString(prefix)
-        leading.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
-
-        var value = AttributedString(formattedTime(peakHour))
-        value.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.82 : 0.74)
-
-        var trailing = AttributedString(".")
-        trailing.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
-
-        return leading + value + trailing
+        var text = AttributedString(label)
+        text.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
+        return text
     }
 
     private var secondaryDetail: AttributedString {
-        if resolvedInsight.confidence < 0.35 {
-            var text = AttributedString("Recent logs usually land \(softWindowPhrase(for: resolvedInsight.peakHour)).")
-            text.foregroundColor = CadenceTokens.Color.Text.secondary
-            return text
-        }
-
-        var text = AttributedString("Peak: ")
+        var text = AttributedString("Strongest window: ")
         text.foregroundColor = CadenceTokens.Color.Text.secondary
 
-        var peak = AttributedString(formattedTime(insight.peakHour))
+        var peak = AttributedString(formattedTime(resolvedInsight.peakHour))
         peak.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
         text += peak
-
-        var separator = AttributedString(" · Dip: ")
-        separator.foregroundColor = CadenceTokens.Color.Text.secondary
-        text += separator
-
-        var dipStart = AttributedString(formattedTime(insight.lowRange.0))
-        dipStart.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
-        text += dipStart
-
-        var dash = AttributedString("–")
-        dash.foregroundColor = semanticAccent.cadenceAccentSecondary.opacity(colorScheme == .dark ? 0.76 : 0.68)
-        text += dash
-
-        var dipEnd = AttributedString(formattedTime(insight.lowRange.1))
-        dipEnd.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
-        text += dipEnd
 
         return text
     }
 
     private var behaviouralSignal: String {
+        let options = [
+            "Activity clusters around this time",
+            "Recent logs concentrate here"
+        ]
+        let seed = "\(habit.id.uuidString)|\(resolvedInsight.peakHour)|\(calendar.component(.day, from: .now))"
+        let hash = seed.unicodeScalars.reduce(5381) { partial, scalar in
+            ((partial << 5) &+ partial) &+ Int(scalar.value)
+        }
+        let index = abs(hash) % options.count
+        return options[index]
+    }
+
+    private var confidenceInterpretation: String {
         if resolvedInsight.confidence < 0.35 {
-            return "Add more check-ins to sharpen your strongest window."
+            return "Pattern confidence is still forming"
         }
-
-        let consistencyStart = max(0, insight.peakHour - 1)
-        let consistencyEnd = min(23, insight.peakHour + 1)
-
-        if insight.lowRange.0 >= 22 || insight.lowRange.1 <= 2 {
-            return "Momentum drops late at night."
+        if resolvedInsight.confidence < 0.75 {
+            return "This pattern is becoming consistent"
         }
-
-        return "Your consistency window is \(formattedTime(consistencyStart))–\(formattedTime(consistencyEnd))."
+        return "This is a reliable pattern"
     }
 
     private var confidenceSignal: String {
@@ -226,10 +172,6 @@ struct RhythmCardView: View {
             }
 
             if isPremium {
-                Text(rightNowLine)
-                    .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.84))
-
                 Text(secondaryDetail)
                     .font(CadenceTokens.Typography.microCopy)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
@@ -238,6 +180,11 @@ struct RhythmCardView: View {
                 Text(behaviouralSignal)
                     .font(CadenceTokens.Typography.microCopy)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.82))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(confidenceInterpretation)
+                    .font(CadenceTokens.Typography.microCopy)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Button {
@@ -272,36 +219,8 @@ struct RhythmCardView: View {
         }
     }
 
-    private func wrappedHourDistance(_ lhs: Int, _ rhs: Int) -> Int {
-        let raw = abs(lhs - rhs)
-        return min(raw, 24 - raw)
-    }
-
-    private func isBeforePeak(_ currentHour: Int, peakHour: Int) -> Bool {
-        let forwardDistance = (peakHour - currentHour + 24) % 24
-        return forwardDistance > 0 && forwardDistance <= 12
-    }
-
     private func formattedTime(_ hour: Int) -> String {
         humanTime(for: hour)
-    }
-
-    private func softWindowPhrase(for hour: Int) -> String {
-        let normalized = ((hour % 24) + 24) % 24
-        switch normalized {
-        case 0..<5:
-            return "later at night"
-        case 5..<11:
-            return "earlier in the morning"
-        case 11..<15:
-            return "around midday"
-        case 15..<18:
-            return "later in the afternoon"
-        case 18..<22:
-            return "later in the evening"
-        default:
-            return "at night"
-        }
     }
 
     private func logTimingTrace() {

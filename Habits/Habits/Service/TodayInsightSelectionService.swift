@@ -224,17 +224,17 @@ final class TodayInsightSelectionService {
 
         let output: String
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
-            output = "Momentum tends to drop for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
+            output = "Momentum drops for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
         } else if rhythm.confidence < 0.35 {
-            output = "Usually \(softWindowPhrase(for: rhythm.peakHour)) for \(candidate.habit.name)"
+            output = "Pattern still forming for \(candidate.habit.name), strongest window around \(humanTime(for: rhythm.peakHour))"
         } else if rhythm.confidence < 0.75 {
             output = "Often around \(humanTime(for: rhythm.peakHour)) for \(candidate.habit.name)"
         } else if wrappedHourDistance(currentHour, rhythm.peakHour) <= 2 {
             output = "You're in your strongest window for \(candidate.habit.name)"
         } else if isBeforePeak(currentHour, peakHour: rhythm.peakHour) {
-            output = "Your strongest window is coming up for \(candidate.habit.name)"
+            output = "Your strongest window is approaching for \(candidate.habit.name)"
         } else {
-            output = "You usually do this later in the day for \(candidate.habit.name)"
+            output = "Your strongest window has passed for \(candidate.habit.name)"
         }
 
         logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
@@ -272,7 +272,7 @@ final class TodayInsightSelectionService {
         let normalized = ((hour % 24) + 24) % 24
         switch normalized {
         case 0..<5:
-            return "later at night"
+            return "at night"
         case 5..<11:
             return "earlier in the morning"
         case 11..<15:

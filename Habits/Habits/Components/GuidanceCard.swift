@@ -31,30 +31,6 @@ struct GuidanceCard: View {
                         .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    if let supportingContext = output.supportingContext {
-                        let lines = contextLines(from: supportingContext)
-                        let primaryIndex = primaryContextIndex(in: lines)
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                                let isPrimary = index == primaryIndex
-                                HStack(alignment: .top, spacing: 6) {
-                                    Text("•")
-                                        .font(CadenceTokens.Typography.body)
-                                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
-                                        .opacity(isPrimary ? 0.72 : 0.42)
-
-                                    Text(line)
-                                        .font(.system(size: 11, weight: isPrimary ? .medium : .regular))
-                                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
-                                        .opacity(isPrimary ? 1.0 : 0.7)
-                                        .lineLimit(nil)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                        .padding(.top, 1)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -95,7 +71,7 @@ struct GuidanceCard: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([output.title, output.action, output.supportingContext].compactMap { $0 }.joined(separator: ". "))
+        .accessibilityLabel([output.title, output.action].joined(separator: ". "))
     }
 
     private var accentColor: Color {
@@ -115,50 +91,5 @@ struct GuidanceCard: View {
             return accent.primary.opacity(colorScheme == .dark ? 0.1 : 0.07)
         }
         return Color.black.opacity(0.07)
-    }
-
-    private func contextLines(from text: String) -> [String] {
-        let lines = text
-            .components(separatedBy: " • ")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return lines.isEmpty ? [text] : Array(lines.prefix(3))
-    }
-
-    private func primaryContextIndex(in lines: [String]) -> Int {
-        guard !lines.isEmpty else { return 0 }
-        if lines.count <= 2 { return 0 }
-
-        let patternKeywords = [
-            "around",
-            "morning",
-            "midday",
-            "afternoon",
-            "evening",
-            "night",
-            "later in the day",
-            "varies throughout the day"
-        ]
-        if let patternIndex = lines.firstIndex(where: { line in
-            let normalized = line.lowercased()
-            return patternKeywords.contains(where: { normalized.contains($0) })
-        }) {
-            return patternIndex
-        }
-
-        let consistencyKeywords = [
-            "consistent",
-            "consistency",
-            "this week",
-            "of last"
-        ]
-        if let consistencyIndex = lines.firstIndex(where: { line in
-            let normalized = line.lowercased()
-            return consistencyKeywords.contains(where: { normalized.contains($0) })
-        }) {
-            return consistencyIndex
-        }
-
-        return 0
     }
 }

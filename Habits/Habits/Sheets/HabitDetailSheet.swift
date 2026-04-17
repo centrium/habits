@@ -1158,18 +1158,7 @@ private struct StreakCardConfiguration: Equatable {
     }
 
     var supportingPrimaryText: String {
-        if streakState.currentStreak <= 0 {
-            return "Consistency building"
-        }
-
-        switch state {
-        case .secured:
-            return "Strong rhythm"
-        case .atRisk:
-            return "On a \(streakState.currentStreak) day run"
-        case .offTrack:
-            return "Building momentum"
-        }
+        streakTierMessage(for: streakState.currentStreak)
     }
 
     var supportingSecondaryText: String? {
@@ -1188,9 +1177,24 @@ private struct StreakCardConfiguration: Equatable {
         case .secured:
             return nil
         case .atRisk:
-            return "Building momentum"
+            return "Protect this streak today"
         case .offTrack:
             return nil
+        }
+    }
+
+    private func streakTierMessage(for streak: Int) -> String {
+        switch streak {
+        case ..<1:
+            return "Not started yet"
+        case 1:
+            return "Getting started"
+        case 2...3:
+            return "Building rhythm"
+        case 4...6:
+            return "Finding consistency"
+        default:
+            return "Strong rhythm"
         }
     }
 }
