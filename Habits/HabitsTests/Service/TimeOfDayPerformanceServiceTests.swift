@@ -3,43 +3,186 @@ import XCTest
 
 final class TimeOfDayPerformanceServiceTests: XCTestCase {
     @MainActor
-    func testNormalisedHourlyValuesIncludesAllHoursWithFloor() {
-        let values = TimeOfDayPerformanceService.shared.normalisedHourlyValues(
-            counts: [6: 3, 12: 6, 18: 2]
+    func testTimeInsightInputAuditByHabitTypeUsesRawTimestampsOnly() async {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 17, hour: 23, calendar: calendar)
+
+        let frequency = TestHabitFactory.frequency(
+            name: "Read",
+            hasGoal: true,
+            entries: [
+                .init(timestamp: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 6, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1)
+            ],
+            calendar: calendar
+        )
+        frequency.logs.append(
+            TestHabitFactory.legacyLog(
+                on: TestDateFactory.date(2026, 4, 14, hour: 0, minute: 0, calendar: calendar),
+                count: 3,
+                calendar: calendar
+            )
         )
 
-        XCTAssertEqual(values.count, 24)
-        XCTAssertEqual(values.first?.hour, 0)
-        XCTAssertEqual(values.last?.hour, 23)
-        XCTAssertTrue(values.allSatisfy { $0.value >= 0.0 && $0.value <= 1.0 })
+        let open = TestHabitFactory.openEnded(
+            name: "Start Cycling",
+            entries: [
+                .init(timestamp: TestDateFactory.date(2026, 4, 12, hour: 21, minute: 6, calendar: calendar), value: 1),
+                .init(timestamp: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 42, calendar: calendar), value: 1)
+            ],
+            calendar: calendar
+        )
+        open.logs.append(
+            TestHabitFactory.legacyLog(
+                on: TestDateFactory.date(2026, 4, 10, hour: 0, minute: 0, calendar: calendar),
+                count: 2,
+                calendar: calendar
+            )
+        )
+
+        let cumulative = TestHabitFactory.cumulative(
+            name: "Hydration",
+            entries: [
+                .init(timestamp: TestDateFactory.date(2026, 4, 12, hour: 20, minute: 45, calendar: calendar), value: 250),
+                .init(timestamp: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 15, calendar: calendar), value: 300)
+            ],
+            calendar: calendar
+        )
+        cumulative.logs.append(
+            TestHabitFactory.legacyLog(
+                on: TestDateFactory.date(2026, 4, 9, hour: 0, minute: 0, calendar: calendar),
+                count: 1,
+                calendar: calendar
+            )
+        )
+
+        let frequencyValues = await TimeOfDayPerformanceService.shared.hourlyValues(
+            for: frequency,
+            globalLogs: frequency.logs,
+            days: 21,
+            now: now,
+            calendar: calendar
+        )
+        let openValues = await TimeOfDayPerformanceService.shared.hourlyValues(
+            for: open,
+            globalLogs: open.logs,
+            days: 21,
+            now: now,
+            calendar: calendar
+        )
+        let cumulativeValues = await TimeOfDayPerformanceService.shared.hourlyValues(
+            for: cumulative,
+            globalLogs: cumulative.logs,
+            days: 21,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(frequencyValues.count, 24)
+        XCTAssertEqual(openValues.count, 24)
+        XCTAssertEqual(cumulativeValues.count, 24)
+
+        let frequencyRawTimestampCount = frequency.logs.filter { $0.kind == .entry && $0.timestamp != nil }.count
+        let openRawTimestampCount = open.logs.filter { $0.kind == .entry && $0.timestamp != nil }.count
+        let cumulativeRawTimestampCount = cumulative.logs.filter { $0.kind == .entry && $0.timestamp != nil }.count
+
+        let frequencyRhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: frequency, isPremium: true))
+        let openRhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: open, isPremium: true))
+        let cumulativeRhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: cumulative, isPremium: true))
+
+        XCTAssertEqual(frequencyRhythm.uniqueEventCount, frequencyRawTimestampCount)
+        XCTAssertEqual(openRhythm.uniqueEventCount, openRawTimestampCount)
+        XCTAssertEqual(cumulativeRhythm.uniqueEventCount, cumulativeRawTimestampCount)
     }
 
-    func testPeakHourChoosesHighestValue() {
-        let data = [
-            HourValue(hour: 8, value: 0.35),
-            HourValue(hour: 12, value: 0.9),
-            HourValue(hour: 17, value: 0.5)
+    func testCurrentDatasetOpenAndFrequencyPeakAt21() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 17, hour: 23, calendar: calendar)
+
+        let startCyclingLogs: [HabitLog] = [
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 10, hour: 12, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 10, hour: 12, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 12, hour: 21, minute: 6, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 12, hour: 21, minute: 7, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 12, hour: 22, minute: 3, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 19, minute: 14, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 8, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 8, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 20, minute: 59, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 41, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 42, calendar: calendar), value: 1, calendar: calendar)
         ]
 
-        XCTAssertEqual(peakHour(from: data), 12)
+        let readLogs: [HabitLog] = [
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 6, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 6, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 6, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 6, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 22, minute: 29, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 0, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 0, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 0, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 0, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 30, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 31, calendar: calendar), value: 1, calendar: calendar)
+        ]
+
+        let startCyclingInsight = TimeInsightEngine.compute(
+            logs: startCyclingLogs,
+            globalLogs: startCyclingLogs + readLogs,
+            now: now,
+            calendar: calendar
+        )
+        let readInsight = TimeInsightEngine.compute(
+            logs: readLogs,
+            globalLogs: startCyclingLogs + readLogs,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(startCyclingInsight.peakHour, 21)
+        XCTAssertEqual(readInsight.peakHour, 21)
     }
 
-    func testGenerateRhythmInsightIncludesPeakAndDipRange() {
-        let data = [
-            HourValue(hour: 8, value: 0.2),
-            HourValue(hour: 9, value: 0.25),
-            HourValue(hour: 12, value: 0.92),
-            HourValue(hour: 15, value: 0.12),
-            HourValue(hour: 16, value: 0.1),
-            HourValue(hour: 17, value: 0.14)
+    @MainActor
+    func testTimeInsightEngineProduces24HourlyScores() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 17, hour: 23, calendar: calendar)
+        let logs: [HabitLog] = [
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 16, hour: 6, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 16, hour: 12, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 16, hour: 18, minute: 0, calendar: calendar), value: 1, calendar: calendar)
         ]
 
-        let insight = generateRhythmInsight(data: data)
+        let result = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            now: now,
+            calendar: calendar
+        )
 
-        XCTAssertEqual(insight.peakHour, 12)
-        XCTAssertEqual(insight.lowRange.0, 15)
-        XCTAssertEqual(insight.lowRange.1, 16)
-        XCTAssertTrue(insight.summary.contains("strongest"))
+        XCTAssertEqual(result.hourlyScores.count, 24)
+        XCTAssertTrue(result.hourlyScores.allSatisfy { $0 >= 0.0 && $0 <= 1.0 })
+    }
+
+    func testGenerateRhythmInsightUsesProvidedPeak() {
+        let insight = TimeInsightResult(
+            hourlyScores: makeScores(peakHour: 12, peakValue: 1.0, baseline: 0.1),
+            peakHour: 12,
+            confidence: 0.8,
+            distributionShape: .singlePeak
+        )
+
+        let rhythmInsight = generateRhythmInsight(from: insight)
+
+        XCTAssertEqual(rhythmInsight.peakHour, 12)
+        XCTAssertTrue(rhythmInsight.summary.contains("strongest"))
     }
 
     func testHumanTimeFormatting() {
@@ -49,43 +192,39 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
     }
 
     func testBestTimeRecommendationUsesTodayWhenFutureSlotIsStrong() {
-        let data = [
-            HourValue(hour: 9, value: 0.4),
-            HourValue(hour: 11, value: 1.0),
-            HourValue(hour: 18, value: 0.8)
-        ]
+        var scores = Array(repeating: 0.1, count: 24)
+        scores[11] = 1.0
+        scores[18] = 0.8
+        let insight = TimeInsightResult(
+            hourlyScores: scores,
+            peakHour: 11,
+            confidence: 0.8,
+            distributionShape: .singlePeak
+        )
 
-        let recommendation = bestTimeRecommendation(from: data, currentHour: 10)
+        let recommendation = bestTimeRecommendation(from: insight, currentHour: 10)
 
         XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .today))
     }
 
-    func testBestTimeRecommendationFallsBackToTomorrowWhenAllFutureHoursPassed() {
-        let data = [
-            HourValue(hour: 8, value: 0.7),
-            HourValue(hour: 11, value: 1.0),
-            HourValue(hour: 14, value: 0.6)
-        ]
+    func testBestTimeRecommendationFallsBackToTomorrowWhenFutureHoursPassed() {
+        var scores = Array(repeating: 0.1, count: 24)
+        scores[11] = 1.0
+        scores[14] = 0.6
+        let insight = TimeInsightResult(
+            hourlyScores: scores,
+            peakHour: 11,
+            confidence: 0.8,
+            distributionShape: .singlePeak
+        )
 
-        let recommendation = bestTimeRecommendation(from: data, currentHour: 20)
-
-        XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .tomorrow))
-    }
-
-    func testBestTimeRecommendationFallsBackToTomorrowWhenFutureSignalIsWeak() {
-        let data = [
-            HourValue(hour: 11, value: 1.0),
-            HourValue(hour: 17, value: 0.65),
-            HourValue(hour: 19, value: 0.6)
-        ]
-
-        let recommendation = bestTimeRecommendation(from: data, currentHour: 15)
+        let recommendation = bestTimeRecommendation(from: insight, currentHour: 20)
 
         XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .tomorrow))
     }
 
     @MainActor
-    func testHourlyValuesDeduplicatesEventsWithinSameMinute() async {
+    func testHourlyValuesDeduplicatesEventsWithinSameMinuteAndUsesActiveDayConfidence() async {
         let calendar = TestDateFactory.utcCalendar
         let now = TestDateFactory.date(2026, 4, 17, hour: 22, calendar: calendar)
         let habit = TestHabitFactory.frequency(
@@ -112,9 +251,10 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
             calendar: calendar
         )
 
-        let rhythm = TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: true)
-        XCTAssertEqual(rhythm?.uniqueEventCount, 2)
-        XCTAssertEqual(rhythm?.confidence, 0.1)
+        let rhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: true))
+        XCTAssertEqual(rhythm.uniqueEventCount, 2)
+        XCTAssertEqual(rhythm.uniqueActiveDays, 1)
+        XCTAssertEqual(rhythm.confidence, 1.0 / 14.0, accuracy: 0.0001)
     }
 
     @MainActor
@@ -142,7 +282,7 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
                     to: TestDateFactory.date(2026, 3, 24, hour: 21, minute: 0, calendar: calendar),
                     calendar: calendar
                 )
-                .init(
+                return .init(
                     timestamp: calendar.date(
                         bySettingHour: 21,
                         minute: dayOffset % 60,
@@ -163,13 +303,14 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
             calendar: calendar
         )
 
-        let rhythm = TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: true)
-        XCTAssertEqual(rhythm?.peakHour, 21)
-        XCTAssertEqual(rhythm?.uniqueEventCount, 4)
-        XCTAssertEqual(rhythm?.confidence, 0.2)
+        let rhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: true))
+        XCTAssertEqual(rhythm.peakHour, 21)
+        XCTAssertEqual(rhythm.uniqueEventCount, 4)
+        XCTAssertEqual(rhythm.uniqueActiveDays, 4)
+        XCTAssertEqual(rhythm.confidence, 4.0 / 14.0, accuracy: 0.0001)
     }
 
-    func testPeakTimingSummaryForProvidedReadLogsPrefersLateEvening() {
+    func testPeakTimingSummaryPrefersLateEveningAndUsesActiveDayConfidence() {
         let calendar = TestDateFactory.utcCalendar
         let logs: [HabitLog] = [
             TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 6, calendar: calendar), value: 1, calendar: calendar),
@@ -190,6 +331,58 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
 
         XCTAssertEqual(summary?.peakHour, 21)
         XCTAssertEqual(summary?.uniqueEventCount, 5)
-        XCTAssertEqual(summary?.confidence, 0.25)
+        XCTAssertEqual(summary?.confidence, 3.0 / 14.0, accuracy: 0.0001)
+    }
+
+    func testTimeInsightEngineSuppressesSingleDayNoonSpike() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 17, hour: 23, calendar: calendar)
+        let logs: [HabitLog] = [
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 12, hour: 21, minute: 5, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 21, minute: 15, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 21, minute: 25, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 15, hour: 21, minute: 35, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 16, hour: 21, minute: 45, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 16, hour: 12, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 16, hour: 12, minute: 0, calendar: calendar), value: 1, calendar: calendar),
+        ]
+
+        let computation = TimeInsightEngine.computeDetails(
+            logs: logs,
+            globalLogs: logs,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(computation.result.peakHour, 21)
+        XCTAssertLessThan(computation.result.confidence, 0.5)
+        XCTAssertGreaterThan(computation.result.hourlyScores[21], computation.result.hourlyScores[12])
+    }
+
+    func testTimeInsightEngineSmoothingKeepsPeakStable() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 17, hour: 23, calendar: calendar)
+        let logs: [HabitLog] = [
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 10, hour: 21, minute: 5, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 11, hour: 21, minute: 5, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 12, hour: 21, minute: 5, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 13, hour: 20, minute: 5, calendar: calendar), value: 1, calendar: calendar),
+            TestHabitFactory.entryLog(on: TestDateFactory.date(2026, 4, 14, hour: 22, minute: 5, calendar: calendar), value: 1, calendar: calendar)
+        ]
+
+        let result = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result.peakHour, 21)
+    }
+
+    private func makeScores(peakHour: Int, peakValue: Double, baseline: Double) -> [Double] {
+        var scores = Array(repeating: baseline, count: 24)
+        scores[((peakHour % 24) + 24) % 24] = peakValue
+        return scores
     }
 }

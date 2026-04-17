@@ -341,6 +341,7 @@ extension HabitInsightsEngine {
         let foundation = habitInsightSnapshot(
             for: habit,
             anchorDate: anchorDate,
+            globalLogs: [],
             calendar: calendar,
             weekStartPreference: weekStartPreference,
             now: now
@@ -374,6 +375,7 @@ extension HabitInsightsEngine {
     static func habitInsightSnapshot(
         for habit: Habit,
         anchorDate: Date,
+        globalLogs: [HabitLog] = [],
         calendar: Calendar,
         weekStartPreference: WeekStartPreference,
         now: Date
@@ -458,9 +460,40 @@ extension HabitInsightsEngine {
             )
         }()
 
+        let rawHabitLogs = habit.logs.filter { $0.kind == .entry && $0.timestamp != nil }
+        let rawGlobalLogs = globalLogs.filter { $0.kind == .entry && $0.timestamp != nil }
+        let resolvedGlobalLogs = rawGlobalLogs.isEmpty ? rawHabitLogs : rawGlobalLogs
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+            print("[TimeInsight ROUTING]")
+            print("habitType: \(habitTypeLabel(for: habit))")
+            print("inputCount: \(rawHabitLogs.count)")
+            print("engineUsed: true")
+        }
+        #endif
+        let timingInsight = TimeInsightEngine.compute(
+            logs: rawHabitLogs,
+            globalLogs: resolvedGlobalLogs,
+            debugLabel: habit.name,
+            now: now,
+            calendar: calendar
+        )
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+            let consumerHour = timingInsight.peakHour
+            let match = consumerHour == timingInsight.peakHour
+            print("[TimeInsight CONSISTENCY CHECK]")
+            print("surface: Detail")
+            print("enginePeak: \(timingInsight.peakHour)")
+            print("consumerHour: \(consumerHour)")
+            print("match: \(match)")
+        }
+        #endif
         let patternSignals = PatternCalculator.calculate(
             logs: logs,
-            calendar: calendar
+            calendar: calendar,
+            now: now,
+            timeInsight: timingInsight
         )
 
         return HabitInsightSnapshot(
@@ -474,6 +507,14 @@ extension HabitInsightsEngine {
             currentPeriodStart: currentPeriodStart,
             currentPeriodEnd: currentPeriodEnd
         )
+    }
+}
+
+private extension HabitInsightsEngine {
+    static func habitTypeLabel(for habit: Habit) -> String {
+        if habit.goalType == .cumulative { return "cumulative" }
+        if habit.hasGoal { return "frequency" }
+        return "open"
     }
 }
 

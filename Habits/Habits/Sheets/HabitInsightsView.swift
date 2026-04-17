@@ -1,9 +1,11 @@
 import SwiftUI
+import SwiftData
 
 struct HabitInsightsView: View {
     @Environment(\.colorScheme) private var colorScheme
     let habit: Habit
     let logAnchorDate: Date?
+    @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
 
     init(habit: Habit, logAnchorDate: Date? = nil) {
         self.habit = habit
@@ -21,6 +23,7 @@ struct HabitInsightsView: View {
         HabitInsightsEngine.insights(
             for: habit,
             logAnchorDate: logAnchorDate,
+            globalLogs: allHabits.flatMap(\.logs),
             calendar: .current,
             weekStartPreference: userSettings.weekStartPreference,
             greigModeEnabled: userSettings.greigModeEnabled,
@@ -977,27 +980,23 @@ private struct WeeklyRhythmCardView: View {
     private let chartHeight: CGFloat = 116
     private let barWidth: CGFloat = 24
 
-    private var rawMaxEntries: Int {
-        block.days.map(\.entries).max() ?? 0
-    }
-
-    private var maxEntries: Int {
-        max(rawMaxEntries, 1)
+    private var rawMaxScore: Double {
+        block.days.map(\.score).max() ?? 0
     }
 
     private var primaryDayID: Int? {
-        guard rawMaxEntries > 0 else { return nil }
-        return block.days.first(where: { $0.entries == rawMaxEntries })?.id
+        guard rawMaxScore > 0 else { return nil }
+        return block.days.first(where: { $0.score == rawMaxScore })?.id
     }
 
     private var secondaryDayIDs: Set<Int> {
-        guard rawMaxEntries > 0 else { return [] }
-        let low = Double(rawMaxEntries) * 0.7
-        let high = Double(rawMaxEntries) * 0.9
+        guard rawMaxScore > 0 else { return [] }
+        let low = rawMaxScore * 0.7
+        let high = rawMaxScore * 0.9
         return Set(
             block.days
                 .filter { day in
-                    let value = Double(day.entries)
+                    let value = day.score
                     return day.id != primaryDayID && value >= low && value <= high
                 }
                 .map(\.id)
@@ -1005,12 +1004,12 @@ private struct WeeklyRhythmCardView: View {
     }
 
     private var lowDayIDs: Set<Int> {
-        guard rawMaxEntries > 0 else { return [] }
-        let cutoff = Double(rawMaxEntries) * 0.4
+        guard rawMaxScore > 0 else { return [] }
+        let cutoff = rawMaxScore * 0.4
         return Set(
             block.days
                 .filter { day in
-                    day.entries > 0 && Double(day.entries) < cutoff
+                    day.score > 0 && day.score < cutoff
                 }
                 .map(\.id)
         )
@@ -1088,11 +1087,12 @@ private struct WeeklyRhythmCardView: View {
     }
 
     private func barHeight(for day: HabitInsightsWeeklyRhythmDay) -> CGFloat {
-        if day.entries == 0 {
+        if day.score == 0 {
             return 10
         }
         let minimumNonZeroHeight = chartHeight * 0.12
-        let proportionalHeight = CGFloat(Double(day.entries) / Double(maxEntries)) * (chartHeight - 14)
+        let normalized = min(max(day.score, 0), 1)
+        let proportionalHeight = CGFloat(normalized) * (chartHeight - 14)
         return max(minimumNonZeroHeight, proportionalHeight)
     }
 

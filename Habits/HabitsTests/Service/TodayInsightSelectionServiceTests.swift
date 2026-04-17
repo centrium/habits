@@ -19,11 +19,11 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
             calendar: TestDateFactory.utcCalendar
         )
 
-        XCTAssertEqual(insight?.message, "Strongest window for Reading: 6PM")
+        XCTAssertEqual(insight?.message, "Your strongest window is coming up for Reading")
     }
 
     @MainActor
-    func testMessageShowsTomorrowBestTimeWhenPeakHasPassed() {
+    func testMessageShowsLaterInDayWhenPeakHasPassed() {
         let candidate = makeCandidate(peakHour: 11, confidence: 0.9, uniqueEventCount: 24)
         let now = dateAtHour(15)
 
@@ -33,7 +33,7 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
             calendar: TestDateFactory.utcCalendar
         )
 
-        XCTAssertEqual(insight?.message, "Strongest window tomorrow for Reading: 11AM")
+        XCTAssertEqual(insight?.message, "You usually do this later in the day for Reading")
     }
 
     @MainActor
@@ -48,6 +48,20 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(insight?.message, "Usually later in the evening for Reading")
+    }
+
+    @MainActor
+    func testMessageUsesMediumConfidenceLanguage() {
+        let candidate = makeCandidate(peakHour: 21, confidence: 0.6, uniqueEventCount: 8)
+        let now = dateAtHour(10)
+
+        let insight = TodayInsightSelectionService.shared.selectInsight(
+            from: [candidate],
+            now: now,
+            calendar: TestDateFactory.utcCalendar
+        )
+
+        XCTAssertEqual(insight?.message, "Often around 9PM for Reading")
     }
 
     private func makeCandidate(peakHour: Int, confidence: Double, uniqueEventCount: Int) -> TodayInsightCandidate {

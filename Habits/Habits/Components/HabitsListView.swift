@@ -709,6 +709,7 @@ struct HabitsListView: View {
         guard !Task.isCancelled else { return }
         todayInsight = insight
         selectedInsightHabitID = insight?.habit.id
+        logTodayTimingTrace()
     }
 
     private func refreshGlobalInsightsSummary() {
@@ -733,6 +734,7 @@ struct HabitsListView: View {
         } else {
             coachingInsight = nil
         }
+        logTodayTimingTrace()
     }
 
     private func prefetchRhythmDataForVisibleHabits() async {
@@ -922,6 +924,26 @@ struct HabitsListView: View {
         }
 
         return message
+    }
+
+    private func logTodayTimingTrace() {
+        #if DEBUG
+        guard let snapshot = globalInsightsSnapshot else { return }
+        let enginePeak = snapshot.introSummary.peakHour
+        let todayMatch = snapshot.introSummary.typicalLoggingTime == humanTime(for: enginePeak)
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Today")
+        print("enginePeak: \(enginePeak)")
+        print("consumerHour: \(enginePeak)")
+        print("match: \(todayMatch)")
+        let growthConsumerHour = todayInsight?.habit.id == nil ? -1 : enginePeak
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Growth Plan")
+        print("enginePeak: \(enginePeak)")
+        print("consumerHour: \(growthConsumerHour)")
+        print("match: \(growthConsumerHour == enginePeak)")
+        assert(todayMatch, "today screen displayed time must equal global engine peakHour")
+        #endif
     }
 
     private var backgroundColor: Color {

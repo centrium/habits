@@ -83,19 +83,43 @@ private extension InsightSelectionService {
         var candidates: [Candidate] = []
 
         let peakTime = snapshot.introSummary.typicalLoggingTime
+        let peakHour = snapshot.introSummary.peakHour
+        let timingConfidence = snapshot.introSummary.confidence
         let stateTitle = CadenceLanguage.stateTitle(snapshot.hero.dominantState).lowercased()
         let bestDay = snapshot.metrics.bestDayOfWeek
         let streak = snapshot.metrics.bestCurrentStreak
         let consistency = snapshot.hero.consistency
         let atRiskCount = snapshot.metrics.atRiskCount
         let consistencyText = meaningfulConsistencyText(consistency)
+        let timingLead = timingLeadText(
+            peakHour: peakHour,
+            peakTime: peakTime,
+            confidence: timingConfidence
+        )
+        let timingHighlight = timingHighlight(
+            peakHour: peakHour,
+            peakTime: peakTime,
+            confidence: timingConfidence
+        )
+        let timingAction = timingActionText(
+            peakHour: peakHour,
+            peakTime: peakTime,
+            confidence: timingConfidence
+        )
+        logTimingTrace(
+            peakHour: peakHour,
+            confidence: timingConfidence,
+            peakTime: peakTime,
+            timingHighlight: timingHighlight,
+            timingAction: timingAction
+        )
 
         if streak >= 2 {
             candidates.append(
                 Candidate(
                     insight: TodayCoachingInsight(
                         type: .streakOpportunity,
-                        message: "Your routines have a \(streak)-day streak behind them, and checking in at \(peakTime) helps keep it going.",
+                        message: "Your routines have a \(streak)-day streak behind them, and checking in \(timingAction) helps keep it going.",
                         primaryHighlight: "\(streak)-day streak",
                         secondaryHighlight: nil
                     ),
@@ -106,16 +130,16 @@ private extension InsightSelectionService {
 
         let timingMessage: String
         if let consistencyText {
-            timingMessage = "You tend to log habits most at \(peakTime), and your consistency (\(consistencyText)) is strongest when you check in then."
+            timingMessage = "\(timingLead), and your consistency (\(consistencyText)) is strongest when you check in \(timingAction)."
         } else {
-            timingMessage = "You tend to log habits most at \(peakTime), and showing up then helps maintain your rhythm."
+            timingMessage = "\(timingLead), and showing up \(timingAction) helps maintain your rhythm."
         }
         candidates.append(
             Candidate(
                 insight: TodayCoachingInsight(
                     type: .timingPattern,
                     message: timingMessage,
-                    primaryHighlight: peakTime,
+                    primaryHighlight: timingHighlight,
                     secondaryHighlight: consistencyText
                 ),
                 priority: 0
@@ -128,7 +152,7 @@ private extension InsightSelectionService {
                 Candidate(
                     insight: TodayCoachingInsight(
                         type: .riskState,
-                        message: "\(countText) look easier to miss right now, and a check-in at \(peakTime) helps steady the routine.",
+                        message: "\(countText) look easier to miss right now, and a check-in \(timingAction) helps steady the routine.",
                         primaryHighlight: countText,
                         secondaryHighlight: nil
                     ),
@@ -153,9 +177,9 @@ private extension InsightSelectionService {
 
         let momentumMessage: String
         if let consistencyText {
-            momentumMessage = "Your habits are \(stateTitle), and your consistency (\(consistencyText)) is strongest when you check in at \(peakTime)."
+            momentumMessage = "Your habits are \(stateTitle), and your consistency (\(consistencyText)) is strongest when you check in \(timingAction)."
         } else {
-            momentumMessage = "Your habits are \(stateTitle), and checking in at \(peakTime) helps keep that going."
+            momentumMessage = "Your habits are \(stateTitle), and checking in \(timingAction) helps keep that going."
         }
         if !stateTitle.isEmpty {
             candidates.append(
@@ -176,7 +200,7 @@ private extension InsightSelectionService {
                 Candidate(
                     insight: TodayCoachingInsight(
                         type: .consistency,
-                        message: "Your overall consistency is \(consistency)%, and a quick check-in at \(peakTime) helps maintain it.",
+                        message: "Your overall consistency is \(consistency)%, and a quick check-in \(timingAction) helps maintain it.",
                         primaryHighlight: "\(consistency)%",
                         secondaryHighlight: nil
                     ),
@@ -193,6 +217,31 @@ private extension InsightSelectionService {
         )
 
         return candidates
+    }
+
+    func logTimingTrace(
+        peakHour: Int,
+        confidence: Double,
+        peakTime: String,
+        timingHighlight: String,
+        timingAction: String
+    ) {
+        #if DEBUG
+        _ = confidence
+        _ = peakTime
+        _ = timingHighlight
+        _ = timingAction
+        let enginePeak = peakHour
+        let consumerHour = peakHour
+        let match = consumerHour == enginePeak
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Growth Plan")
+        print("enginePeak: \(enginePeak)")
+        print("consumerHour: \(consumerHour)")
+        print("match: \(match)")
+        assert(consumerHour == enginePeak, "growth plan displayed hour must equal engine peakHour")
+        assert(peakTime == humanTime(for: peakHour), "growth plan peak label must match peakHour")
+        #endif
     }
 
     func selectCandidate(
@@ -233,6 +282,55 @@ private extension InsightSelectionService {
     func meaningfulConsistencyText(_ consistency: Int) -> String? {
         guard consistency >= 15, consistency <= 95 else { return nil }
         return "\(consistency)%"
+    }
+
+    func timingLeadText(peakHour: Int, peakTime: String, confidence: Double) -> String {
+        switch confidence {
+        case ..<0.35:
+            return "You often log habits \(softWindowPhrase(for: peakHour))"
+        case ..<0.75:
+            return "You often log habits around \(peakTime)"
+        default:
+            return "You tend to log habits most at \(peakTime)"
+        }
+    }
+
+    func timingActionText(peakHour: Int, peakTime: String, confidence: Double) -> String {
+        switch confidence {
+        case ..<0.35:
+            return softWindowPhrase(for: peakHour)
+        case ..<0.75:
+            return "around \(peakTime)"
+        default:
+            return "at \(peakTime)"
+        }
+    }
+
+    func timingHighlight(peakHour: Int, peakTime: String, confidence: Double) -> String {
+        switch confidence {
+        case ..<0.35:
+            return softWindowPhrase(for: peakHour)
+        default:
+            return peakTime
+        }
+    }
+
+    func softWindowPhrase(for hour: Int) -> String {
+        let normalized = ((hour % 24) + 24) % 24
+        switch normalized {
+        case 0..<5:
+            return "later at night"
+        case 5..<11:
+            return "earlier in the morning"
+        case 11..<15:
+            return "around midday"
+        case 15..<18:
+            return "later in the afternoon"
+        case 18..<22:
+            return "later in the evening"
+        default:
+            return "at night"
+        }
     }
 
     static func dayKey(for date: Date, calendar: Calendar) -> String {

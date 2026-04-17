@@ -4,6 +4,7 @@ struct RhythmDetailSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     let isPremium: Bool
     let data: [HourValue]
+    let timeInsight: TimeInsightResult? = nil
     let habit: Habit
     var onUnlock: (() -> Void)? = nil
 
@@ -11,7 +12,40 @@ struct RhythmDetailSheet: View {
     @State private var selectedHour: Int?
 
     private var insight: RhythmInsight {
-        generateRhythmInsight(data: data)
+        generateRhythmInsight(
+            from: resolvedInsight
+        )
+    }
+
+    private var resolvedInsight: TimeInsightResult {
+        if let timeInsight {
+            return timeInsight
+        }
+        return fallbackInsightFromData
+    }
+
+    private var fallbackInsightFromData: TimeInsightResult {
+        let values = (0..<24).map { hour in
+            data.first(where: { $0.hour == hour })?.value ?? 0
+        }
+        let peakHour = values.enumerated().max { lhs, rhs in
+            if lhs.element == rhs.element { return lhs.offset > rhs.offset }
+            return lhs.element < rhs.element
+        }?.offset ?? 0
+        if values.allSatisfy({ $0 == 0 }) {
+            return TimeInsightResult(
+                hourlyScores: values,
+                peakHour: peakHour,
+                confidence: 0,
+                distributionShape: .flat
+            )
+        }
+        return TimeInsightResult(
+            hourlyScores: values,
+            peakHour: peakHour,
+            confidence: 0,
+            distributionShape: .flat
+        )
     }
 
     private var accent: Color {
@@ -34,7 +68,9 @@ struct RhythmDetailSheet: View {
                         data: data,
                         accent: accent,
                         selectedHour: $selectedHour,
-                        selectionEnabled: isPremium
+                        selectionEnabled: isPremium,
+                        peakHour: resolvedInsight.peakHour,
+                        showPeakMarker: true
                     )
 
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
@@ -79,6 +115,17 @@ struct RhythmDetailSheet: View {
                         .font(CadenceTokens.Typography.body.weight(.semibold))
                 }
             }
+        }
+        .onAppear {
+            #if DEBUG
+            let enginePeak = resolvedInsight.peakHour
+            print("[TimeInsight CONSISTENCY CHECK]")
+            print("surface: Momentum")
+            print("enginePeak: \(enginePeak)")
+            print("consumerHour: \(insight.peakHour)")
+            print("match: \(insight.peakHour == enginePeak)")
+            assert(insight.peakHour == enginePeak, "rhythm detail displayed peak hour must equal engine peak")
+            #endif
         }
     }
 

@@ -313,6 +313,7 @@ struct HabitInsightsWeeklyRhythmDay: Identifiable {
     let dayLabel: String
     let fullDayLabel: String
     let entries: Int
+    let score: Double
 
     var id: Int { index }
 }
@@ -320,6 +321,7 @@ struct HabitInsightsWeeklyRhythmDay: Identifiable {
 struct HabitInsightsWeeklyRhythmBlock {
     let heading: String
     let days: [HabitInsightsWeeklyRhythmDay]
+    let maxPossibleEntries: Int
 }
 
 struct HabitInsightsCompletionHistoryBlock {

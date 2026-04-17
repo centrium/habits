@@ -133,7 +133,7 @@ final class TodayInsightSelectionService {
             )
         }
 
-        let peakDistance = abs(currentHour - rhythm.peakHour)
+        let peakDistance = wrappedHourDistance(currentHour, rhythm.peakHour)
         let peakScore = max(0, 1 - (Double(peakDistance) / 12.0))
         let dipScore = isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) ? 1.0 : 0.0
         let completionScore = candidate.isCompletedToday ? 0.0 : 0.5
@@ -211,7 +211,7 @@ final class TodayInsightSelectionService {
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
             return .dipRisk
         }
-        if abs(currentHour - rhythm.peakHour) <= 1 {
+        if wrappedHourDistance(currentHour, rhythm.peakHour) <= 2 {
             return .nearPeakWindow
         }
         return .strongestWindow
@@ -222,25 +222,43 @@ final class TodayInsightSelectionService {
             return "Keep momentum going with \(candidate.habit.name)"
         }
 
-        let isLowConfidence = rhythm.confidence < 0.5
-
+        let output: String
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
-            return "Momentum tends to drop for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
+            output = "Momentum tends to drop for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
+        } else if rhythm.confidence < 0.35 {
+            output = "Usually \(softWindowPhrase(for: rhythm.peakHour)) for \(candidate.habit.name)"
+        } else if rhythm.confidence < 0.75 {
+            output = "Often around \(humanTime(for: rhythm.peakHour)) for \(candidate.habit.name)"
+        } else if wrappedHourDistance(currentHour, rhythm.peakHour) <= 2 {
+            output = "You're in your strongest window for \(candidate.habit.name)"
+        } else if isBeforePeak(currentHour, peakHour: rhythm.peakHour) {
+            output = "Your strongest window is coming up for \(candidate.habit.name)"
+        } else {
+            output = "You usually do this later in the day for \(candidate.habit.name)"
         }
 
-        if isLowConfidence {
-            return "Usually \(softWindowPhrase(for: rhythm.peakHour)) for \(candidate.habit.name)"
-        }
+        logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
+        return output
+    }
 
-        if abs(currentHour - rhythm.peakHour) <= 1 {
-            return "You're near your peak window for \(candidate.habit.name)"
-        }
-
-        if currentHour <= rhythm.peakHour {
-            return "Strongest window for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
-        }
-
-        return "Strongest window tomorrow for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+    private func logTimingTrace(
+        candidate: TodayInsightCandidate,
+        rhythm: HabitRhythm,
+        displayedLabel: String
+    ) {
+        #if DEBUG
+        _ = candidate
+        _ = displayedLabel
+        let enginePeak = rhythm.timeInsight.peakHour
+        let consumerHour = rhythm.peakHour
+        let match = consumerHour == enginePeak
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Today")
+        print("enginePeak: \(enginePeak)")
+        print("consumerHour: \(consumerHour)")
+        print("match: \(match)")
+        assert(match, "today screen consumer hour must equal engine peakHour")
+        #endif
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {
@@ -266,5 +284,15 @@ final class TodayInsightSelectionService {
         default:
             return "at night"
         }
+    }
+
+    private func wrappedHourDistance(_ lhs: Int, _ rhs: Int) -> Int {
+        let raw = abs(lhs - rhs)
+        return min(raw, 24 - raw)
+    }
+
+    private func isBeforePeak(_ currentHour: Int, peakHour: Int) -> Bool {
+        let forwardDistance = (peakHour - currentHour + 24) % 24
+        return forwardDistance > 0 && forwardDistance <= 12
     }
 }

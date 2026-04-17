@@ -11,16 +11,21 @@ struct PatternSignals {
 enum PatternCalculator {
     static func calculate(
         logs: [InsightLog],
-        calendar: Calendar
+        calendar: Calendar,
+        now: Date,
+        timeInsight: TimeInsightResult?
     ) -> PatternSignals? {
         guard logs.count >= 5 else { return nil }
 
-        let weekdayCounts = weekdayFrequency(logs: logs, calendar: calendar)
-        let timeWindowCounts = timeWindowFrequency(logs: logs, calendar: calendar)
+        let weekdayCounts = weekdayFrequency(
+            logs: logs,
+            calendar: calendar,
+            now: now
+        )
 
         let strongestWeekday = topWeekday(from: weekdayCounts, calendar: calendar)
         let weakestWeekday = weakestActiveWeekday(from: weekdayCounts, calendar: calendar)
-        let commonLogWindow = topWindow(from: timeWindowCounts)
+        let commonLogWindow = topWindow(from: timeInsight)
 
         var patternItems: [String] = []
         if let strongestWeekday {
@@ -57,37 +62,23 @@ enum PatternCalculator {
 
     private static func weekdayFrequency(
         logs: [InsightLog],
-        calendar: Calendar
+        calendar: Calendar,
+        now: Date
     ) -> [Int: Int] {
-        var counts: [Int: Int] = [:]
-        for log in logs {
-            let weekday = calendar.component(.weekday, from: log.dayStart)
-            counts[weekday, default: 0] += 1
-        }
-        return counts
-    }
+        let anchorDay = calendar.startOfDay(for: now)
+        let windowStart = calendar.date(byAdding: .day, value: -83, to: anchorDay) ?? anchorDay
 
-    private static func timeWindowFrequency(
-        logs: [InsightLog],
-        calendar: Calendar
-    ) -> [TimeOfDayBucket: Int] {
-        var counts: [TimeOfDayBucket: Int] = [:]
+        var uniqueDaysByWeekday: [Int: Set<Date>] = [:]
         for log in logs {
-            let hour = calendar.component(.hour, from: log.date)
-            let bucket: TimeOfDayBucket
-            switch hour {
-            case 5..<11:
-                bucket = .morning
-            case 11..<17:
-                bucket = .afternoon
-            case 17..<23:
-                bucket = .evening
-            default:
-                bucket = .night
-            }
-            counts[bucket, default: 0] += 1
+            let dayStart = calendar.startOfDay(for: log.dayStart)
+            guard dayStart >= windowStart && dayStart <= anchorDay else { continue }
+            let weekday = calendar.component(.weekday, from: dayStart)
+            uniqueDaysByWeekday[weekday, default: []].insert(dayStart)
         }
-        return counts
+
+        return uniqueDaysByWeekday.reduce(into: [Int: Int]()) { result, element in
+            result[element.key] = element.value.count
+        }
     }
 
     private static func topWeekday(
@@ -126,36 +117,25 @@ enum PatternCalculator {
         return symbols[index]
     }
 
-    private static func topWindow(from counts: [TimeOfDayBucket: Int]) -> String? {
-        guard let bucket = counts.max(by: { lhs, rhs in
-            if lhs.value == rhs.value { return rank(lhs.key) > rank(rhs.key) }
-            return lhs.value < rhs.value
-        })?.key else {
+    private static func topWindow(from insight: TimeInsightResult?) -> String? {
+        guard let insight else {
+            return nil
+        }
+        guard insight.confidence >= 0.15 else { return nil }
+
+        if insight.distributionShape == .flat {
             return nil
         }
 
-        switch bucket {
-        case .morning:
+        switch insight.peakHour {
+        case 5..<11:
             return "Morning"
-        case .afternoon:
+        case 11..<17:
             return "Afternoon"
-        case .evening:
+        case 17..<23:
             return "Evening"
-        case .night:
+        default:
             return "Night"
-        }
-    }
-
-    private static func rank(_ bucket: TimeOfDayBucket) -> Int {
-        switch bucket {
-        case .morning:
-            return 0
-        case .afternoon:
-            return 1
-        case .evening:
-            return 2
-        case .night:
-            return 3
         }
     }
 }

@@ -30,6 +30,7 @@ struct HabitInsightsEngine {
     static func insights(
         for habit: Habit,
         logAnchorDate: Date? = nil,
+        globalLogs: [HabitLog] = [],
         calendar: Calendar = .current,
         weekStartPreference: WeekStartPreference = .system,
         greigModeEnabled: Bool = true,
@@ -45,6 +46,7 @@ struct HabitInsightsEngine {
         let foundation = habitInsightSnapshot(
             for: habit,
             anchorDate: now,
+            globalLogs: globalLogs,
             calendar: calendar,
             weekStartPreference: weekStartPreference,
             now: now
@@ -731,26 +733,94 @@ struct HabitInsightsEngine {
         formatter.timeZone = calendar.timeZone
         formatter.setLocalizedDateFormatFromTemplate("EEEE")
 
-        let counts = logs.reduce(into: [Int: Int]()) { partialResult, log in
-            let weekday = calendar.component(.weekday, from: log.day)
+        let rawLogsPerWeekday = logs.reduce(into: [Int: Int]()) { partialResult, log in
+            let weekday = calendar.component(.weekday, from: log.effectiveTimestamp)
             partialResult[weekday, default: 0] += 1
         }
+
+        let uniqueDaysPerWeekday = logs.reduce(into: [Int: Set<Date>]()) { partialResult, log in
+            let dayStart = calendar.startOfDay(for: log.effectiveTimestamp)
+            let weekday = calendar.component(.weekday, from: dayStart)
+            partialResult[weekday, default: []].insert(dayStart)
+        }
+
+        let maxPossibleScore = max(1, weeksInRange(start: windowStart, end: today, calendar: calendar))
+        let weekdayScores = weekdayOrder.map { weekday -> Double in
+            let uniqueDays = uniqueDaysPerWeekday[weekday]?.count ?? 0
+            return min(1.0, Double(uniqueDays) / Double(maxPossibleScore))
+        }
+
+        let smoothedScores = lightlySmoothedWeekdayScores(weekdayScores)
+
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+            print("[WeeklyRhythm DEBUG]")
+            for (index, weekday) in weekdayOrder.enumerated() {
+                let uniqueDays = uniqueDaysPerWeekday[weekday]?.count ?? 0
+                let logsCount = rawLogsPerWeekday[weekday, default: 0]
+                print(
+                    "\(shortLabels[index]): logs=\(logsCount), uniqueDays=\(uniqueDays), score=\(String(format: "%.4f", smoothedScores[index]))"
+                )
+            }
+        }
+        #endif
 
         let days = weekdayOrder.enumerated().map { index, weekday in
             let referenceDate = referenceDateForWeekday(weekday, calendar: calendar, anchor: now)
             let fullName = formatter.string(from: referenceDate)
+            let uniqueDays = uniqueDaysPerWeekday[weekday]?.count ?? 0
             return HabitInsightsWeeklyRhythmDay(
                 index: index,
                 dayLabel: shortLabels[index],
                 fullDayLabel: fullName,
-                entries: counts[weekday, default: 0]
+                entries: uniqueDays,
+                score: smoothedScores[index]
             )
         }
 
         return HabitInsightsWeeklyRhythmBlock(
             heading: "Weekly Rhythm",
-            days: days
+            days: days,
+            maxPossibleEntries: maxPossibleScore
         )
+    }
+
+    private static func weeksInRange(
+        start: Date,
+        end: Date,
+        calendar: Calendar
+    ) -> Int {
+        let startDay = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+        let elapsedDays = max(0, (calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0) + 1)
+        return Int(ceil(Double(elapsedDays) / 7.0))
+    }
+
+    private static func lightlySmoothedWeekdayScores(_ rawScores: [Double]) -> [Double] {
+        guard rawScores.count == 7 else { return rawScores }
+
+        let smoothed = (0..<7).map { index -> Double in
+            let current = rawScores[index]
+            guard current > 0 else { return 0 }
+
+            let previous = rawScores[(index + 6) % 7]
+            let next = rawScores[(index + 1) % 7]
+            return min(1.0, (current * 0.7) + (previous * 0.15) + (next * 0.15))
+        }
+
+        // Keep visual smoothing non-destructive for dominant-day ordering.
+        return argmax(smoothed) == argmax(rawScores) ? smoothed : rawScores
+    }
+
+    private static func argmax(_ values: [Double]) -> Int {
+        guard !values.isEmpty else { return 0 }
+        var bestIndex = 0
+        var bestValue = values[0]
+        for index in 1..<values.count where values[index] > bestValue {
+            bestValue = values[index]
+            bestIndex = index
+        }
+        return bestIndex
     }
 
     private static func valueContribution(

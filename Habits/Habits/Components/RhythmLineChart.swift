@@ -7,7 +7,9 @@ struct RhythmLineChart: View {
     @Binding var selectedHour: Int?
     var selectionEnabled: Bool = true
     var nowHour: Int? = nil
+    var peakHour: Int? = nil
     var showNowMarker: Bool = false
+    var showPeakMarker: Bool = false
     var showTrailingIncompletenessFade: Bool = false
 
     private var selectedPoint: HourValue? {
@@ -20,6 +22,11 @@ struct RhythmLineChart: View {
         return data.first(where: { $0.hour == nowHour })
     }
 
+    private var peakPoint: HourValue? {
+        guard let peakHour else { return nil }
+        return data.first(where: { $0.hour == peakHour })
+    }
+
     var body: some View {
         Chart {
             ForEach(data) { point in
@@ -28,7 +35,7 @@ struct RhythmLineChart: View {
                     yStart: .value("Baseline", 0),
                     yEnd: .value("Intensity", point.value)
                 )
-                .interpolationMethod(.linear)
+                .interpolationMethod(.catmullRom)
                 .foregroundStyle(
                     .linearGradient(
                         colors: [
@@ -45,7 +52,7 @@ struct RhythmLineChart: View {
                     x: .value("Hour", point.hour),
                     y: .value("Intensity", point.value)
                 )
-                .interpolationMethod(.linear)
+                .interpolationMethod(.catmullRom)
                 .lineStyle(
                     StrokeStyle(
                         lineWidth: 2.3,
@@ -67,6 +74,19 @@ struct RhythmLineChart: View {
                 )
                 .symbolSize(26)
                 .foregroundStyle(accent.opacity(0.8))
+            }
+
+            if showPeakMarker, let peakPoint {
+                RuleMark(x: .value("Peak", peakPoint.hour))
+                    .foregroundStyle(accent.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [5, 3]))
+
+                PointMark(
+                    x: .value("Peak", peakPoint.hour),
+                    y: .value("Peak Value", peakPoint.value)
+                )
+                .symbolSize(52)
+                .foregroundStyle(accent)
             }
 
             if selectionEnabled, let selectedPoint {
@@ -142,6 +162,14 @@ struct RhythmLineChart: View {
                 .frame(width: 120)
                 .allowsHitTesting(false)
             }
+        }
+        .onAppear {
+            #if DEBUG
+            guard let peakHour else { return }
+            if data.contains(where: { $0.hour == peakHour }) == false {
+                print("[RhythmChart][WARNING] peakHour \(peakHour) not present in chart data")
+            }
+            #endif
         }
     }
 

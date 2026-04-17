@@ -283,19 +283,28 @@ enum GuidanceEngine {
             confidence: selectionContext.timingConfidence,
             optimalBucket: selectionContext.optimalBucket
         )
+        let support = supportingContext(
+            for: chosenType,
+            input: input,
+            context: selectionContext,
+            calendar: calendar,
+            actionLine: action
+        )
+        logTimingTrace(
+            habitName: input.habit.name,
+            expectedHour: selectionContext.expectedHour,
+            confidence: selectionContext.timingConfidence,
+            title: title,
+            action: action,
+            supportingContext: support
+        )
 
         return validated(
             GuidanceOutput(
                 id: template.id,
                 title: title,
                 action: action,
-                supportingContext: supportingContext(
-                    for: chosenType,
-                    input: input,
-                    context: selectionContext,
-                    calendar: calendar,
-                    actionLine: action
-                ),
+                supportingContext: support,
                 emphasisLabel: emphasisLabel(for: chosenType, context: selectionContext),
                 type: chosenType
             )
@@ -310,6 +319,32 @@ enum GuidanceEngine {
             return .glow
         }
         return .focus
+    }
+
+    private static func logTimingTrace(
+        habitName: String,
+        expectedHour: Int?,
+        confidence: Double,
+        title: String,
+        action: String,
+        supportingContext: String?
+    ) {
+        #if DEBUG
+        guard let expectedHour else { return }
+        _ = habitName
+        _ = confidence
+        _ = title
+        _ = action
+        _ = supportingContext
+        let consumerHour = expectedHour
+        let match = consumerHour == expectedHour
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Detail")
+        print("enginePeak: \(expectedHour)")
+        print("consumerHour: \(consumerHour)")
+        print("match: \(match)")
+        assert(match, "habit detail now card hour must equal engine peakHour")
+        #endif
     }
 
     private static func selectTemplate(
@@ -503,33 +538,35 @@ enum GuidanceEngine {
         snapshot: HabitIdentityStateSnapshot,
         calendar: Calendar
     ) -> GuidanceSelectionContext {
-        let timingPattern = inferTimingPattern(from: input.completionHistory, now: input.now, calendar: calendar)
-        let timing = timingPattern.window
         let currentHour = calendar.component(.hour, from: input.now)
-        let cutoffHour = cutoffHour(for: timing, currentHour: currentHour)
         let optimalSummary = TimeOfDayPerformanceService.peakTimingSummary(
             habitLogs: input.completionHistory,
             globalLogs: input.globalHistory,
+            habitName: input.habit.name,
+            habitType: input.goalType,
             now: input.now,
             calendar: calendar
         )
         let optimalPeakHour = optimalSummary?.peakHour
         let timingConfidence = optimalSummary?.confidence ?? 0
         let optimalBucket = optimalPeakHour.map(bucket(for:))
+        let cutoffHour = cutoffHour(for: optimalPeakHour, currentHour: currentHour)
+        let isWithinWindow = optimalPeakHour.map { wrappedHourDistance(currentHour, $0) <= 2 } ?? false
+        let beforeWindow = optimalPeakHour.map { isBeforePeak(currentHour: currentHour, peakHour: $0) } ?? false
         let currentTimePosition = timePosition(
             now: input.now,
             optimalPeakHour: optimalPeakHour,
-            hasBehaviour: timingPattern.behaviourBucket != nil && timingConfidence >= 0.5,
+            hasBehaviour: optimalBucket != nil && timingConfidence >= 0.5,
             calendar: calendar
         )
 
         return GuidanceSelectionContext(
-            expectedHour: timing?.expectedHour,
-            isWithinWindow: timing.map { currentHour >= $0.windowStart && currentHour <= $0.windowEnd } ?? false,
-            isNearPeak: timingConfidence >= 0.5 ? (timing.map { abs(currentHour - $0.expectedHour) <= 1 } ?? false) : false,
-            windowPassed: timingConfidence >= 0.5 ? (timing.map { currentHour > $0.windowEnd } ?? false) : false,
+            expectedHour: optimalPeakHour,
+            isWithinWindow: timingConfidence >= 0.5 ? isWithinWindow : false,
+            isNearPeak: timingConfidence >= 0.5 ? isWithinWindow : false,
+            windowPassed: timingConfidence >= 0.5 ? (!isWithinWindow && !beforeWindow) : false,
             timingConfidence: timingConfidence,
-            behaviourBucket: timingPattern.behaviourBucket,
+            behaviourBucket: optimalBucket,
             optimalBucket: optimalBucket,
             timePosition: currentTimePosition,
             cutoffHour: cutoffHour,
@@ -706,81 +743,13 @@ enum GuidanceEngine {
     }
 
     private static func cutoffHour(
-        for timing: TimingWindow?,
+        for expectedHour: Int?,
         currentHour: Int
     ) -> Int {
-        if let timing {
-            return min(max(timing.expectedHour + 4, 18), 22)
+        if let expectedHour {
+            return min(max(expectedHour + 4, 18), 22)
         }
         return currentHour >= 18 ? currentHour : 18
-    }
-
-    private struct TimingWindow: Equatable {
-        let expectedHour: Int
-        let windowStart: Int
-        let windowEnd: Int
-    }
-
-    private struct TimingPattern {
-        let window: TimingWindow?
-        let behaviourBucket: TimeBucket?
-    }
-
-    private static func inferTimingPattern(
-        from logs: [HabitLog],
-        now: Date,
-        calendar: Calendar
-    ) -> TimingPattern {
-        let qualifyingLogs = logs
-            .filter { ($0.frequencyContribution > 0 || $0.numericValue > 0) && $0.effectiveTimestamp <= now }
-            .sorted { $0.effectiveTimestamp > $1.effectiveTimestamp }
-
-        let recentHours = qualifyingLogs
-            .prefix(28)
-            .map { calendar.component(.hour, from: $0.effectiveTimestamp) }
-
-        guard !recentHours.isEmpty else {
-            return TimingPattern(window: nil, behaviourBucket: nil)
-        }
-
-        var counts: [TimeBucket: Int] = [:]
-        for hour in recentHours {
-            let bucket = bucket(for: hour)
-            counts[bucket, default: 0] += 1
-        }
-
-        guard let primary = counts.max(by: { lhs, rhs in
-            if lhs.value == rhs.value {
-                return bucketOrder(lhs.key) > bucketOrder(rhs.key)
-            }
-            return lhs.value < rhs.value
-        }) else {
-            return TimingPattern(window: nil, behaviourBucket: nil)
-        }
-
-        let primaryBucket = primary.key
-        let primaryCount = primary.value
-        let totalCount = recentHours.count
-        let primaryRatio = Double(primaryCount) / Double(max(1, totalCount))
-
-        guard totalCount >= 3, primaryRatio >= 0.4 else {
-            return TimingPattern(window: nil, behaviourBucket: nil)
-        }
-
-        let representativeHour = modeHour(
-            in: recentHours,
-            for: primaryBucket
-        ) ?? bucketRepresentativeHour(primaryBucket)
-        let bounds = windowBounds(for: primaryBucket, representativeHour: representativeHour)
-
-        return TimingPattern(
-            window: TimingWindow(
-                expectedHour: representativeHour,
-                windowStart: bounds.start,
-                windowEnd: bounds.end
-            ),
-            behaviourBucket: primaryBucket
-        )
     }
 
     private static func template(_ id: String, _ title: String, _ action: String) -> GuidanceTemplate {
@@ -815,7 +784,7 @@ enum GuidanceEngine {
         return lowered
     }
 
-    private static func bucket(for hour: Int) -> TimeBucket {
+    private nonisolated static func bucket(for hour: Int) -> TimeBucket {
         switch hour {
         case 5..<8:
             return .earlyMorning
@@ -1052,84 +1021,23 @@ enum GuidanceEngine {
         calendar: Calendar
     ) -> TimePosition {
         guard hasBehaviour, let optimalPeakHour else { return .unknown }
-
-        let windowStartHour = (optimalPeakHour + 23) % 24
-        let windowEndHour = (optimalPeakHour + 1) % 24
-        let todayStart = calendar.startOfDay(for: now)
-
-        guard var start = calendar.date(byAdding: .hour, value: windowStartHour, to: todayStart),
-              var end = calendar.date(byAdding: .hour, value: windowEndHour, to: todayStart) else {
-            return .unknown
-        }
-
-        if windowStartHour > windowEndHour {
-            let nowHour = calendar.component(.hour, from: now)
-            if nowHour <= windowEndHour {
-                start = calendar.date(byAdding: .day, value: -1, to: start) ?? start
-            } else {
-                end = calendar.date(byAdding: .day, value: 1, to: end) ?? end
-            }
-        }
-
-        if now >= start && now <= end {
+        let nowHour = calendar.component(.hour, from: now)
+        if wrappedHourDistance(nowHour, optimalPeakHour) <= 2 {
             return .inOptimal
-        } else if now < start {
+        } else if isBeforePeak(currentHour: nowHour, peakHour: optimalPeakHour) {
             return .beforeOptimal
-        } else if now > end {
-            return .afterOptimal
         }
-        return .unknown
+        return .afterOptimal
     }
 
-    private static func modeHour(in hours: [Int], for targetBucket: TimeBucket) -> Int? {
-        let bucketHours = hours.filter { hour in
-            bucket(for: hour) == targetBucket
-        }
-        guard !bucketHours.isEmpty else { return nil }
-
-        var frequencies: [Int: Int] = [:]
-        for hour in bucketHours {
-            frequencies[hour, default: 0] += 1
-        }
-
-        let representative = frequencies.max { lhs, rhs in
-            if lhs.value == rhs.value {
-                return lhs.key > rhs.key
-            }
-            return lhs.value < rhs.value
-        }?.key
-        return representative
+    private static func wrappedHourDistance(_ lhs: Int, _ rhs: Int) -> Int {
+        let raw = abs(lhs - rhs)
+        return min(raw, 24 - raw)
     }
 
-    private static func bucketRepresentativeHour(_ bucket: TimeBucket) -> Int {
-        switch bucket {
-        case .earlyMorning: return 6
-        case .morning: return 9
-        case .midday: return 12
-        case .afternoon: return 15
-        case .evening: return 18
-        case .night: return 22
-        }
-    }
-
-    private static func windowBounds(
-        for bucket: TimeBucket,
-        representativeHour: Int
-    ) -> (start: Int, end: Int) {
-        switch bucket {
-        case .earlyMorning:
-            return (5, 7)
-        case .morning:
-            return (8, 10)
-        case .midday:
-            return (11, 13)
-        case .afternoon:
-            return (14, 16)
-        case .evening:
-            return (17, 20)
-        case .night:
-            return representativeHour >= 21 ? (21, 23) : (0, 4)
-        }
+    private static func isBeforePeak(currentHour: Int, peakHour: Int) -> Bool {
+        let forwardDistance = (peakHour - currentHour + 24) % 24
+        return forwardDistance > 0 && forwardDistance <= 12
     }
 
     private static func momentumNudge(for input: GuidanceInput) -> String {

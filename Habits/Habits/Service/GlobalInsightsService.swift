@@ -34,8 +34,11 @@ struct GlobalInsightsGreig: Equatable {
 }
 
 struct TodayIntroSummary: Equatable {
+    let peakHour: Int
     let typicalLoggingTime: String
     let lowActivityWindow: String
+    let confidence: Double
+    let distributionShape: ShapeType
 }
 
 struct GlobalInsightsService {
@@ -84,8 +87,11 @@ struct GlobalInsightsService {
         let greig = greigSummary(from: metricsByHabit, now: now)
         let globalTiming = globalLoggingTiming(for: habits, now: now)
         let introSummary = TodayIntroSummary(
+            peakHour: globalTiming.insight.peakHour,
             typicalLoggingTime: humanTime(for: globalTiming.peakHour),
-            lowActivityWindow: "\(humanTime(for: globalTiming.dipStart)) and \(humanTime(for: globalTiming.dipEnd))"
+            lowActivityWindow: "\(humanTime(for: globalTiming.dipStart)) and \(humanTime(for: globalTiming.dipEnd))",
+            confidence: globalTiming.insight.confidence,
+            distributionShape: globalTiming.insight.distributionShape
         )
 
         return GlobalInsightsSnapshot(
@@ -118,6 +124,7 @@ private extension GlobalInsightsService {
     }
 
     struct GlobalLoggingTiming {
+        let insight: TimeInsightResult
         let peakHour: Int
         let dipStart: Int
         let dipEnd: Int
@@ -176,9 +183,13 @@ private extension GlobalInsightsService {
         from metrics: [HabitMetrics],
         fallbackDate: Date
     ) -> String {
+        let today = calendar.startOfDay(for: fallbackDate)
+        let windowStart = calendar.date(byAdding: .day, value: -83, to: today) ?? today
         var counts: [Int: Int] = [:]
 
-        for day in metrics.flatMap(\.completedDays) {
+        for day in metrics
+            .flatMap(\.completedDays)
+            .filter({ $0 >= windowStart && $0 <= today }) {
             let weekday = calendar.component(.weekday, from: day)
             counts[weekday, default: 0] += 1
         }
@@ -331,44 +342,54 @@ private extension GlobalInsightsService {
     }
 
     func globalLoggingTiming(for habits: [Habit], now: Date) -> GlobalLoggingTiming {
-        let allLogs = habits
+        let logs = habits
             .flatMap(\.logs)
-            .filter { $0.effectiveTimestamp <= now }
-
-        let entryLogs = allLogs.filter { $0.kind == .entry }
-        let logs = entryLogs.isEmpty ? allLogs : entryLogs
+            .filter { $0.kind == .entry && $0.timestamp != nil }
 
         guard !logs.isEmpty else {
-            return GlobalLoggingTiming(peakHour: 12, dipStart: 15, dipEnd: 16)
+            let fallback = TimeInsightResult(
+                hourlyScores: Array(repeating: 0, count: 24),
+                peakHour: 0,
+                confidence: 0,
+                distributionShape: .flat
+            )
+            return GlobalLoggingTiming(insight: fallback, peakHour: 0, dipStart: 15, dipEnd: 16)
         }
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+            print("[TimeInsight ROUTING]")
+            print("habitType: mixed")
+            print("inputCount: \(logs.count)")
+            print("engineUsed: true")
+        }
+        #endif
 
-        let dedup = TimeOfDayPerformanceService.deduplicatedHourlyCounts(
-            from: logs,
-            calendar: calendar,
-            now: now
+        let insight = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            debugLabel: "Global Insights",
+            now: now,
+            calendar: calendar
         )
-        let values = TimeOfDayPerformanceService.normalisedHourlyValues(counts: dedup.counts, floorValue: 0.05)
-        let peakHour = peakHour(from: values)
-
-        var counts = Array(repeating: 0, count: 24)
-        counts.reserveCapacity(24)
-        for hour in 0..<24 {
-            counts[hour] = dedup.counts[hour] ?? 0
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+            let consumerHour = insight.peakHour
+            print("[TimeInsight CONSISTENCY CHECK]")
+            print("surface: Global")
+            print("enginePeak: \(insight.peakHour)")
+            print("consumerHour: \(consumerHour)")
+            print("match: \(consumerHour == insight.peakHour)")
         }
-
-        let dipStart = (0..<24).min { lhs, rhs in
-            let lhsSum = counts[lhs] + counts[(lhs + 1) % 24]
-            let rhsSum = counts[rhs] + counts[(rhs + 1) % 24]
-            if lhsSum != rhsSum {
-                return lhsSum < rhsSum
-            }
-            return lhs < rhs
-        } ?? 15
+        #endif
+        let rhythmInsight = generateRhythmInsight(from: insight)
+        let dipStart = rhythmInsight.lowRange.0
+        let dipEnd = rhythmInsight.lowRange.1
 
         return GlobalLoggingTiming(
-            peakHour: peakHour,
+            insight: insight,
+            peakHour: insight.peakHour,
             dipStart: dipStart,
-            dipEnd: (dipStart + 1) % 24
+            dipEnd: dipEnd
         )
     }
 

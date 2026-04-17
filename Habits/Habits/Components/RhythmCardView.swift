@@ -14,11 +14,42 @@ struct RhythmCardView: View {
     @State private var selectedHour: Int?
 
     private var insight: RhythmInsight {
-        generateRhythmInsight(data: data)
+        generateRhythmInsight(from: resolvedInsight)
     }
 
-    private var bestTime: BestTimeRecommendation {
-        bestTimeRecommendation(from: data, currentHour: currentHour)
+    private var strongestTimeframe: BestTimeTimeframe {
+        bestTimeRecommendation(from: resolvedInsight, currentHour: currentHour).timeframe
+    }
+
+    private var resolvedInsight: TimeInsightResult {
+        if let existing = rhythm?.timeInsight {
+            return existing
+        }
+        return fallbackInsightFromData
+    }
+
+    private var fallbackInsightFromData: TimeInsightResult {
+        let values = (0..<24).map { hour in
+            data.first(where: { $0.hour == hour })?.value ?? 0
+        }
+        let peakHour = values.enumerated().max { lhs, rhs in
+            if lhs.element == rhs.element { return lhs.offset > rhs.offset }
+            return lhs.element < rhs.element
+        }?.offset ?? 0
+        if values.allSatisfy({ $0 == 0 }) {
+            return TimeInsightResult(
+                hourlyScores: values,
+                peakHour: peakHour,
+                confidence: 0,
+                distributionShape: .flat
+            )
+        }
+        return TimeInsightResult(
+            hourlyScores: values,
+            peakHour: peakHour,
+            confidence: 0,
+            distributionShape: .flat
+        )
     }
 
     private var accent: Color {
@@ -44,50 +75,47 @@ struct RhythmCardView: View {
     }
 
     private var rightNowLine: String {
-        if let rhythm, rhythm.confidence < 0.5 {
+        if resolvedInsight.confidence < 0.35 {
             return "Right now: your pattern is still stabilising."
         }
 
-        guard let nowPoint = data.first(where: { $0.hour == currentHour }),
-              let peakPoint = data.max(by: { $0.value < $1.value }) else {
-            return "Right now: building toward your peak window."
+        let peakHour = resolvedInsight.peakHour
+        if wrappedHourDistance(currentHour, peakHour) <= 2 {
+            return "Right now: you're in your strongest window."
         }
 
-        let hourDistance = wrappedHourDistance(currentHour, peakPoint.hour)
-        if hourDistance <= 1 {
-            return "Right now: around your peak window."
+        if isBeforePeak(currentHour, peakHour: peakHour) {
+            return "Right now: your strongest window is coming up."
         }
 
-        if nowPoint.value >= peakPoint.value * 0.78 {
-            return "Right now: close to your peak window."
-        }
-
-        if isEarlierInDay(currentHour, than: peakPoint.hour) {
-            return "Right now: below your peak window."
-        }
-
-        return "Right now: past your peak window."
+        return "Right now: you usually do this later in the day."
     }
 
     private var primaryInsight: AttributedString {
-        if let rhythm, rhythm.confidence < 0.5 {
-            var soft = AttributedString("Usually \(softWindowPhrase(for: bestTime.hour)).")
+        let peakHour = resolvedInsight.peakHour
+        if resolvedInsight.confidence < 0.35 {
+            var soft = AttributedString("Usually \(softWindowPhrase(for: peakHour)).")
             soft.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
             return soft
         }
 
-        let prefix: String
-        switch bestTime.timeframe {
-        case .today:
-            prefix = "Strongest window: "
-        case .tomorrow:
-            prefix = "Strongest window tomorrow: "
+        if resolvedInsight.confidence < 0.75 {
+            var leading = AttributedString("Often around ")
+            leading.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
+
+            var value = AttributedString(formattedTime(peakHour))
+            value.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.82 : 0.74)
+
+            var trailing = AttributedString(".")
+            trailing.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
+            return leading + value + trailing
         }
 
+        let prefix = strongestTimeframe == .today ? "Strongest window: " : "Strongest window tomorrow: "
         var leading = AttributedString(prefix)
         leading.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
 
-        var value = AttributedString(formattedTime(bestTime.hour))
+        var value = AttributedString(formattedTime(peakHour))
         value.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.82 : 0.74)
 
         var trailing = AttributedString(".")
@@ -97,8 +125,8 @@ struct RhythmCardView: View {
     }
 
     private var secondaryDetail: AttributedString {
-        if let rhythm, rhythm.confidence < 0.5 {
-            var text = AttributedString("Recent logs usually land \(softWindowPhrase(for: rhythm.peakHour)).")
+        if resolvedInsight.confidence < 0.35 {
+            var text = AttributedString("Recent logs usually land \(softWindowPhrase(for: resolvedInsight.peakHour)).")
             text.foregroundColor = CadenceTokens.Color.Text.secondary
             return text
         }
@@ -130,7 +158,7 @@ struct RhythmCardView: View {
     }
 
     private var behaviouralSignal: String {
-        if let rhythm, rhythm.confidence < 0.5 {
+        if resolvedInsight.confidence < 0.35 {
             return "Add more check-ins to sharpen your strongest window."
         }
 
@@ -145,8 +173,15 @@ struct RhythmCardView: View {
     }
 
     private var confidenceSignal: String {
-        guard let rhythm else { return "Pattern stabilising" }
-        return rhythm.confidence >= 0.5 ? "High confidence" : "Pattern stabilising"
+        guard let rhythm else { return "Low confidence" }
+        switch rhythm.confidence {
+        case ..<0.35:
+            return "Low confidence"
+        case ..<0.75:
+            return "Building confidence"
+        default:
+            return "High confidence"
+        }
     }
 
     var body: some View {
@@ -178,7 +213,9 @@ struct RhythmCardView: View {
                 selectedHour: $selectedHour,
                 selectionEnabled: isPremium,
                 nowHour: currentHour,
+                peakHour: resolvedInsight.peakHour,
                 showNowMarker: isPremium,
+                showPeakMarker: isPremium,
                 showTrailingIncompletenessFade: !isPremium
             )
 
@@ -227,15 +264,22 @@ struct RhythmCardView: View {
         .onTapGesture {
             onOpen?()
         }
-    }
-
-    private func isEarlierInDay(_ lhs: Int, than rhs: Int) -> Bool {
-        lhs < rhs
+        .onAppear {
+            logTimingTrace()
+        }
+        .onChange(of: rhythm?.timeInsight.peakHour) { _, _ in
+            logTimingTrace()
+        }
     }
 
     private func wrappedHourDistance(_ lhs: Int, _ rhs: Int) -> Int {
         let raw = abs(lhs - rhs)
         return min(raw, 24 - raw)
+    }
+
+    private func isBeforePeak(_ currentHour: Int, peakHour: Int) -> Bool {
+        let forwardDistance = (peakHour - currentHour + 24) % 24
+        return forwardDistance > 0 && forwardDistance <= 12
     }
 
     private func formattedTime(_ hour: Int) -> String {
@@ -258,5 +302,25 @@ struct RhythmCardView: View {
         default:
             return "at night"
         }
+    }
+
+    private func logTimingTrace() {
+        #if DEBUG
+        let enginePeak = resolvedInsight.peakHour
+        let displayedHour = enginePeak
+        let chartHighlightedHour = resolvedInsight.peakHour
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Detail")
+        print("enginePeak: \(enginePeak)")
+        print("consumerHour: \(displayedHour)")
+        print("match: \(displayedHour == enginePeak)")
+        print("[TimeInsight CONSISTENCY CHECK]")
+        print("surface: Momentum")
+        print("enginePeak: \(enginePeak)")
+        print("consumerHour: \(chartHighlightedHour)")
+        print("match: \(chartHighlightedHour == enginePeak)")
+        assert(displayedHour == enginePeak, "displayed peak label hour must equal engine peakHour")
+        assert(chartHighlightedHour == enginePeak, "chart marker hour must equal engine peakHour")
+        #endif
     }
 }
