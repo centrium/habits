@@ -35,14 +35,14 @@ struct GuidanceCard: View {
                     if let supportingContext = output.supportingContext {
                         let lines = contextLines(from: supportingContext)
                         let primaryIndex = primaryContextIndex(in: lines)
-                        VStack(alignment: .leading, spacing: 5) {
+                        VStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                                 let isPrimary = index == primaryIndex
                                 HStack(alignment: .top, spacing: 6) {
                                     Text("•")
                                         .font(CadenceTokens.Typography.body)
                                         .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
-                                        .opacity(isPrimary ? 0.8 : 0.5)
+                                        .opacity(isPrimary ? 0.72 : 0.42)
 
                                     Text(line)
                                         .font(.system(size: 11, weight: isPrimary ? .medium : .regular))
@@ -127,6 +127,7 @@ struct GuidanceCard: View {
 
     private func primaryContextIndex(in lines: [String]) -> Int {
         guard !lines.isEmpty else { return 0 }
+        if lines.count <= 2 { return 0 }
 
         let patternKeywords = [
             "around",

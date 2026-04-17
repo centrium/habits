@@ -429,6 +429,10 @@ struct HabitDetailSheet: View {
                     RhythmCardView(
                         isPremium: purchaseService.premiumStatus == .premium,
                         data: rhythmData,
+                        rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(
+                            for: habit,
+                            isPremium: purchaseService.premiumStatus == .premium
+                        ),
                         habit: habit,
                         onUnlock: {
                             showPaywall(feature: .advancedInsights)
@@ -698,6 +702,7 @@ struct HabitDetailSheet: View {
                 isCompletedToday: hasActivityToday(),
                 streakState: streakState,
                 completionHistory: habit.logs,
+                globalHistory: allHabits.flatMap(\.logs),
                 pattern: guidancePattern(),
                 goalType: habit.goalType
             ),
@@ -997,6 +1002,7 @@ struct HabitDetailSheet: View {
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: habit,
+            globalLogs: allHabits.flatMap(\.logs),
             isPremium: purchaseService.premiumStatus == .premium,
             now: .now,
             calendar: calculationCalendar

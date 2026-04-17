@@ -342,29 +342,19 @@ private extension GlobalInsightsService {
             return GlobalLoggingTiming(peakHour: 12, dipStart: 15, dipEnd: 16)
         }
 
+        let dedup = TimeOfDayPerformanceService.deduplicatedHourlyCounts(
+            from: logs,
+            calendar: calendar,
+            now: now
+        )
+        let values = TimeOfDayPerformanceService.normalisedHourlyValues(counts: dedup.counts, floorValue: 0.05)
+        let peakHour = peakHour(from: values)
+
         var counts = Array(repeating: 0, count: 24)
         counts.reserveCapacity(24)
-
-        for log in logs {
-            let hour = calendar.component(.hour, from: log.effectiveTimestamp)
-            counts[hour] += 1
+        for hour in 0..<24 {
+            counts[hour] = dedup.counts[hour] ?? 0
         }
-
-        let peakHour = (0..<24).max { lhs, rhs in
-            let lhsCount = counts[lhs]
-            let rhsCount = counts[rhs]
-            if lhsCount != rhsCount {
-                return lhsCount < rhsCount
-            }
-
-            let lhsDistanceFromNoon = abs(lhs - 12)
-            let rhsDistanceFromNoon = abs(rhs - 12)
-            if lhsDistanceFromNoon != rhsDistanceFromNoon {
-                return lhsDistanceFromNoon > rhsDistanceFromNoon
-            }
-
-            return lhs > rhs
-        } ?? 12
 
         let dipStart = (0..<24).min { lhs, rhs in
             let lhsSum = counts[lhs] + counts[(lhs + 1) % 24]

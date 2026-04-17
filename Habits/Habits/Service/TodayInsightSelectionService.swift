@@ -222,8 +222,14 @@ final class TodayInsightSelectionService {
             return "Keep momentum going with \(candidate.habit.name)"
         }
 
+        let isLowConfidence = rhythm.confidence < 0.5
+
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
             return "Momentum tends to drop for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
+        }
+
+        if isLowConfidence {
+            return "Usually \(softWindowPhrase(for: rhythm.peakHour)) for \(candidate.habit.name)"
         }
 
         if abs(currentHour - rhythm.peakHour) <= 1 {
@@ -231,10 +237,10 @@ final class TodayInsightSelectionService {
         }
 
         if currentHour <= rhythm.peakHour {
-            return "Best time for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+            return "Strongest window for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
         }
 
-        return "Best time tomorrow for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
+        return "Strongest window tomorrow for \(candidate.habit.name): \(humanTime(for: rhythm.peakHour))"
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {
@@ -242,5 +248,23 @@ final class TodayInsightSelectionService {
             return range.contains(hour)
         }
         return hour >= range.lowerBound || hour <= range.upperBound
+    }
+
+    private func softWindowPhrase(for hour: Int) -> String {
+        let normalized = ((hour % 24) + 24) % 24
+        switch normalized {
+        case 0..<5:
+            return "later at night"
+        case 5..<11:
+            return "earlier in the morning"
+        case 11..<15:
+            return "around midday"
+        case 15..<18:
+            return "later in the afternoon"
+        case 18..<22:
+            return "later in the evening"
+        default:
+            return "at night"
+        }
     }
 }

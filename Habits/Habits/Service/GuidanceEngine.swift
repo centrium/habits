@@ -11,8 +11,29 @@ struct GuidanceInput {
     let isCompletedToday: Bool
     let streakState: StreakState
     let completionHistory: [HabitLog]
+    let globalHistory: [HabitLog]
     let pattern: HabitPattern?
     let goalType: GoalType
+
+    init(
+        habit: Habit,
+        now: Date,
+        isCompletedToday: Bool,
+        streakState: StreakState,
+        completionHistory: [HabitLog],
+        globalHistory: [HabitLog] = [],
+        pattern: HabitPattern?,
+        goalType: GoalType
+    ) {
+        self.habit = habit
+        self.now = now
+        self.isCompletedToday = isCompletedToday
+        self.streakState = streakState
+        self.completionHistory = completionHistory
+        self.globalHistory = globalHistory
+        self.pattern = pattern
+        self.goalType = goalType
+    }
 }
 
 struct GuidanceOutput: Equatable {
@@ -37,12 +58,59 @@ enum GuidanceVisualVariant: String, Equatable {
     case pinnedMoment
 }
 
+enum TimeBucket: CaseIterable, Equatable {
+    case earlyMorning
+    case morning
+    case midday
+    case afternoon
+    case evening
+    case night
+}
+
+struct TimingComparison: Equatable {
+    let behaviour: TimeBucket?
+    let optimal: TimeBucket?
+    let relationship: Relationship
+}
+
+enum Relationship: Equatable {
+    case aligned
+    case slightlyEarly
+    case slightlyLate
+    case farEarly
+    case farLate
+    case unknown
+}
+
+enum TimePosition: Equatable {
+    case beforeOptimal
+    case inOptimal
+    case afterOptimal
+    case unknown
+}
+
+enum ConsistencyStage: Equatable {
+    case early
+    case building
+    case steady
+}
+
+enum GuidanceContentType: Equatable {
+    case timePosition
+    case behaviour
+    case action
+    case reinforcement
+}
+
 struct GuidanceSelectionContext: Equatable {
     let expectedHour: Int?
     let isWithinWindow: Bool
     let isNearPeak: Bool
     let windowPassed: Bool
-    let timingContextLabel: String?
+    let timingConfidence: Double
+    let behaviourBucket: TimeBucket?
+    let optimalBucket: TimeBucket?
+    let timePosition: TimePosition
     let cutoffHour: Int
     let activeDays: Int
     let windowDays: Int
@@ -116,6 +184,46 @@ enum GuidanceEngine {
     ]
 
     private static let rotationLookback: TimeInterval = 48 * 60 * 60
+    private static let permissionLines = [
+        "Even now, it still counts",
+        "It’s not too late to show up",
+        "A later session still adds value",
+        "Showing up now still matters",
+        "You can still make this count",
+        "Any progress now is a win",
+        "This still moves things forward",
+        "It all adds up, even now"
+    ]
+    private static let reinforcementLines = [
+        "This keeps your progress intact",
+        "Every check-in strengthens this",
+        "You’re building something steady",
+        "This helps lock it in",
+        "You’re reinforcing the habit",
+        "This is how consistency forms",
+        "Small steps keep it moving",
+        "This keeps your rhythm alive"
+    ]
+    private static let energisingLines = [
+        "You’re right there - keep it going",
+        "This is a great moment to act",
+        "Lean into it while it’s there",
+        "You’ve got momentum - use it",
+        "This is a strong moment to move",
+        "Stay with it - you’re on track",
+        "You’re in a good place - continue",
+        "Keep this going while it feels natural"
+    ]
+    private static let identityLines = [
+        "This is what someone consistent does",
+        "You’re becoming someone who shows up",
+        "This is part of who you’re building",
+        "You’re proving it to yourself",
+        "This is how it becomes natural",
+        "You’re shaping the habit right now",
+        "This is what it looks like in practice",
+        "You’re reinforcing who you want to be"
+    ]
 
     static func build(
         input: GuidanceInput,
@@ -165,17 +273,28 @@ enum GuidanceEngine {
             calendar: calendar,
             store: rotationStore
         )
+        let title = guidanceTitle(
+            for: selectionContext.timePosition,
+            confidence: selectionContext.timingConfidence,
+            optimalBucket: selectionContext.optimalBucket
+        )
+        let action = guidanceAction(
+            for: selectionContext.timePosition,
+            confidence: selectionContext.timingConfidence,
+            optimalBucket: selectionContext.optimalBucket
+        )
 
         return validated(
             GuidanceOutput(
                 id: template.id,
-                title: template.title,
-                action: template.action,
+                title: title,
+                action: action,
                 supportingContext: supportingContext(
                     for: chosenType,
                     input: input,
                     context: selectionContext,
-                    calendar: calendar
+                    calendar: calendar,
+                    actionLine: action
                 ),
                 emphasisLabel: emphasisLabel(for: chosenType, context: selectionContext),
                 type: chosenType
@@ -204,8 +323,8 @@ enum GuidanceEngine {
         guard !templates.isEmpty else {
             return GuidanceTemplate(
                 id: "fallback-momentum-1",
-                title: "You’re in a strong rhythm",
-                action: "A short session now keeps this moving",
+                title: "Finding your rhythm",
+                action: "A short session now keeps this on track",
                 openingToken: "youre"
             )
         }
@@ -349,36 +468,24 @@ enum GuidanceEngine {
     }
 
     private static func supportingContext(
-        for type: GuidanceType,
-        input: GuidanceInput,
+        for _: GuidanceType,
+        input _: GuidanceInput,
         context: GuidanceSelectionContext,
-        calendar: Calendar
+        calendar _: Calendar,
+        actionLine: String
     ) -> String? {
-        var parts: [String] = []
-
-        if let anchor = context.pattern?.anchor {
-            parts.append(shortContextAnchor(anchor))
-        } else if let timingContextLabel = context.timingContextLabel {
-            parts.append(timingContextLabel)
-        }
-
-        switch type {
-        case .momentum:
-            parts.append(context.isNearPeak ? "Good timing" : "Works well")
-        case .recovery:
-            parts.append("Still workable now")
-        case .atRisk:
-            parts.append("Time is tight")
-        case .identity:
-            parts.append(
-                consistencyLabel(
-                    completed: context.activeDays,
-                    total: context.windowDays
-                )
-            )
-        }
-
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
+        let comparison = timingComparison(
+            behaviour: context.behaviourBucket,
+            optimal: context.optimalBucket
+        )
+        let stage = consistencyStage(activeDays: context.activeDays, windowDays: context.windowDays)
+        let lines = timingInsightLines(
+            from: comparison,
+            timePosition: context.timePosition,
+            stage: stage,
+            actionLine: actionLine
+        )
+        return lines.isEmpty ? nil : lines.joined(separator: " • ")
     }
 
     private static func emphasisLabel(
@@ -400,13 +507,31 @@ enum GuidanceEngine {
         let timing = timingPattern.window
         let currentHour = calendar.component(.hour, from: input.now)
         let cutoffHour = cutoffHour(for: timing, currentHour: currentHour)
+        let optimalSummary = TimeOfDayPerformanceService.peakTimingSummary(
+            habitLogs: input.completionHistory,
+            globalLogs: input.globalHistory,
+            now: input.now,
+            calendar: calendar
+        )
+        let optimalPeakHour = optimalSummary?.peakHour
+        let timingConfidence = optimalSummary?.confidence ?? 0
+        let optimalBucket = optimalPeakHour.map(bucket(for:))
+        let currentTimePosition = timePosition(
+            now: input.now,
+            optimalPeakHour: optimalPeakHour,
+            hasBehaviour: timingPattern.behaviourBucket != nil && timingConfidence >= 0.5,
+            calendar: calendar
+        )
 
         return GuidanceSelectionContext(
             expectedHour: timing?.expectedHour,
             isWithinWindow: timing.map { currentHour >= $0.windowStart && currentHour <= $0.windowEnd } ?? false,
-            isNearPeak: timing.map { abs(currentHour - $0.expectedHour) <= 1 } ?? false,
-            windowPassed: timing.map { currentHour > $0.windowEnd } ?? false,
-            timingContextLabel: timingPattern.contextLabel,
+            isNearPeak: timingConfidence >= 0.5 ? (timing.map { abs(currentHour - $0.expectedHour) <= 1 } ?? false) : false,
+            windowPassed: timingConfidence >= 0.5 ? (timing.map { currentHour > $0.windowEnd } ?? false) : false,
+            timingConfidence: timingConfidence,
+            behaviourBucket: timingPattern.behaviourBucket,
+            optimalBucket: optimalBucket,
+            timePosition: currentTimePosition,
             cutoffHour: cutoffHour,
             activeDays: snapshot.activeDays,
             windowDays: snapshot.windowDays,
@@ -427,14 +552,157 @@ enum GuidanceEngine {
                 identityFragments.allSatisfy({ !lowercased.contains($0) }) else {
             return GuidanceOutput(
                 id: "fallback-safe",
-                title: "You’re in a strong rhythm",
-                action: "A short session now keeps this moving",
+                title: "Finding your rhythm",
+                action: "A short session now keeps this on track",
                 supportingContext: "Works well now",
                 emphasisLabel: nil,
                 type: .momentum
             )
         }
-        return output
+        return enforceNonDuplication(in: output)
+    }
+
+    private struct GuidanceLine {
+        let type: GuidanceContentType
+        let text: String
+    }
+
+    private static func enforceNonDuplication(in output: GuidanceOutput) -> GuidanceOutput {
+        guard let supportingContext = output.supportingContext else {
+            return output
+        }
+
+        var lines = supportingContext
+            .components(separatedBy: " • ")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !lines.isEmpty else { return output }
+        if lines.count > 2 {
+            lines = Array(lines.prefix(2))
+        }
+
+        var guidanceLines: [GuidanceLine] = []
+        guidanceLines.append(GuidanceLine(type: .behaviour, text: lines[0]))
+        if lines.count > 1 {
+            guidanceLines.append(GuidanceLine(type: .reinforcement, text: lines[1]))
+        }
+
+        guard guidanceLines.count > 1 else {
+            return GuidanceOutput(
+                id: output.id,
+                title: output.title,
+                action: output.action,
+                supportingContext: guidanceLines.map(\.text).joined(separator: " • "),
+                emphasisLabel: output.emphasisLabel,
+                type: output.type
+            )
+        }
+
+        let titleHasTimePosition = containsTimePositionLanguage(output.title)
+        let bullet1HasBehaviour = containsBehaviourTiming(guidanceLines[0].text)
+        let bullet2 = guidanceLines[1].text
+        let bullet2HasTimePosition = containsTimePositionLanguage(bullet2)
+        let bullet2HasBehaviour = containsBehaviourTiming(bullet2)
+
+        let shouldReplaceBullet2 =
+            (titleHasTimePosition && bullet2HasTimePosition) ||
+            (bullet1HasBehaviour && bullet2HasBehaviour) ||
+            areSemanticallySimilar(guidanceLines[0].text, bullet2)
+
+        if shouldReplaceBullet2 {
+            guidanceLines[1] = GuidanceLine(
+                type: .reinforcement,
+                text: reinforcementLine(for: output.type, avoiding: [output.title, output.action, guidanceLines[0].text])
+            )
+        }
+
+        return GuidanceOutput(
+            id: output.id,
+            title: output.title,
+            action: output.action,
+            supportingContext: guidanceLines.map(\.text).joined(separator: " • "),
+            emphasisLabel: output.emphasisLabel,
+            type: output.type
+        )
+    }
+
+    private static func containsTimePositionLanguage(_ value: String) -> Bool {
+        let normalized = value.lowercased()
+        let keywords = [
+            "strongest window",
+            "earlier today",
+            "coming up",
+            "right now",
+            "earlier",
+            "later",
+            "window",
+            "best time",
+            "peak",
+            "now"
+        ]
+        return keywords.contains(where: { normalized.contains($0) })
+    }
+
+    private static func containsBehaviourTiming(_ value: String) -> Bool {
+        let normalized = value.lowercased()
+        let keywords = [
+            "usually",
+            "tend to",
+            "around midday",
+            "early morning",
+            "morning",
+            "afternoon",
+            "evening",
+            "night",
+            "later at night",
+            "in the day"
+        ]
+        return keywords.contains(where: { normalized.contains($0) })
+    }
+
+    private static func areSemanticallySimilar(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsTokens = Set(
+            lhs.lowercased()
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count > 3 }
+        )
+        let rhsTokens = Set(
+            rhs.lowercased()
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count > 3 }
+        )
+        guard !lhsTokens.isEmpty, !rhsTokens.isEmpty else { return false }
+        let overlap = lhsTokens.intersection(rhsTokens)
+        return overlap.count >= 2
+    }
+
+    private static func reinforcementLine(for type: GuidanceType, avoiding lines: [String]) -> String {
+        let basePool: [String]
+        switch type {
+        case .atRisk, .recovery:
+            basePool = permissionLines + reinforcementLines
+        case .momentum, .identity:
+            basePool = reinforcementLines + identityLines
+        }
+
+        let filtered = basePool.filter { candidate in
+            !containsBehaviourTiming(candidate) &&
+            !containsTimePositionLanguage(candidate) &&
+            !lines.contains(where: { existing in areSemanticallySimilar(existing, candidate) })
+        }
+        let pool = filtered.isEmpty ? reinforcementLines : filtered
+        for candidate in pool {
+            let clashes = lines.contains { existing in
+                areSemanticallySimilar(existing, candidate)
+            }
+            if !clashes {
+                return candidate
+            }
+        }
+        return stablePick(from: reinforcementLines, using: "\(type)|\(lines.joined(separator: "|"))")
     }
 
     private static func cutoffHour(
@@ -455,16 +723,7 @@ enum GuidanceEngine {
 
     private struct TimingPattern {
         let window: TimingWindow?
-        let contextLabel: String?
-    }
-
-    private enum TimeBucket: CaseIterable {
-        case earlyMorning
-        case morning
-        case midday
-        case afternoon
-        case evening
-        case night
+        let behaviourBucket: TimeBucket?
     }
 
     private static func inferTimingPattern(
@@ -481,7 +740,7 @@ enum GuidanceEngine {
             .map { calendar.component(.hour, from: $0.effectiveTimestamp) }
 
         guard !recentHours.isEmpty else {
-            return TimingPattern(window: nil, contextLabel: nil)
+            return TimingPattern(window: nil, behaviourBucket: nil)
         }
 
         var counts: [TimeBucket: Int] = [:]
@@ -496,39 +755,16 @@ enum GuidanceEngine {
             }
             return lhs.value < rhs.value
         }) else {
-            return TimingPattern(window: nil, contextLabel: nil)
+            return TimingPattern(window: nil, behaviourBucket: nil)
         }
 
-        let sortedBuckets = counts
-            .sorted { lhs, rhs in
-                if lhs.value == rhs.value {
-                    return bucketOrder(lhs.key) < bucketOrder(rhs.key)
-                }
-                return lhs.value > rhs.value
-            }
         let primaryBucket = primary.key
         let primaryCount = primary.value
         let totalCount = recentHours.count
         let primaryRatio = Double(primaryCount) / Double(max(1, totalCount))
 
-        let secondary: (bucket: TimeBucket, count: Int)? = {
-            guard sortedBuckets.count > 1 else { return nil }
-            let candidate = sortedBuckets[1]
-            return candidate.value >= Int(ceil(Double(primaryCount) * 0.5))
-                ? (candidate.key, candidate.value)
-                : nil
-        }()
-
-        let contextLabel = timingContextLabel(
-            primary: primaryBucket,
-            secondary: secondary?.bucket,
-            totalCount: totalCount,
-            primaryRatio: primaryRatio,
-            distinctBucketCount: counts.count
-        )
-
         guard totalCount >= 3, primaryRatio >= 0.4 else {
-            return TimingPattern(window: nil, contextLabel: contextLabel)
+            return TimingPattern(window: nil, behaviourBucket: nil)
         }
 
         let representativeHour = modeHour(
@@ -543,7 +779,7 @@ enum GuidanceEngine {
                 windowStart: bounds.start,
                 windowEnd: bounds.end
             ),
-            contextLabel: contextLabel
+            behaviourBucket: primaryBucket
         )
     }
 
@@ -579,48 +815,6 @@ enum GuidanceEngine {
         return lowered
     }
 
-    private static func shortContextAnchor(_ value: String) -> String {
-        let lowered = lowercaseDisplay(value)
-        if lowered.hasSuffix("running") {
-            return "After running"
-        }
-        if lowered.hasPrefix("run") {
-            return "Post-run"
-        }
-        return "After \(lowered)"
-    }
-
-    private static func timingContextLabel(
-        primary: TimeBucket,
-        secondary: TimeBucket?,
-        totalCount: Int,
-        primaryRatio: Double,
-        distinctBucketCount: Int
-    ) -> String {
-        if totalCount < 3 {
-            return "Recently around \(bucketLabel(primary))"
-        }
-
-        if distinctBucketCount >= 4 && primaryRatio < 0.4 {
-            return "Varies throughout the day"
-        }
-
-        if let secondary {
-            if totalCount >= 7 && primaryRatio >= 0.6 {
-                return "Mostly around \(bucketLabel(primary)), sometimes in the \(bucketLabel(secondary))"
-            }
-            return "Usually around \(bucketLabel(primary)), sometimes in the \(bucketLabel(secondary))"
-        }
-
-        if totalCount >= 7 && primaryRatio >= 0.7 {
-            return "Consistently around \(bucketLabel(primary))"
-        }
-        if totalCount <= 6 {
-            return "Usually around \(bucketLabel(primary))"
-        }
-        return "Often around \(bucketLabel(primary))"
-    }
-
     private static func bucket(for hour: Int) -> TimeBucket {
         switch hour {
         case 5..<8:
@@ -649,47 +843,242 @@ enum GuidanceEngine {
         }
     }
 
-    private static func bucketLabel(_ bucket: TimeBucket) -> String {
+    private static func timingComparison(
+        behaviour: TimeBucket?,
+        optimal: TimeBucket?
+    ) -> TimingComparison {
+        guard let behaviour, let optimal else {
+            return TimingComparison(
+                behaviour: behaviour,
+                optimal: optimal,
+                relationship: .unknown
+            )
+        }
+
+        let difference = bucketOrder(optimal) - bucketOrder(behaviour)
+        let relationship: Relationship
+        switch difference {
+        case -1:
+            relationship = .slightlyLate
+        case 1:
+            relationship = .slightlyEarly
+        case 0:
+            relationship = .aligned
+        case let x where x <= -2:
+            relationship = .farLate
+        case let x where x >= 2:
+            relationship = .farEarly
+        default:
+            relationship = .unknown
+        }
+
+        return TimingComparison(
+            behaviour: behaviour,
+            optimal: optimal,
+            relationship: relationship
+        )
+    }
+
+    private static func timingInsightLines(
+        from comparison: TimingComparison,
+        timePosition: TimePosition,
+        stage: ConsistencyStage,
+        actionLine: String
+    ) -> [String] {
+        switch (comparison.behaviour, comparison.optimal) {
+        case let (behaviour?, _?):
+            var lines = [behaviourLine(for: behaviour)]
+            if let reinforcement = bullet2Line(
+                for: timePosition,
+                stage: stage,
+                actionLine: actionLine,
+                firstBullet: lines[0]
+            ) {
+                lines.append(reinforcement)
+            }
+            return lines
+        case let (behaviour?, nil):
+            return [behaviourLine(for: behaviour)]
+        case (nil, _?):
+            return ["You’re still finding your rhythm"]
+        case (nil, nil):
+            return []
+        }
+    }
+
+    private static func behaviourLine(for bucket: TimeBucket) -> String {
+        "Usually \(bucketPhrase(for: bucket))"
+    }
+
+    private static func consistencyStage(activeDays: Int, windowDays: Int) -> ConsistencyStage {
+        let safeWindow = max(1, windowDays)
+        let ratio = Double(max(0, activeDays)) / Double(safeWindow)
+        if activeDays <= 2 || ratio < 0.4 {
+            return .early
+        }
+        if ratio < 0.75 {
+            return .building
+        }
+        return .steady
+    }
+
+    private static func bullet2Pool(for position: TimePosition, stage: ConsistencyStage) -> [String] {
+        switch position {
+        case .afterOptimal:
+            return permissionLines
+        case .inOptimal:
+            if stage == .early {
+                return reinforcementLines
+            }
+            return energisingLines + reinforcementLines
+        case .beforeOptimal:
+            if stage == .early {
+                return reinforcementLines
+            }
+            return energisingLines
+        case .unknown:
+            return stage == .steady ? (reinforcementLines + identityLines) : reinforcementLines
+        }
+    }
+
+    private static func bullet2Line(
+        for position: TimePosition,
+        stage: ConsistencyStage,
+        actionLine: String,
+        firstBullet: String
+    ) -> String? {
+        let pool = bullet2Pool(for: position, stage: stage)
+        guard !pool.isEmpty else { return nil }
+
+        let forbidden = [
+            "earlier", "later", "window", "best time", "peak",
+            "morning", "midday", "afternoon", "evening", "night"
+        ]
+
+        let candidates = pool.filter { line in
+            let normalized = line.lowercased()
+            if forbidden.contains(where: { normalized.contains($0) }) {
+                return false
+            }
+            if areSemanticallySimilar(line, actionLine) {
+                return false
+            }
+            if areSemanticallySimilar(line, firstBullet) {
+                return false
+            }
+            return true
+        }
+
+        let finalPool = candidates.isEmpty ? pool : candidates
+        return stablePick(from: finalPool, using: "\(position)|\(stage)|\(actionLine)|\(firstBullet)")
+    }
+
+    private static func stablePick(from pool: [String], using seed: String) -> String {
+        guard !pool.isEmpty else { return "This still helps build consistency" }
+        let hash = seed.unicodeScalars.reduce(5381) { partial, scalar in
+            ((partial << 5) &+ partial) &+ Int(scalar.value)
+        }
+        let index = abs(hash) % pool.count
+        return pool[index]
+    }
+
+    private static func bucketPhrase(for bucket: TimeBucket) -> String {
         switch bucket {
         case .earlyMorning:
-            return "early morning"
+            return "in the early morning"
         case .morning:
-            return "morning"
+            return "in the morning"
         case .midday:
-            return "midday"
+            return "around midday"
         case .afternoon:
-            return "afternoon"
+            return "in the afternoon"
         case .evening:
-            return "evening"
+            return "in the evening"
         case .night:
             return "later at night"
         }
     }
 
-    private static func consistencyLabel(completed: Int, total: Int) -> String {
-        let safeCompleted = max(0, completed)
-        let safeTotal = max(1, total)
+    private static func guidanceTitle(
+        for position: TimePosition,
+        confidence: Double,
+        optimalBucket: TimeBucket?
+    ) -> String {
+        if confidence < 0.5 {
+            if let optimalBucket {
+                return "You usually do this \(bucketPhrase(for: optimalBucket))"
+            }
+            return "Your usual window is still forming"
+        }
 
-        if safeCompleted == 0 {
-            return "Ready to get started"
+        switch position {
+        case .inOptimal:
+            return "You’re in your strongest window"
+        case .beforeOptimal:
+            return "Your strongest window is coming up"
+        case .afterOptimal:
+            return "Your strongest window was earlier"
+        case .unknown:
+            return "Finding your rhythm"
         }
-        if safeCompleted >= safeTotal {
-            return "Locked in this week"
+    }
+
+    private static func guidanceAction(
+        for position: TimePosition,
+        confidence: Double,
+        optimalBucket: TimeBucket?
+    ) -> String {
+        if confidence < 0.5 {
+            if let optimalBucket {
+                return "Usually \(bucketPhrase(for: optimalBucket)) works well"
+            }
+            return "A quick check-in keeps this consistent"
         }
 
-        let ratio = Double(safeCompleted) / Double(safeTotal)
-        switch ratio {
-        case 0.9...:
-            return "Strong consistency"
-        case 0.7..<0.9:
-            return "Consistent this week"
-        case 0.5..<0.7:
-            return "Building consistency"
-        case 0.3..<0.5:
-            return "Getting started"
-        default:
-            return "Just getting going"
+        switch position {
+        case .inOptimal:
+            return "Doing this now helps lock it in"
+        case .beforeOptimal, .afterOptimal:
+            return "A short session now keeps this on track"
+        case .unknown:
+            return "A quick check-in keeps this consistent"
         }
+    }
+
+    private static func timePosition(
+        now: Date,
+        optimalPeakHour: Int?,
+        hasBehaviour: Bool,
+        calendar: Calendar
+    ) -> TimePosition {
+        guard hasBehaviour, let optimalPeakHour else { return .unknown }
+
+        let windowStartHour = (optimalPeakHour + 23) % 24
+        let windowEndHour = (optimalPeakHour + 1) % 24
+        let todayStart = calendar.startOfDay(for: now)
+
+        guard var start = calendar.date(byAdding: .hour, value: windowStartHour, to: todayStart),
+              var end = calendar.date(byAdding: .hour, value: windowEndHour, to: todayStart) else {
+            return .unknown
+        }
+
+        if windowStartHour > windowEndHour {
+            let nowHour = calendar.component(.hour, from: now)
+            if nowHour <= windowEndHour {
+                start = calendar.date(byAdding: .day, value: -1, to: start) ?? start
+            } else {
+                end = calendar.date(byAdding: .day, value: 1, to: end) ?? end
+            }
+        }
+
+        if now >= start && now <= end {
+            return .inOptimal
+        } else if now < start {
+            return .beforeOptimal
+        } else if now > end {
+            return .afterOptimal
+        }
+        return .unknown
     }
 
     private static func modeHour(in hours: [Int], for targetBucket: TimeBucket) -> Int? {
@@ -745,15 +1134,15 @@ enum GuidanceEngine {
 
     private static func momentumNudge(for input: GuidanceInput) -> String {
         if isLearningHabit(input.habit) {
-            return "A few minutes now keeps this going"
+            return "A short session now keeps this on track"
         }
         if isFinanceHabit(input.habit) {
-            return "Putting something aside now keeps momentum"
+            return "A quick check-in keeps this consistent"
         }
         if isFitnessHabit(input.habit) {
-            return "A short walk now keeps things moving"
+            return "A short session now keeps this on track"
         }
-        return "A short session now keeps this moving"
+        return "A short session now keeps this on track"
     }
 
     private static func recoveryNudge(for input: GuidanceInput) -> String {
@@ -771,15 +1160,15 @@ enum GuidanceEngine {
 
     private static func atRiskNudge(for input: GuidanceInput) -> String {
         if isLearningHabit(input.habit) {
-            return "A few minutes today keeps this going"
+            return "A short session now keeps this on track"
         }
         if isFinanceHabit(input.habit) {
-            return "Putting something aside today keeps momentum"
+            return "A quick check-in keeps this consistent"
         }
         if isFitnessHabit(input.habit) {
-            return "A short walk today keeps things moving"
+            return "A short session now keeps this on track"
         }
-        return "A short session today keeps this moving"
+        return "A short session now keeps this on track"
     }
 
     private static func isFitnessHabit(_ habit: Habit) -> Bool {

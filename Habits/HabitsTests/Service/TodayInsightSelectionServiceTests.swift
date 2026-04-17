@@ -10,7 +10,7 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
 
     @MainActor
     func testMessageShowsTodayBestTimeWhenPeakIsAhead() {
-        let candidate = makeCandidate(peakHour: 18)
+        let candidate = makeCandidate(peakHour: 18, confidence: 0.9, uniqueEventCount: 24)
         let now = dateAtHour(15)
 
         let insight = TodayInsightSelectionService.shared.selectInsight(
@@ -19,12 +19,12 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
             calendar: TestDateFactory.utcCalendar
         )
 
-        XCTAssertEqual(insight?.message, "Best time to Reading: 6PM")
+        XCTAssertEqual(insight?.message, "Strongest window for Reading: 6PM")
     }
 
     @MainActor
     func testMessageShowsTomorrowBestTimeWhenPeakHasPassed() {
-        let candidate = makeCandidate(peakHour: 11)
+        let candidate = makeCandidate(peakHour: 11, confidence: 0.9, uniqueEventCount: 24)
         let now = dateAtHour(15)
 
         let insight = TodayInsightSelectionService.shared.selectInsight(
@@ -33,16 +33,32 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
             calendar: TestDateFactory.utcCalendar
         )
 
-        XCTAssertEqual(insight?.message, "Best time tomorrow to Reading: 11AM")
+        XCTAssertEqual(insight?.message, "Strongest window tomorrow for Reading: 11AM")
     }
 
-    private func makeCandidate(peakHour: Int) -> TodayInsightCandidate {
+    @MainActor
+    func testMessageUsesSoftWindowWhenConfidenceIsLow() {
+        let candidate = makeCandidate(peakHour: 21, confidence: 0.2, uniqueEventCount: 4)
+        let now = dateAtHour(10)
+
+        let insight = TodayInsightSelectionService.shared.selectInsight(
+            from: [candidate],
+            now: now,
+            calendar: TestDateFactory.utcCalendar
+        )
+
+        XCTAssertEqual(insight?.message, "Usually later in the evening for Reading")
+    }
+
+    private func makeCandidate(peakHour: Int, confidence: Double, uniqueEventCount: Int) -> TodayInsightCandidate {
         let habit = TestHabitFactory.frequency(name: "Reading")
         let rhythm = HabitRhythm(
             peakHour: peakHour,
             dipStart: 14,
             dipEnd: 16,
             consistencyScore: 0.7,
+            confidence: confidence,
+            uniqueEventCount: uniqueEventCount,
             lastUpdated: TestDateFactory.referenceNow
         )
 

@@ -6,6 +6,7 @@ struct RhythmCardView: View {
 
     let isPremium: Bool
     let data: [HourValue]
+    let rhythm: HabitRhythm?
     let habit: Habit
     var onUnlock: (() -> Void)? = nil
     var onOpen: (() -> Void)? = nil
@@ -43,6 +44,10 @@ struct RhythmCardView: View {
     }
 
     private var rightNowLine: String {
+        if let rhythm, rhythm.confidence < 0.5 {
+            return "Right now: your pattern is still stabilising."
+        }
+
         guard let nowPoint = data.first(where: { $0.hour == currentHour }),
               let peakPoint = data.max(by: { $0.value < $1.value }) else {
             return "Right now: building toward your peak window."
@@ -65,12 +70,18 @@ struct RhythmCardView: View {
     }
 
     private var primaryInsight: AttributedString {
+        if let rhythm, rhythm.confidence < 0.5 {
+            var soft = AttributedString("Usually \(softWindowPhrase(for: bestTime.hour)).")
+            soft.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
+            return soft
+        }
+
         let prefix: String
         switch bestTime.timeframe {
         case .today:
-            prefix = "Best time to \(habit.name.lowercased()): "
+            prefix = "Strongest window: "
         case .tomorrow:
-            prefix = "Best time tomorrow for \(habit.name.lowercased()): "
+            prefix = "Strongest window tomorrow: "
         }
 
         var leading = AttributedString(prefix)
@@ -86,6 +97,12 @@ struct RhythmCardView: View {
     }
 
     private var secondaryDetail: AttributedString {
+        if let rhythm, rhythm.confidence < 0.5 {
+            var text = AttributedString("Recent logs usually land \(softWindowPhrase(for: rhythm.peakHour)).")
+            text.foregroundColor = CadenceTokens.Color.Text.secondary
+            return text
+        }
+
         var text = AttributedString("Peak: ")
         text.foregroundColor = CadenceTokens.Color.Text.secondary
 
@@ -113,6 +130,10 @@ struct RhythmCardView: View {
     }
 
     private var behaviouralSignal: String {
+        if let rhythm, rhythm.confidence < 0.5 {
+            return "Add more check-ins to sharpen your strongest window."
+        }
+
         let consistencyStart = max(0, insight.peakHour - 1)
         let consistencyEnd = min(23, insight.peakHour + 1)
 
@@ -124,11 +145,8 @@ struct RhythmCardView: View {
     }
 
     private var confidenceSignal: String {
-        let sorted = data.sorted { $0.value > $1.value }
-        guard sorted.count > 1 else { return "Pattern stabilising" }
-
-        let separation = sorted[0].value - sorted[1].value
-        return separation >= 0.18 ? "High confidence" : "Pattern stabilising"
+        guard let rhythm else { return "Pattern stabilising" }
+        return rhythm.confidence >= 0.5 ? "High confidence" : "Pattern stabilising"
     }
 
     var body: some View {
@@ -222,5 +240,23 @@ struct RhythmCardView: View {
 
     private func formattedTime(_ hour: Int) -> String {
         humanTime(for: hour)
+    }
+
+    private func softWindowPhrase(for hour: Int) -> String {
+        let normalized = ((hour % 24) + 24) % 24
+        switch normalized {
+        case 0..<5:
+            return "later at night"
+        case 5..<11:
+            return "earlier in the morning"
+        case 11..<15:
+            return "around midday"
+        case 15..<18:
+            return "later in the afternoon"
+        case 18..<22:
+            return "later in the evening"
+        default:
+            return "at night"
+        }
     }
 }

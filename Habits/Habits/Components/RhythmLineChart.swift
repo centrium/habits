@@ -28,7 +28,7 @@ struct RhythmLineChart: View {
                     yStart: .value("Baseline", 0),
                     yEnd: .value("Intensity", point.value)
                 )
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
                 .foregroundStyle(
                     .linearGradient(
                         colors: [
@@ -45,7 +45,7 @@ struct RhythmLineChart: View {
                     x: .value("Hour", point.hour),
                     y: .value("Intensity", point.value)
                 )
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
                 .lineStyle(
                     StrokeStyle(
                         lineWidth: 2.3,

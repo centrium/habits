@@ -658,6 +658,7 @@ struct HabitsListView: View {
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: momentumHabit,
+            globalLogs: visibleHabits.flatMap(\.logs),
             isPremium: purchaseService.premiumStatus == .premium,
             now: .now,
             calendar: calculationCalendar
@@ -738,10 +739,12 @@ struct HabitsListView: View {
         guard purchaseService.premiumStatus != .unknown else { return }
 
         let isPremium = purchaseService.premiumStatus == .premium
+        let globalLogs = visibleHabits.flatMap(\.logs)
         for habit in visibleHabits {
             guard !Task.isCancelled else { return }
             _ = await TimeOfDayPerformanceService.shared.hourlyValues(
                 for: habit,
+                globalLogs: globalLogs,
                 isPremium: isPremium,
                 now: .now,
                 calendar: calculationCalendar
@@ -840,7 +843,9 @@ struct HabitsListView: View {
     private func bestTimeSummary(from message: String) -> String? {
         let prefixes = [
             "Best time for ",
-            "Best time tomorrow for "
+            "Best time tomorrow for ",
+            "Strongest window for ",
+            "Strongest window tomorrow for "
         ]
 
         for prefix in prefixes {
@@ -851,7 +856,7 @@ struct HabitsListView: View {
 
             let timeStart = message.index(after: separatorIndex)
             let time = message[timeStart...].trimmingCharacters(in: .whitespaces)
-            if prefix == "Best time tomorrow for " {
+            if prefix == "Best time tomorrow for " || prefix == "Strongest window tomorrow for " {
                 return "Best time tomorrow: \(time)"
             }
             return "Best time: \(time)"

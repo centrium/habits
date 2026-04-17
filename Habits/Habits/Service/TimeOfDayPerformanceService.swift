@@ -12,6 +12,8 @@ struct HabitRhythm: Equatable, Sendable {
     let dipStart: Int
     let dipEnd: Int
     let consistencyScore: Double
+    let confidence: Double
+    let uniqueEventCount: Int
     let lastUpdated: Date
 }
 
@@ -36,6 +38,12 @@ enum BestTimeTimeframe: Equatable {
 struct BestTimeRecommendation: Equatable {
     let hour: Int
     let timeframe: BestTimeTimeframe
+}
+
+struct PeakTimingSummary: Equatable {
+    let peakHour: Int
+    let confidence: Double
+    let uniqueEventCount: Int
 }
 
 nonisolated private func bestHourValue(from data: [HourValue]) -> HourValue? {
@@ -151,6 +159,8 @@ final class TimeOfDayPerformanceService {
     private struct CacheEntry {
         let logCount: Int
         let newestTimestamp: Date?
+        let globalLogCount: Int
+        let newestGlobalTimestamp: Date?
         let values: [HourValue]
         let rhythm: HabitRhythm
     }
@@ -166,12 +176,19 @@ final class TimeOfDayPerformanceService {
 
     func hourlyValues(
         for habit: Habit,
+        globalLogs: [HabitLog] = [],
         isPremium: Bool,
         now: Date = .now,
         calendar: Calendar = .current
     ) async -> [HourValue] {
         let days = isPremium ? 21 : 3
-        return await hourlyValues(for: habit, days: days, now: now, calendar: calendar)
+        return await hourlyValues(
+            for: habit,
+            globalLogs: globalLogs,
+            days: days,
+            now: now,
+            calendar: calendar
+        )
     }
 
     func cachedRhythm(for habit: Habit, isPremium: Bool) -> HabitRhythm? {
@@ -185,6 +202,7 @@ final class TimeOfDayPerformanceService {
 
     func hourlyValues(
         for habit: Habit,
+        globalLogs: [HabitLog] = [],
         days: Int,
         now: Date = .now,
         calendar: Calendar = .current
@@ -193,30 +211,52 @@ final class TimeOfDayPerformanceService {
         let key = CacheKey(habitID: habit.id, days: clampedDays)
         let logCount = habit.logs.count
         let newestTimestamp = habit.logs.map(\.effectiveTimestamp).max()
+        let globalLogCount = globalLogs.count
+        let newestGlobalTimestamp = globalLogs.map(\.effectiveTimestamp).max()
 
         if let cached = cache[key],
            cached.logCount == logCount,
-           cached.newestTimestamp == newestTimestamp {
+           cached.newestTimestamp == newestTimestamp,
+           cached.globalLogCount == globalLogCount,
+           cached.newestGlobalTimestamp == newestGlobalTimestamp {
             return cached.values
         }
 
         let windowedLogs = logsForWindow(logs: habit.logs, days: clampedDays, now: now, calendar: calendar)
-        let snapshots = windowedLogs.map { LogSnapshot(timestamp: $0.effectiveTimestamp) }
+        let habitSnapshots = windowedLogs
+            .filter { ($0.frequencyContribution > 0 || $0.numericValue > 0) && $0.effectiveTimestamp <= now }
+            .map { LogSnapshot(timestamp: $0.effectiveTimestamp) }
+        let globalSnapshots = (globalLogs.isEmpty ? windowedLogs : globalLogs)
+            .filter { ($0.frequencyContribution > 0 || $0.numericValue > 0) && $0.effectiveTimestamp <= now }
+            .map { LogSnapshot(timestamp: $0.effectiveTimestamp) }
         let floorValue = self.floorValue
 
-        let values = await Task.detached(priority: .utility) {
-            Self.buildValues(from: snapshots, calendar: calendar, floorValue: floorValue)
+        let blendedResult = await Task.detached(priority: .utility) {
+            Self.buildBlendedValues(
+                habitLogs: habitSnapshots,
+                globalLogs: globalSnapshots,
+                now: now,
+                calendar: calendar,
+                floorValue: floorValue
+            )
         }.value
-        let rhythm = Self.buildRhythm(from: values, lastUpdated: now)
+        let rhythm = Self.buildRhythm(
+            from: blendedResult.values,
+            confidence: blendedResult.confidence,
+            uniqueEventCount: blendedResult.uniqueEventCount,
+            lastUpdated: now
+        )
 
         cache[key] = CacheEntry(
             logCount: logCount,
             newestTimestamp: newestTimestamp,
-            values: values,
+            globalLogCount: globalLogCount,
+            newestGlobalTimestamp: newestGlobalTimestamp,
+            values: blendedResult.values,
             rhythm: rhythm
         )
 
-        return values
+        return blendedResult.values
     }
 
     func clearCache(for habitID: UUID? = nil) {
@@ -265,45 +305,106 @@ final class TimeOfDayPerformanceService {
         Self.normalisedHourlyValues(counts: counts, floorValue: floorValue)
     }
 
-    private nonisolated static func buildValues(
+    nonisolated static func peakTimingSummary(
+        habitLogs: [HabitLog],
+        globalLogs: [HabitLog],
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> PeakTimingSummary? {
+        let filteredHabitLogs = habitLogs.filter {
+            ($0.frequencyContribution > 0 || $0.numericValue > 0) && $0.effectiveTimestamp <= now
+        }
+        guard !filteredHabitLogs.isEmpty else {
+            return nil
+        }
+
+        let filteredGlobalLogs = (globalLogs.isEmpty ? filteredHabitLogs : globalLogs).filter {
+            ($0.frequencyContribution > 0 || $0.numericValue > 0) && $0.effectiveTimestamp <= now
+        }
+
+        let result = buildBlendedValues(
+            habitLogs: filteredHabitLogs.map { LogSnapshot(timestamp: $0.effectiveTimestamp) },
+            globalLogs: filteredGlobalLogs.map { LogSnapshot(timestamp: $0.effectiveTimestamp) },
+            now: now,
+            calendar: calendar,
+            floorValue: 0.05
+        )
+        guard let peakHour = bestHourValue(from: result.values)?.hour else {
+            return nil
+        }
+        return PeakTimingSummary(
+            peakHour: peakHour,
+            confidence: result.confidence,
+            uniqueEventCount: result.uniqueEventCount
+        )
+    }
+
+    nonisolated static func deduplicatedHourlyCounts(
+        from logs: [HabitLog],
+        calendar: Calendar,
+        now: Date
+    ) -> (counts: [Int: Int], uniqueEventCount: Int) {
+        let snapshots = logs.map { LogSnapshot(timestamp: $0.effectiveTimestamp) }
+        return deduplicatedHourlyCounts(from: snapshots, calendar: calendar, now: now)
+    }
+
+    private nonisolated static func deduplicatedHourlyCounts(
         from logs: [LogSnapshot],
         calendar: Calendar,
-        floorValue: Double
-    ) -> [HourValue] {
+        now: Date
+    ) -> (counts: [Int: Int], uniqueEventCount: Int) {
+        var seenMinuteStarts = Set<Date>()
+        seenMinuteStarts.reserveCapacity(logs.count)
+
         var counts: [Int: Int] = [:]
         counts.reserveCapacity(24)
 
         for log in logs {
-            let hour = calendar.component(.hour, from: log.timestamp)
+            guard log.timestamp <= now else { continue }
+            guard let minuteStart = calendar.dateInterval(of: .minute, for: log.timestamp)?.start else {
+                continue
+            }
+            guard seenMinuteStarts.insert(minuteStart).inserted else {
+                continue
+            }
+            let hour = calendar.component(.hour, from: minuteStart)
             counts[hour, default: 0] += 1
         }
 
-        return normalisedHourlyValues(counts: counts, floorValue: floorValue)
+        return (counts, seenMinuteStarts.count)
     }
 
-    private nonisolated static func normalisedHourlyValues(counts: [Int: Int], floorValue: Double) -> [HourValue] {
-        let filledCounts = fillHourlyGaps(counts)
-        let maxCount = max(filledCounts.values.max() ?? 0, 1)
+    private nonisolated static func buildBlendedValues(
+        habitLogs: [LogSnapshot],
+        globalLogs: [LogSnapshot],
+        now: Date,
+        calendar: Calendar,
+        floorValue: Double
+    ) -> (values: [HourValue], confidence: Double, uniqueEventCount: Int) {
+        let habitCounts = deduplicatedHourlyCounts(from: habitLogs, calendar: calendar, now: now)
+        let habitValues = normalisedHourlyValues(counts: habitCounts.counts, floorValue: floorValue)
 
-        let normalized: [Double] = (0..<24).map { hour in
-            (filledCounts[hour] ?? 0) / maxCount
+        let globalCounts = deduplicatedHourlyCounts(from: globalLogs, calendar: calendar, now: now)
+        let globalValues = normalisedHourlyValues(counts: globalCounts.counts, floorValue: floorValue)
+
+        let confidence = min(1.0, Double(habitCounts.uniqueEventCount) / 20.0)
+        let blendedValues = (0..<24).map { hour in
+            let habitScore = habitValues[hour].value
+            let globalScore = globalValues[hour].value
+            return HourValue(
+                hour: hour,
+                value: (habitScore * confidence) + (globalScore * (1.0 - confidence))
+            )
         }
 
-        let smoothed: [Double] = (0..<24).map { hour in
-            let previous = normalized[max(0, hour - 1)]
-            let current = normalized[hour]
-            let next = normalized[min(23, hour + 1)]
-            return (previous + (current * 2.0) + next) / 4.0
-        }
+        return (blendedValues, confidence, habitCounts.uniqueEventCount)
+    }
 
+    nonisolated static func normalisedHourlyValues(counts: [Int: Int], floorValue _: Double) -> [HourValue] {
+        let maxCount = max(counts.values.max() ?? 0, 1)
         return (0..<24).map { hour in
-            let edgeDistance = min(hour, 23 - hour)
-            let edgeWeight = min(Double(edgeDistance) / 4.0, 1.0)
-            let ripple = (sin((Double(hour) / 24.0) * .pi * 2.0) + 1.0) / 2.0
-            let dynamicFloor = floorValue + (ripple * 0.05)
-            let tapered = smoothed[hour] * (0.9 + (0.1 * edgeWeight))
-            let clamped = min(1, max(dynamicFloor, tapered))
-            return HourValue(hour: hour, value: clamped)
+            let raw = Double(counts[hour] ?? 0) / Double(maxCount)
+            return HourValue(hour: hour, value: min(1, max(0, raw)))
         }
     }
 
@@ -312,13 +413,20 @@ final class TimeOfDayPerformanceService {
         return cache[key]?.rhythm
     }
 
-    private nonisolated static func buildRhythm(from values: [HourValue], lastUpdated: Date) -> HabitRhythm {
+    private nonisolated static func buildRhythm(
+        from values: [HourValue],
+        confidence: Double,
+        uniqueEventCount: Int,
+        lastUpdated: Date
+    ) -> HabitRhythm {
         let insight = rhythmInsight(from: values)
         return HabitRhythm(
             peakHour: insight.peakHour,
             dipStart: insight.lowRange.0,
             dipEnd: insight.lowRange.1,
             consistencyScore: consistencyScore(from: values, peakHour: insight.peakHour),
+            confidence: confidence,
+            uniqueEventCount: uniqueEventCount,
             lastUpdated: lastUpdated
         )
     }
@@ -371,54 +479,5 @@ final class TimeOfDayPerformanceService {
         return (previous + current + next) / 3.0
     }
 
-    private nonisolated static func fillHourlyGaps(_ counts: [Int: Int]) -> [Int: Double] {
-        var filled: [Int: Double] = [:]
-        filled.reserveCapacity(24)
-
-        for hour in 0..<24 {
-            if let value = counts[hour] {
-                filled[hour] = Double(value)
-                continue
-            }
-
-            let previous = nearestKnownHour(before: hour, counts: counts)
-            let next = nearestKnownHour(after: hour, counts: counts)
-
-            if let previous, let next, previous != next {
-                let previousValue = Double(counts[previous] ?? 0)
-                let nextValue = Double(counts[next] ?? 0)
-                let distance = Double(next - previous)
-                let progress = Double(hour - previous) / distance
-                filled[hour] = previousValue + ((nextValue - previousValue) * progress)
-            } else {
-                filled[hour] = 0
-            }
-        }
-
-        return filled
-    }
-
-    private nonisolated static func nearestKnownHour(before hour: Int, counts: [Int: Int]) -> Int? {
-        guard hour > 0 else { return nil }
-
-        for candidate in stride(from: hour - 1, through: 0, by: -1) {
-            if counts[candidate] != nil {
-                return candidate
-            }
-        }
-
-        return nil
-    }
-
-    private nonisolated static func nearestKnownHour(after hour: Int, counts: [Int: Int]) -> Int? {
-        guard hour < 23 else { return nil }
-
-        for candidate in (hour + 1)...23 {
-            if counts[candidate] != nil {
-                return candidate
-            }
-        }
-
-        return nil
-    }
+    // Intentionally no gap interpolation: bucket scores come from observed hourly events only.
 }
