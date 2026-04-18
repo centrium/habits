@@ -2,14 +2,20 @@ import SwiftUI
 
 struct GuidanceCard: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var pulseOpacity: Double = 0.6
 
     let output: GuidanceOutput
     let accent: CadenceAccentTokens
     var variant: GuidanceVisualVariant = .focus
     var label: String = "NOW"
     var guidanceText: String? = nil
+    var isLoading: Bool = false
+    var loadingText: String = "Thinking…"
 
     var body: some View {
+        let hasCustomGuidance = guidanceText?.isEmpty == false
+        let resolvedGuidanceText = hasCustomGuidance ? (guidanceText ?? output.action) : output.action
+
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
@@ -28,11 +34,22 @@ struct GuidanceCard: View {
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text(guidanceText ?? output.action)
-                        .font(guidanceText == nil ? .system(size: 13) : .body)
-                        .foregroundStyle(guidanceText == nil ? CadenceTokens.Color.Text.secondary.opacity(0.9) : .primary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if isLoading {
+                        Text(loadingText)
+                            .font(.body)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .opacity(pulseOpacity)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                    } else {
+                        Text(resolvedGuidanceText)
+                            .font(hasCustomGuidance ? .body : .system(size: 13))
+                            .foregroundStyle(hasCustomGuidance ? .primary : CadenceTokens.Color.Text.secondary.opacity(0.9))
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -74,6 +91,12 @@ struct GuidanceCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel([output.title, output.action].joined(separator: ". "))
+        .onAppear {
+            updatePulseAnimation()
+        }
+        .onChange(of: isLoading) { _, _ in
+            updatePulseAnimation()
+        }
     }
 
     private var accentColor: Color {
@@ -93,5 +116,19 @@ struct GuidanceCard: View {
             return accent.primary.opacity(colorScheme == .dark ? 0.1 : 0.07)
         }
         return Color.black.opacity(0.07)
+    }
+
+    private func updatePulseAnimation() {
+        if isLoading {
+            pulseOpacity = 0.6
+            withAnimation(
+                .easeInOut(duration: 1.2)
+                .repeatForever(autoreverses: true)
+            ) {
+                pulseOpacity = 1.0
+            }
+            return
+        }
+        pulseOpacity = 1.0
     }
 }

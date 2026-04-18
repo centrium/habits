@@ -34,6 +34,7 @@ struct HabitDetailSheet: View {
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @EnvironmentObject private var habitLogService: HabitLogService
     @StateObject private var aiCoach = AICoachService.shared
+    @StateObject private var appTime = AppTime.shared
     @StateObject private var selectionState: HabitSelectionState
     @State private var activeSheet: ActiveSheet?
     @State private var manualLogValue: Double? = nil
@@ -65,6 +66,7 @@ struct HabitDetailSheet: View {
         let now = Date()
         let calendar = habitLogService.calendar
         let progressRevision = habitLogService.metricsRevision(for: habit.id)
+        let aiRequestKey = aiCoachRequestKey(progressRevision: progressRevision, now: appTime.now)
         let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
         let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
         let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
@@ -219,7 +221,6 @@ struct HabitDetailSheet: View {
 
         }
         .onAppear {
-            aiCoach.generateHelloWorld()
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
@@ -262,6 +263,9 @@ struct HabitDetailSheet: View {
         }
         .task(id: rhythmTaskKey) {
             await refreshRhythmData()
+        }
+        .task(id: aiRequestKey) {
+            regenerateAICoach(requestKey: aiRequestKey, streakState: streakState)
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
             ZStack(alignment: .top) {
@@ -412,8 +416,10 @@ struct HabitDetailSheet: View {
                         output: guidanceOutput,
                         accent: accent,
                         variant: GuidanceEngine.visualVariant(for: guidanceOutput),
-                        label: "AI Coach",
-                        guidanceText: aiCoach.text
+                        label: "AI Coach • \(momentumConfidenceLabel())",
+                        guidanceText: aiCoach.text,
+                        isLoading: aiCoach.isLoading,
+                        loadingText: aiCoach.loadingText
                     )
                     .padding(.horizontal, sectionPadding)
                     .padding(.top, 12)
@@ -1015,6 +1021,127 @@ struct HabitDetailSheet: View {
         return "You tend to \(habit.name.lowercased()) after \(sourceHabitName.lowercased())"
     }
 
+    private func aiCoachRequestKey(progressRevision: Int, now: Date) -> String {
+        let dayStart = calculationCalendar.startOfDay(for: now)
+        let dayKey = dayStart.timeIntervalSince1970
+        return "\(habit.id.uuidString)-\(progressRevision)-\(dayKey)"
+    }
+
+    private func regenerateAICoach(requestKey: String, streakState: StreakState) {
+        let input = buildAICoachInput(streakState: streakState)
+        aiCoach.generate(input: input, requestKey: requestKey)
+    }
+
+    private func buildAICoachInput(streakState: StreakState) -> AICoachInput {
+        let identityState = identityStateSummary()
+        return AICoachInput(
+            habitName: habit.name,
+            recentLogs: recentLogsSummary(),
+            strongestTime: strongestTimeWindow(),
+            weakestTime: weakestTimeWindow(),
+            momentum: momentumLabel(for: streakState),
+            momentumConfidence: momentumConfidenceLabel(),
+            consistency: consistencyPercent(identityState: identityState),
+            streakState: streakLabel(for: streakState),
+            identity: userDefinedIdentityText,
+            stacking: guidancePattern()?.description,
+            todayStatus: hasActivityToday() ? "completed" : "not completed yet",
+            behaviourSummary: behaviourSummary(for: streakState)
+        )
+    }
+
+    private func recentLogsSummary() -> String {
+        let recent = habit.logs
+            .map(\.effectiveTimestamp)
+            .sorted(by: >)
+            .prefix(3)
+        guard !recent.isEmpty else { return "" }
+
+        let formatter = DateFormatter()
+        formatter.locale = calculationCalendar.locale ?? .current
+        formatter.calendar = calculationCalendar
+        formatter.timeZone = calculationCalendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("MMM d h:mm a")
+        let labels = recent.map { formatter.string(from: $0) }
+        return "Recent check-ins: \(labels.joined(separator: ", "))."
+    }
+
+    private func strongestTimeWindow() -> String? {
+        let isPremium = purchaseService.premiumStatus == .premium
+        guard let rhythm = TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
+              rhythm.uniqueEventCount > 0 else {
+            return nil
+        }
+        return humanTime(for: rhythm.peakHour)
+    }
+
+    private func weakestTimeWindow() -> String? {
+        let isPremium = purchaseService.premiumStatus == .premium
+        guard let rhythm = TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
+              rhythm.uniqueEventCount > 0 else {
+            return nil
+        }
+        return "\(humanTime(for: rhythm.dipStart)) to \(humanTime(for: rhythm.dipEnd))"
+    }
+
+    private func momentumLabel(for streakState: StreakState) -> String {
+        switch streakState.status {
+        case .safe:
+            return streakState.currentStreak >= 3 ? "building" : "stable"
+        case .atRisk:
+            return "slipping"
+        case .broken:
+            return "resetting"
+        }
+    }
+
+    private func momentumConfidenceLabel() -> String {
+        let isPremium = purchaseService.premiumStatus == .premium
+        guard let rhythm = TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
+              rhythm.uniqueEventCount > 0 else {
+            return "forming"
+        }
+
+        let confidence = rhythm.confidence
+        switch confidence {
+        case ..<0.45:
+            return "LOW"
+        case ..<0.72:
+            return "MEDIUM"
+        default:
+            return "HIGH"
+        }
+    }
+
+    private func streakLabel(for streakState: StreakState) -> String {
+        guard streakState.currentStreak > 0 else { return "forming" }
+        switch streakState.status {
+        case .safe:
+            return "\(streakState.currentStreak)-period streak"
+        case .atRisk:
+            return "\(streakState.currentStreak)-period streak at risk"
+        case .broken:
+            return "streak broken"
+        }
+    }
+
+    private func consistencyPercent(identityState: HabitIdentityStateSnapshot) -> Int? {
+        guard identityState.windowDays > 0 else { return nil }
+        let ratio = Double(identityState.activeDays) / Double(identityState.windowDays)
+        return Int((ratio * 100).rounded())
+    }
+
+    private func behaviourSummary(for streakState: StreakState) -> String {
+        guard !habit.logs.isEmpty else { return "Pattern still forming." }
+        switch streakState.status {
+        case .safe:
+            return "Recent behaviour is stable."
+        case .atRisk:
+            return "Recent behaviour is slipping."
+        case .broken:
+            return "Recent behaviour has been interrupted."
+        }
+    }
 }
 
 private struct DetailHeaderIdentity: View {
