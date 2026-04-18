@@ -27,6 +27,7 @@ enum TimeInsightEngine {
     static func compute(
         logs: [HabitLog],
         globalLogs: [HabitLog],
+        allowGlobalBlending: Bool = true,
         debugMode: Bool = false,
         debugLabel: String? = nil,
         now: Date = .now,
@@ -35,6 +36,7 @@ enum TimeInsightEngine {
         computeDetails(
             logs: logs,
             globalLogs: globalLogs,
+            allowGlobalBlending: allowGlobalBlending,
             debugMode: debugMode,
             debugLabel: debugLabel,
             now: now,
@@ -45,6 +47,7 @@ enum TimeInsightEngine {
     static func computeDetails(
         logs: [HabitLog],
         globalLogs: [HabitLog],
+        allowGlobalBlending: Bool = true,
         debugMode: Bool = false,
         debugLabel: String? = nil,
         now: Date = .now,
@@ -94,24 +97,38 @@ enum TimeInsightEngine {
             globalSignal: globalSignal,
             baseConfidence: baseConfidence
         )
+        let isInsufficientSignal = habitEvents.count < minimumEventCountForSignal ||
+            habitSignal.activeDays < minimumActiveDaysForSignal
+
         let blended = (0..<24).map { hour in
+            if !allowGlobalBlending {
+                return habitSignal.normalized[hour]
+            }
             let habitScore = habitSignal.normalized[hour]
             let globalScore = globalSignal.normalized[hour]
             return (habitScore * blendingConfidence) + (globalScore * (1.0 - blendingConfidence))
         }
 
-        let smoothed = safelySmoothed(blended)
-        let peakHour = argmax(smoothed)
-        let shape = detectShape(scores: smoothed, peakHour: peakHour)
-        let confidenceBase = confidenceFromDistribution(
-            scores: smoothed,
-            activeDays: habitSignal.activeDays
-        )
-        let confidence = confidenceAdjustedForShift(
-            baseConfidence: confidenceBase,
-            recentPeak: recentPeak,
-            historicalPeak: historicalPeak
-        )
+        let smoothed = isInsufficientSignal
+            ? Array(repeating: 0.0, count: 24)
+            : safelySmoothed(blended)
+        let peakHour = isInsufficientSignal ? recentPeak : argmax(smoothed)
+        let shape: ShapeType = isInsufficientSignal
+            ? .flat
+            : detectShape(scores: smoothed, peakHour: peakHour)
+        let confidenceBase = isInsufficientSignal
+            ? 0
+            : confidenceFromDistribution(
+                scores: smoothed,
+                activeDays: habitSignal.activeDays
+            )
+        let confidence = isInsufficientSignal
+            ? 0
+            : confidenceAdjustedForShift(
+                baseConfidence: confidenceBase,
+                recentPeak: recentPeak,
+                historicalPeak: historicalPeak
+            )
 
         let result = TimeInsightResult(
             hourlyScores: smoothed,
@@ -125,31 +142,60 @@ enum TimeInsightEngine {
         )
 
         if debugEnabled {
-            let label = debugLabel ?? "unknown"
-            print("[TimeInsightEngine INPUT]")
-            print("habit: \(label)")
-            print("dedupedCount: \(habitEvents.count)")
-            print("[TimeInsightEngine OUTPUT]")
-            print("peakHour: \(peakHour)")
-            print(String(format: "confidence: %.4f", confidence))
-            print("top 3 hours: \(topHours(from: smoothed))")
-            if peakHour == 12 {
-                print(
-                    peakCompetitionExplanation(
-                        selectedPeakHour: peakHour,
-                        blended: blended,
-                        smoothed: smoothed
-                    )
+            print(
+                debugReport(
+                    logs: logs,
+                    label: debugLabel ?? "unknown",
+                    now: now,
+                    calendar: calendar,
+                    habitEvents: habitEvents,
+                    globalEvents: globalEvents,
+                    isInsufficientSignal: isInsufficientSignal,
+                    allowGlobalBlending: allowGlobalBlending,
+                    blendingConfidence: blendingConfidence,
+                    habitSignal: habitSignal,
+                    globalSignal: globalSignal,
+                    blended: blended,
+                    smoothed: smoothed,
+                    peakHour: peakHour,
+                    confidence: confidence
                 )
-            }
+            )
         }
 
         return TimeInsightComputation(result: result, diagnostics: diagnostics)
     }
+
+    static func debugDumpAllLogs(
+        for habit: Habit,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
+#if DEBUG
+        print(
+            debugAllLogsReport(
+                for: habit,
+                now: now,
+                calendar: calendar
+            )
+        )
+#else
+        _ = habit
+        _ = now
+        _ = calendar
+#endif
+    }
 }
 
 private extension TimeInsightEngine {
+    static let minimumEventCountForSignal: Int = 3
+    static let minimumActiveDaysForSignal: Int = 2
+
     struct DeduplicatedEvent {
+        let logID: UUID
+        let logicalDay: Date
+        let timestamp: Date
+        let createdAt: Date
         let minuteStart: Date
         let hour: Int
         let dayStart: Date
@@ -189,6 +235,10 @@ private extension TimeInsightEngine {
 
             events.append(
                 DeduplicatedEvent(
+                    logID: log.id,
+                    logicalDay: log.day,
+                    timestamp: timestamp,
+                    createdAt: log.createdAt,
                     minuteStart: minuteStart,
                     hour: calendar.component(.hour, from: minuteStart),
                     dayStart: calendar.startOfDay(for: minuteStart)
@@ -239,9 +289,21 @@ private extension TimeInsightEngine {
         var activeDays = Set<Date>()
 
         for event in events {
-            let eventWeight = useRecencyWeighting
-                ? recencyWeight(for: event.minuteStart, now: now, decayFactorDays: recencyDecayFactorDays)
-                : 1.0
+            let eventWeight: Double
+            if useRecencyWeighting {
+                let timestampRecencyWeight = recencyWeight(
+                    for: event.minuteStart,
+                    now: now,
+                    decayFactorDays: recencyDecayFactorDays
+                )
+                let trust = timingTrustFactor(
+                    timestamp: event.timestamp,
+                    createdAt: event.createdAt
+                )
+                eventWeight = timestampRecencyWeight * trust
+            } else {
+                eventWeight = 1.0
+            }
             bucketCounts[event.hour] += eventWeight
             uniqueDaysByHour[event.hour].insert(event.dayStart)
             activeDays.insert(event.dayStart)
@@ -360,6 +422,22 @@ private extension TimeInsightEngine {
         return exp(-daysAgo / decayFactor)
     }
 
+    static func timingTrustFactor(timestamp: Date, createdAt: Date) -> Double {
+        let deltaSeconds = abs(timestamp.timeIntervalSince(createdAt))
+        let deltaHours = deltaSeconds / 3_600.0
+
+        switch deltaHours {
+        case ...2:
+            return 1.0
+        case ...24:
+            return 0.75
+        case ...72:
+            return 0.4
+        default:
+            return 0.1
+        }
+    }
+
     static func confidenceAdjustedForShift(
         baseConfidence: Double,
         recentPeak: Int,
@@ -433,6 +511,267 @@ private extension TimeInsightEngine {
         return baseConfidence
     }
 
+    static func debugReport(
+        logs: [HabitLog],
+        label: String,
+        now: Date,
+        calendar: Calendar,
+        habitEvents: [DeduplicatedEvent],
+        globalEvents: [DeduplicatedEvent],
+        isInsufficientSignal: Bool,
+        allowGlobalBlending: Bool,
+        blendingConfidence: Double,
+        habitSignal: HourlySignal,
+        globalSignal: HourlySignal,
+        blended: [Double],
+        smoothed: [Double],
+        peakHour: Int,
+        confidence: Double
+    ) -> String {
+        let includedRows = debugIncludedRows(logs: logs, now: now, calendar: calendar)
+        let uniqueActiveDays = Set(includedRows.map(\.dayStart)).count
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = calendar.timeZone
+
+        var rawCountByHour = Array(repeating: 0, count: 24)
+        var rawWeightedByHour = Array(repeating: 0.0, count: 24)
+        for row in includedRows {
+            rawCountByHour[row.hour] += 1
+            rawWeightedByHour[row.hour] += row.adjustedWeight
+        }
+
+        let ranked = smoothed.enumerated().sorted { lhs, rhs in
+            if lhs.element == rhs.element {
+                return lhs.offset < rhs.offset
+            }
+            return lhs.element > rhs.element
+        }
+        let winner = ranked.first ?? (offset: 0, element: 0.0)
+        let runnerUp = ranked.dropFirst().first ?? (offset: 0, element: 0.0)
+        let exclusions = debugExclusionSummary(logs: logs, now: now, calendar: calendar)
+        let confidenceBand: String = {
+            switch confidence {
+            case ..<0.35: return "low"
+            case ..<0.75: return "medium"
+            default: return "high"
+            }
+        }()
+
+        var lines: [String] = []
+        lines.append("---- Timing Signal Debug (\(label)) ----")
+        lines.append("A. Input summary")
+        lines.append("[input] now=\(formatter.string(from: now)) timezone=\(calendar.timeZone.identifier)")
+        lines.append("[input] logsIncluded=\(habitEvents.count) uniqueActiveDays=\(uniqueActiveDays) globalEvents=\(globalEvents.count)")
+        lines.append("[input] logsExcluded nonEntry=\(exclusions.nonEntry) missingTimestamp=\(exclusions.missingTimestamp) future=\(exclusions.futureTimestamp) duplicateMinute=\(exclusions.duplicateMinute)")
+        lines.append("[input] insufficientData=\(isInsufficientSignal) minEvents=\(minimumEventCountForSignal) minActiveDays=\(minimumActiveDaysForSignal)")
+        lines.append("[input] placementSource=timestamp weightingSource=timestamp recencyDecayDays=\(String(format: "%.1f", recencyDecayFactorDays))")
+
+        lines.append("B. Per-log trace")
+        if includedRows.isEmpty {
+            lines.append("[log] none")
+        } else {
+            for row in includedRows {
+                lines.append(
+                    "[log] id=\(row.logID.uuidString) date=\(formatter.string(from: row.logicalDay)) createdAt=\(formatter.string(from: row.createdAt)) localTOD=\(row.localTOD) bin=\(row.hour) placementSource=timestamp weightingSource=timestamp ageDays=\(String(format: "%.2f", row.ageDays)) weight(timestamp)=\(String(format: "%.4f", row.timestampWeight)) weight(createdAt)=\(String(format: "%.4f", row.createdAtWeight)) [trust] deltaHours=\(String(format: "%.2f", row.trustDeltaHours)) trust=\(String(format: "%.2f", row.trust)) adjustedWeight=\(String(format: "%.4f", row.adjustedWeight))"
+                )
+            }
+        }
+
+        lines.append("C. Bin summary before smoothing")
+        let nonZeroRawHours = (0..<24).filter { rawCountByHour[$0] > 0 || rawWeightedByHour[$0] > 0.0001 }
+        if nonZeroRawHours.isEmpty {
+            lines.append("[bin raw] none")
+        } else {
+            for hour in nonZeroRawHours {
+                lines.append(
+                    "[bin raw] \(hourLabel(hour)) count=\(rawCountByHour[hour]) weighted=\(String(format: "%.4f", rawWeightedByHour[hour]))"
+                )
+            }
+        }
+
+        lines.append("D. Smoothing summary")
+        let smoothingEnabled = !isInsufficientSignal
+        lines.append("[smooth] enabled=\(smoothingEnabled ? "yes" : "no") mode=tri-neighbor-circular-kernel(0.2,0.6,0.2)-peak-preserving")
+        lines.append("[smooth] blending=\(allowGlobalBlending ? "enabled" : "disabled") blendingConfidence=\(String(format: "%.4f", blendingConfidence))")
+        if smoothingEnabled {
+            let nonZeroSmoothedHours = (0..<24).filter { smoothed[$0] > 0.0001 }
+            for hour in nonZeroSmoothedHours.prefix(10) {
+                lines.append("[bin smooth] \(hourLabel(hour)) score=\(String(format: "%.4f", smoothed[hour]))")
+            }
+        } else {
+            lines.append("[smooth] suppressedDueToInsufficientData=true")
+        }
+
+        lines.append("E. Peak selection summary")
+        lines.append("[peak] mode=argmax(smoothedNormalizedScores)")
+        lines.append("[peak] winner=\(hourLabel(winner.offset)) score=\(String(format: "%.4f", winner.element))")
+        lines.append("[peak] runnerUp=\(hourLabel(runnerUp.offset)) score=\(String(format: "%.4f", runnerUp.element))")
+        lines.append("[peak] strongestWindowLabel=\(windowBucketLabel(for: peakHour) ?? "nil") peakTime=\(hourLabel(peakHour))")
+
+        lines.append("F. Confidence summary")
+        lines.append("[confidence] score=\(String(format: "%.4f", confidence)) band=\(confidenceBand) activeDays=\(habitSignal.activeDays) events=\(habitEvents.count)")
+        lines.append("[confidence] suppressedStrongestWindow=\(isInsufficientSignal ? "yes" : "no")")
+
+        let resultLine: String
+        if isInsufficientSignal {
+            resultLine = "[result] strongestWindow=nil confidence=low reason=Insufficient signal; only \(habitEvents.count) logs across \(habitSignal.activeDays) active day(s), so peak is intentionally suppressed"
+        } else {
+            resultLine = "[result] strongestWindow=\(hourLabel(peakHour)) confidence=\(confidenceBand) reason=Selected dominant weighted bin \(hourLabel(winner.offset)) score=\(String(format: "%.4f", winner.element)) vs runner-up \(hourLabel(runnerUp.offset)) score=\(String(format: "%.4f", runnerUp.element))"
+        }
+        lines.append("G. Final explanation line")
+        lines.append(resultLine)
+
+        // Keep compact numerical context for cross-checking.
+        lines.append("[trace] habitTopHours=\(topHours(from: habitSignal.normalized)) globalTopHours=\(topHours(from: globalSignal.normalized)) blendedTopHours=\(topHours(from: blended))")
+        return lines.joined(separator: "\n")
+    }
+
+    struct DebugIncludedRow {
+        let logID: UUID
+        let logicalDay: Date
+        let createdAt: Date
+        let dayStart: Date
+        let hour: Int
+        let localTOD: String
+        let trustDeltaHours: Double
+        let trust: Double
+        let ageDays: Double
+        let timestampWeight: Double
+        let createdAtWeight: Double
+        let adjustedWeight: Double
+    }
+
+    struct DebugExclusionSummary {
+        let nonEntry: Int
+        let missingTimestamp: Int
+        let futureTimestamp: Int
+        let duplicateMinute: Int
+    }
+
+    static func debugExclusionSummary(
+        logs: [HabitLog],
+        now: Date,
+        calendar: Calendar
+    ) -> DebugExclusionSummary {
+        var seen = Set<Date>()
+        var nonEntry = 0
+        var missingTimestamp = 0
+        var futureTimestamp = 0
+        var duplicateMinute = 0
+
+        for log in logs {
+            guard log.kind == .entry else {
+                nonEntry += 1
+                continue
+            }
+            guard let timestamp = log.timestamp else {
+                missingTimestamp += 1
+                continue
+            }
+            guard timestamp <= now else {
+                futureTimestamp += 1
+                continue
+            }
+            guard let minuteStart = calendar.dateInterval(of: .minute, for: timestamp)?.start else {
+                missingTimestamp += 1
+                continue
+            }
+            guard seen.insert(minuteStart).inserted else {
+                duplicateMinute += 1
+                continue
+            }
+        }
+
+        return DebugExclusionSummary(
+            nonEntry: nonEntry,
+            missingTimestamp: missingTimestamp,
+            futureTimestamp: futureTimestamp,
+            duplicateMinute: duplicateMinute
+        )
+    }
+
+    static func debugIncludedRows(
+        logs: [HabitLog],
+        now: Date,
+        calendar: Calendar
+    ) -> [DebugIncludedRow] {
+        var seen = Set<Date>()
+        var rows: [DebugIncludedRow] = []
+
+        for log in logs {
+            guard log.kind == .entry,
+                  let timestamp = log.timestamp,
+                  timestamp <= now,
+                  let minuteStart = calendar.dateInterval(of: .minute, for: timestamp)?.start else {
+                continue
+            }
+            guard seen.insert(minuteStart).inserted else {
+                continue
+            }
+
+            let hour = calendar.component(.hour, from: minuteStart)
+            let minute = calendar.component(.minute, from: minuteStart)
+            let ageDays = max(0, now.timeIntervalSince(minuteStart) / 86_400.0)
+            let timestampWeight = recencyWeight(
+                for: minuteStart,
+                now: now,
+                decayFactorDays: recencyDecayFactorDays
+            )
+            let createdAtWeight = recencyWeight(
+                for: log.createdAt,
+                now: now,
+                decayFactorDays: recencyDecayFactorDays
+            )
+            let trustDeltaHours = abs(timestamp.timeIntervalSince(log.createdAt)) / 3_600.0
+            let trust = timingTrustFactor(timestamp: timestamp, createdAt: log.createdAt)
+            let adjustedWeight = timestampWeight * trust
+            let localTOD = String(format: "%02d:%02d", hour, minute)
+            rows.append(
+                DebugIncludedRow(
+                    logID: log.id,
+                    logicalDay: log.day,
+                    createdAt: log.createdAt,
+                    dayStart: calendar.startOfDay(for: minuteStart),
+                    hour: hour,
+                    localTOD: localTOD,
+                    trustDeltaHours: trustDeltaHours,
+                    trust: trust,
+                    ageDays: ageDays,
+                    timestampWeight: timestampWeight,
+                    createdAtWeight: createdAtWeight,
+                    adjustedWeight: adjustedWeight
+                )
+            )
+        }
+
+        return rows.sorted { lhs, rhs in
+            if lhs.logicalDay == rhs.logicalDay {
+                return lhs.localTOD < rhs.localTOD
+            }
+            return lhs.logicalDay < rhs.logicalDay
+        }
+    }
+
+    static func hourLabel(_ hour: Int) -> String {
+        String(format: "%02d:00", ((hour % 24) + 24) % 24)
+    }
+
+    static func windowBucketLabel(for peakHour: Int) -> String? {
+        switch peakHour {
+        case 5..<11:
+            return "Morning"
+        case 11..<17:
+            return "Afternoon"
+        case 17..<23:
+            return "Evening"
+        case 23, 0..<5:
+            return "Night"
+        default:
+            return nil
+        }
+    }
+
     static func isDebugEnvironmentEnabled() -> Bool {
         let value = ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() ?? ""
         return value == "1" || value == "true" || value == "yes"
@@ -473,5 +812,189 @@ private extension TimeInsightEngine {
             .prefix(count)
             .map { String(format: "%02d=%.4f", $0.offset, $0.element) }
             .joined(separator: ", ")
+    }
+
+    struct LogDumpRow {
+        let logID: UUID
+        let kind: HabitLogKind
+        let logicalDay: Date
+        let timestamp: Date?
+        let effectiveTimestamp: Date
+        let createdAt: Date
+        let count: Int
+        let value: Double?
+        let numericValue: Double
+        let frequencyContribution: Int
+        let localTOD: String
+        let bin: Int?
+        let minuteStart: Date?
+        let ageDaysByTimestamp: Double?
+        let ageDaysByCreatedAt: Double
+        let recencyWeightByTimestamp: Double?
+        let recencyWeightByCreatedAt: Double
+        let trustDeltaHours: Double?
+        let trust: Double?
+        let adjustedWeight: Double?
+        let includedInTiming: Bool
+        let exclusionReason: String?
+        let includedAfterMinuteDedup: Bool
+        let dedupedByLogID: UUID?
+    }
+
+    static func debugAllLogsReport(
+        for habit: Habit,
+        now: Date,
+        calendar: Calendar
+    ) -> String {
+        let rows = buildLogDumpRows(
+            logs: habit.logs,
+            now: now,
+            calendar: calendar
+        )
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = calendar.timeZone
+
+        let total = rows.count
+        let entryCount = rows.filter { $0.kind == .entry }.count
+        let legacyCount = rows.filter { $0.kind == .legacyDailyTotal }.count
+        let includedCount = rows.filter(\.includedInTiming).count
+        let dedupIncludedCount = rows.filter(\.includedAfterMinuteDedup).count
+        let uniqueDays = Set(rows.map { calendar.startOfDay(for: $0.effectiveTimestamp) }).count
+
+        var lines: [String] = []
+        lines.append("---- Habit Log Full Dump (\(habit.name)) ----")
+        lines.append("[habit] id=\(habit.id.uuidString) goalType=\(habit.goalType.rawValue) hasGoal=\(habit.hasGoal) createdAt=\(formatter.string(from: habit.createdAt))")
+        lines.append("[context] now=\(formatter.string(from: now)) timezone=\(calendar.timeZone.identifier)")
+        lines.append("[counts] total=\(total) entry=\(entryCount) legacy=\(legacyCount) uniqueDays=\(uniqueDays)")
+        lines.append("[timing-input] eligibleBeforeDedup=\(includedCount) eligibleAfterMinuteDedup=\(dedupIncludedCount) excluded=\(total - includedCount)")
+        lines.append("[timing-config] placementSource=timestamp weightingSource=timestamp recencyDecayDays=\(String(format: "%.1f", recencyDecayFactorDays))")
+
+        if rows.isEmpty {
+            lines.append("[log] none")
+        } else {
+            for row in rows {
+                let timestampText = row.timestamp.map { formatter.string(from: $0) } ?? "nil"
+                let minuteStartText = row.minuteStart.map { formatter.string(from: $0) } ?? "nil"
+                let ageByTimestampText = row.ageDaysByTimestamp.map { String(format: "%.2f", $0) } ?? "nil"
+                let weightByTimestampText = row.recencyWeightByTimestamp.map { String(format: "%.4f", $0) } ?? "nil"
+                let trustDeltaHoursText = row.trustDeltaHours.map { String(format: "%.2f", $0) } ?? "nil"
+                let trustText = row.trust.map { String(format: "%.2f", $0) } ?? "nil"
+                let adjustedWeightText = row.adjustedWeight.map { String(format: "%.4f", $0) } ?? "nil"
+                let binText = row.bin.map(String.init) ?? "nil"
+                let excludedText = row.exclusionReason ?? "none"
+                let dedupByText = row.dedupedByLogID?.uuidString ?? "nil"
+
+                lines.append(
+                    "[log] id=\(row.logID.uuidString) kind=\(row.kind.rawValue) day=\(formatter.string(from: row.logicalDay)) timestamp=\(timestampText) effective=\(formatter.string(from: row.effectiveTimestamp)) createdAt=\(formatter.string(from: row.createdAt)) localTOD=\(row.localTOD) minuteStart=\(minuteStartText) bin=\(binText) count=\(row.count) value=\(row.value.map { String(format: "%.4f", $0) } ?? "nil") numeric=\(String(format: "%.4f", row.numericValue)) freqContribution=\(row.frequencyContribution) timingEligible=\(row.includedInTiming) dedupIncluded=\(row.includedAfterMinuteDedup) dedupedBy=\(dedupByText) exclusion=\(excludedText) ageDays(timestamp)=\(ageByTimestampText) ageDays(createdAt)=\(String(format: "%.2f", row.ageDaysByCreatedAt)) weight(timestamp)=\(weightByTimestampText) weight(createdAt)=\(String(format: "%.4f", row.recencyWeightByCreatedAt)) [trust] deltaHours=\(trustDeltaHoursText) trust=\(trustText) adjustedWeight=\(adjustedWeightText)"
+                )
+            }
+        }
+
+        lines.append("---- End Habit Log Full Dump ----")
+        return lines.joined(separator: "\n")
+    }
+
+    static func buildLogDumpRows(
+        logs: [HabitLog],
+        now: Date,
+        calendar: Calendar
+    ) -> [LogDumpRow] {
+        let sorted = logs.sorted { lhs, rhs in
+            if lhs.effectiveTimestamp == rhs.effectiveTimestamp {
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.id.uuidString < rhs.id.uuidString
+                }
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.effectiveTimestamp < rhs.effectiveTimestamp
+        }
+
+        var acceptedByMinute: [Date: UUID] = [:]
+        var rows: [LogDumpRow] = []
+        rows.reserveCapacity(sorted.count)
+
+        for log in sorted {
+            let timestamp = log.timestamp
+            let minuteStart = timestamp.flatMap { calendar.dateInterval(of: .minute, for: $0)?.start }
+
+            let exclusionReason: String? = {
+                guard log.kind == .entry else { return "nonEntry(kind=\(log.kind.rawValue))" }
+                guard let timestamp else { return "missingTimestamp" }
+                guard timestamp <= now else { return "futureTimestamp" }
+                guard minuteStart != nil else { return "invalidMinuteStart" }
+                return nil
+            }()
+            let includedInTiming = exclusionReason == nil
+
+            var includedAfterMinuteDedup = false
+            var dedupedByLogID: UUID?
+            if includedInTiming, let minuteStart {
+                if let existing = acceptedByMinute[minuteStart] {
+                    includedAfterMinuteDedup = false
+                    dedupedByLogID = existing
+                } else {
+                    includedAfterMinuteDedup = true
+                    acceptedByMinute[minuteStart] = log.id
+                }
+            }
+
+            let hour = minuteStart.map { calendar.component(.hour, from: $0) }
+            let minute = minuteStart.map { calendar.component(.minute, from: $0) }
+            let localTOD = {
+                guard let hour, let minute else { return "n/a" }
+                return String(format: "%02d:%02d", hour, minute)
+            }()
+
+            let ageDaysByTimestamp = minuteStart.map { max(0, now.timeIntervalSince($0) / 86_400.0) }
+            let recencyWeightByTimestamp = minuteStart.map {
+                recencyWeight(for: $0, now: now, decayFactorDays: recencyDecayFactorDays)
+            }
+            let ageDaysByCreatedAt = max(0, now.timeIntervalSince(log.createdAt) / 86_400.0)
+            let recencyWeightByCreatedAt = recencyWeight(
+                for: log.createdAt,
+                now: now,
+                decayFactorDays: recencyDecayFactorDays
+            )
+            let trustDeltaHours = timestamp.map { abs($0.timeIntervalSince(log.createdAt)) / 3_600.0 }
+            let trust = timestamp.map {
+                timingTrustFactor(timestamp: $0, createdAt: log.createdAt)
+            }
+            let adjustedWeight = recencyWeightByTimestamp.flatMap { timestampWeight in
+                trust.map { timestampWeight * $0 }
+            }
+
+            rows.append(
+                LogDumpRow(
+                    logID: log.id,
+                    kind: log.kind,
+                    logicalDay: log.day,
+                    timestamp: timestamp,
+                    effectiveTimestamp: log.effectiveTimestamp,
+                    createdAt: log.createdAt,
+                    count: log.count,
+                    value: log.value,
+                    numericValue: log.numericValue,
+                    frequencyContribution: log.frequencyContribution,
+                    localTOD: localTOD,
+                    bin: hour,
+                    minuteStart: minuteStart,
+                    ageDaysByTimestamp: ageDaysByTimestamp,
+                    ageDaysByCreatedAt: ageDaysByCreatedAt,
+                    recencyWeightByTimestamp: recencyWeightByTimestamp,
+                    recencyWeightByCreatedAt: recencyWeightByCreatedAt,
+                    trustDeltaHours: trustDeltaHours,
+                    trust: trust,
+                    adjustedWeight: adjustedWeight,
+                    includedInTiming: includedInTiming,
+                    exclusionReason: exclusionReason,
+                    includedAfterMinuteDedup: includedAfterMinuteDedup,
+                    dedupedByLogID: dedupedByLogID
+                )
+            )
+        }
+
+        return rows
     }
 }

@@ -623,8 +623,12 @@ enum GuidanceEngine {
             now: input.now,
             calendar: calendar
         )
-        let optimalPeakHour = optimalSummary?.peakHour
-        let timingConfidence = optimalSummary?.confidence ?? 0
+        let hasReliableTimingSignal = {
+            guard let optimalSummary else { return false }
+            return optimalSummary.uniqueEventCount >= 3 && optimalSummary.confidence >= 0.15
+        }()
+        let optimalPeakHour = hasReliableTimingSignal ? optimalSummary?.peakHour : nil
+        let timingConfidence = hasReliableTimingSignal ? (optimalSummary?.confidence ?? 0) : 0
         let optimalBucket = optimalPeakHour.map(bucket(for:))
         let cutoffHour = cutoffHour(for: optimalPeakHour, currentHour: currentHour)
         let isWithinWindow = optimalPeakHour.map { wrappedHourDistance(currentHour, $0) <= 2 } ?? false

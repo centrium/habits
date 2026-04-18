@@ -248,3 +248,89 @@ final class CueInsightServiceTests: XCTestCase {
         return resolved
     }
 }
+
+@MainActor
+final class HabitLogServiceTimestampAssignmentTests: XCTestCase {
+    func testHistoricalBackfillUsesCurrentTimestampAndPreservesSelectedDay() async throws {
+        let calendar = makeCalendar(timeZoneID: "Europe/London")
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(calendar: calendar)
+        persistence.insert(habit)
+        try persistence.save()
+
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let selectedDay = date(2026, 2, 4, hour: 0, minute: 0, calendar: calendar)
+        let before = Date()
+        _ = service.addLog(for: habit, on: selectedDay, value: 1)
+        try await Task.sleep(for: .milliseconds(300))
+        let after = Date()
+
+        let storedLog = try XCTUnwrap(habit.logs.last)
+        let storedTimestamp = try XCTUnwrap(storedLog.timestamp)
+        XCTAssertEqual(storedLog.day, calendar.startOfDay(for: selectedDay))
+        XCTAssertTrue(storedTimestamp >= before)
+        XCTAssertTrue(storedTimestamp <= after)
+        XCTAssertFalse(calendar.isDate(storedTimestamp, inSameDayAs: selectedDay))
+    }
+
+    func testTodayLogUsesCurrentTimestampAndCurrentHourBin() async throws {
+        let calendar = makeCalendar(timeZoneID: "Europe/London")
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(calendar: calendar)
+        persistence.insert(habit)
+        try persistence.save()
+
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let selectedDay = calendar.startOfDay(for: Date())
+        let expectedHour = calendar.component(.hour, from: Date())
+        _ = service.addLog(for: habit, on: selectedDay, value: 1)
+        try await Task.sleep(for: .milliseconds(300))
+
+        let storedLog = try XCTUnwrap(habit.logs.last)
+        let storedTimestamp = try XCTUnwrap(storedLog.timestamp)
+        let storedHour = calendar.component(.hour, from: storedTimestamp)
+
+        XCTAssertEqual(storedLog.day, selectedDay)
+        XCTAssertEqual(storedHour, expectedHour)
+    }
+
+    private func makeCalendar(timeZoneID: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: timeZoneID) ?? .gmt
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.firstWeekday = 2
+        return calendar
+    }
+
+    private func date(
+        _ year: Int,
+        _ month: Int,
+        _ day: Int,
+        hour: Int,
+        minute: Int,
+        calendar: Calendar
+    ) -> Date {
+        let components = DateComponents(
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        )
+        guard let resolved = calendar.date(from: components) else {
+            fatalError("Unable to create deterministic test date")
+        }
+        return resolved
+    }
+}

@@ -640,23 +640,9 @@ extension HabitLogService {
 }
 
 extension HabitLogService {
-    private func resolvedEntryTimestamp(for day: Date) -> Date {
-        let normalizedDay = calendar.startOfDay(for: day)
-
-        // Preserve explicit caller-provided time when present.
-        if day != normalizedDay {
-            return day
-        }
-
-        // Day-only logging for today should use current time so sequence insights
-        // are based on real behavior, not midnight artifacts.
-        if calendar.isDateInToday(normalizedDay) {
-            return Date()
-        }
-
-        // Historical backfills typically do not carry reliable time-of-day context.
-        // Pin to midday to avoid implying a precise sequence.
-        return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: normalizedDay) ?? normalizedDay
+    private func resolvedEntryTimestamp(for _: Date) -> Date {
+        // Always use real log time for timing insights and behaviour modeling.
+        Date()
     }
 
     @discardableResult
@@ -718,7 +704,10 @@ extension HabitLogService {
         playHaptic(becameComplete: !wasComplete && willBeComplete)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            habit.logs.append(HabitLog(timestamp: entryTimestamp, value: amount, calendar: self.calendar))
+            let log = HabitLog(timestamp: entryTimestamp, value: amount, calendar: self.calendar)
+            // Preserve selected calendar day grouping while keeping real event timestamp.
+            log.day = normalizedDay
+            habit.logs.append(log)
             self.invalidateMetricsCache(for: habit.id)
             self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
             self.uiStateStore.clear(habitId: habit.id, date: normalizedDay)

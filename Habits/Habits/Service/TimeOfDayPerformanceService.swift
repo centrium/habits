@@ -278,7 +278,8 @@ final class TimeOfDayPerformanceService {
         let computation = TimeInsightEngine.computeDetails(
             logs: rawHabitLogs,
             globalLogs: resolvedGlobalLogs,
-            debugLabel: habit.name,
+            allowGlobalBlending: false,
+            debugLabel: "\(habit.name) | id=\(habit.id.uuidString) | goalType=\(habit.goalType.rawValue)",
             now: now,
             calendar: calendar
         )
@@ -347,7 +348,8 @@ final class TimeOfDayPerformanceService {
         let computation = TimeInsightEngine.computeDetails(
             logs: rawHabitLogs,
             globalLogs: resolvedGlobalLogs,
-            debugLabel: habitName,
+            allowGlobalBlending: false,
+            debugLabel: "\(habitName ?? "unknown") | goalType=\(habitTypeLabel(for: habitType))",
             now: now,
             calendar: calendar
         )

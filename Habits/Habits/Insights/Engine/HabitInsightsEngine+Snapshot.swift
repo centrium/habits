@@ -474,7 +474,8 @@ extension HabitInsightsEngine {
         let timingInsight = TimeInsightEngine.compute(
             logs: rawHabitLogs,
             globalLogs: resolvedGlobalLogs,
-            debugLabel: habit.name,
+            allowGlobalBlending: false,
+            debugLabel: "\(habit.name) | id=\(habit.id.uuidString) | goalType=\(habit.goalType.rawValue)",
             now: now,
             calendar: calendar
         )

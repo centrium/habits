@@ -6,10 +6,12 @@ struct GuidanceCard: View {
     let output: GuidanceOutput
     let accent: CadenceAccentTokens
     var variant: GuidanceVisualVariant = .focus
+    var label: String = "NOW"
+    var guidanceText: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("NOW")
+            Text(label)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.62))
                 .padding(.bottom, variant == .pinnedMoment ? 8 : 6)
@@ -26,9 +28,9 @@ struct GuidanceCard: View {
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text(output.action)
-                        .font(.system(size: 13))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+                    Text(guidanceText ?? output.action)
+                        .font(guidanceText == nil ? .system(size: 13) : .body)
+                        .foregroundStyle(guidanceText == nil ? CadenceTokens.Color.Text.secondary.opacity(0.9) : .primary)
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
                 }

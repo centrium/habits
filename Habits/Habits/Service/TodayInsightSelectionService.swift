@@ -208,6 +208,7 @@ final class TodayInsightSelectionService {
 
     private func insightType(for candidate: TodayInsightCandidate, currentHour: Int) -> TodayInsightType {
         guard let rhythm = candidate.rhythm else { return .fallback }
+        guard hasReliableTimingSignal(rhythm) else { return .fallback }
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
             return .dipRisk
         }
@@ -220,6 +221,11 @@ final class TodayInsightSelectionService {
     private func message(for candidate: TodayInsightCandidate, currentHour: Int) -> String {
         guard let rhythm = candidate.rhythm else {
             return "Keep momentum going with \(candidate.habit.name)"
+        }
+        guard hasReliableTimingSignal(rhythm) else {
+            let output = "Pattern still forming for \(candidate.habit.name). Keep showing up to build a reliable timing signal."
+            logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
+            return output
         }
 
         let output: String
@@ -259,6 +265,10 @@ final class TodayInsightSelectionService {
         print("match: \(match)")
         assert(match, "today screen consumer hour must equal engine peakHour")
         #endif
+    }
+
+    private func hasReliableTimingSignal(_ rhythm: HabitRhythm) -> Bool {
+        rhythm.uniqueEventCount >= 3 && rhythm.uniqueActiveDays >= 2 && rhythm.confidence >= 0.15
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {

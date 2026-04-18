@@ -33,6 +33,7 @@ struct HabitDetailSheet: View {
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @EnvironmentObject private var habitLogService: HabitLogService
+    @StateObject private var aiCoach = AICoachService.shared
     @StateObject private var selectionState: HabitSelectionState
     @State private var activeSheet: ActiveSheet?
     @State private var manualLogValue: Double? = nil
@@ -218,6 +219,7 @@ struct HabitDetailSheet: View {
 
         }
         .onAppear {
+            aiCoach.generateHelloWorld()
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
@@ -409,7 +411,9 @@ struct HabitDetailSheet: View {
                     GuidanceCard(
                         output: guidanceOutput,
                         accent: accent,
-                        variant: GuidanceEngine.visualVariant(for: guidanceOutput)
+                        variant: GuidanceEngine.visualVariant(for: guidanceOutput),
+                        label: "AI Coach",
+                        guidanceText: aiCoach.text
                     )
                     .padding(.horizontal, sectionPadding)
                     .padding(.top, 12)
@@ -768,20 +772,11 @@ struct HabitDetailSheet: View {
 
     private func debugPrintRecentHabitLogTimestamps() {
 #if DEBUG
-        let logs = habit.logs
-            .sorted { $0.effectiveTimestamp < $1.effectiveTimestamp }
-            .suffix(14)
-
-        let formatter = DateFormatter()
-        formatter.locale = .autoupdatingCurrent
-        formatter.timeZone = .autoupdatingCurrent
-        formatter.dateFormat = "EEE d MMM, HH:mm"
-
-        print("---- Habit Log Debug (\(habit.name)) ----")
-        for log in logs {
-            print(formatter.string(from: log.effectiveTimestamp))
-        }
-        print("---- End ----")
+        TimeInsightEngine.debugDumpAllLogs(
+            for: habit,
+            now: Date(),
+            calendar: calculationCalendar
+        )
 #endif
     }
 

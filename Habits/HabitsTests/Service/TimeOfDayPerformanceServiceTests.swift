@@ -380,6 +380,206 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
         XCTAssertEqual(result.peakHour, 21)
     }
 
+    func testTimeInsightEngineSuppressesInsufficientSignalForSingleEvent() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 17, hour: 12, calendar: calendar)
+        let logs: [HabitLog] = [
+            TestHabitFactory.entryLog(
+                on: TestDateFactory.date(2026, 4, 17, hour: 8, minute: 40, calendar: calendar),
+                value: 1,
+                calendar: calendar
+            )
+        ]
+
+        let result = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            allowGlobalBlending: false,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result.confidence, 0, accuracy: 0.0001)
+        XCTAssertEqual(result.distributionShape, .flat)
+        XCTAssertTrue(result.hourlyScores.allSatisfy { abs($0) < 0.0001 })
+    }
+
+    func testTimeInsightEnginePrefersRecentEveningClusterOverOlderNoonHistory() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 18, hour: 23, calendar: calendar)
+
+        let oldNoonLogs = (0..<10).map { offset in
+            TestHabitFactory.entryLog(
+                on: TestDateFactory.addingDays(-20 - offset, to: now, calendar: calendar),
+                value: 1,
+                calendar: calendar
+            )
+        }.map { log in
+            log.timestamp = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: log.effectiveTimestamp)
+            return log
+        }
+
+        let recentEveningLogs = (0..<3).map { offset in
+            TestHabitFactory.entryLog(
+                on: TestDateFactory.addingDays(-offset, to: now, calendar: calendar),
+                value: 1,
+                calendar: calendar
+            )
+        }.map { log in
+            log.timestamp = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: log.effectiveTimestamp)
+            return log
+        }
+
+        let logs = oldNoonLogs + recentEveningLogs
+        let result = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            allowGlobalBlending: false,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result.peakHour, 22)
+        XCTAssertGreaterThan(result.hourlyScores[22], result.hourlyScores[12])
+    }
+
+    func testTimeInsightEngineRecencyWeightingUsesTimestampNotCreatedAt() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 18, hour: 23, calendar: calendar)
+        let oldEveningTimestamp = TestDateFactory.date(2026, 3, 1, hour: 22, minute: 0, calendar: calendar)
+        let recentNoonTimestamp = TestDateFactory.date(2026, 4, 18, hour: 12, minute: 0, calendar: calendar)
+
+        let logsCreatedNow: [HabitLog] = [
+            TestHabitFactory.entryLog(
+                on: oldEveningTimestamp,
+                value: 1,
+                createdAt: now,
+                calendar: calendar
+            ),
+            TestHabitFactory.entryLog(
+                on: recentNoonTimestamp,
+                value: 1,
+                createdAt: TestDateFactory.date(2026, 3, 1, hour: 9, minute: 0, calendar: calendar),
+                calendar: calendar
+            )
+        ]
+
+        let logsCreatedHistorical: [HabitLog] = [
+            TestHabitFactory.entryLog(
+                on: oldEveningTimestamp,
+                value: 1,
+                createdAt: TestDateFactory.date(2026, 3, 1, hour: 9, minute: 0, calendar: calendar),
+                calendar: calendar
+            ),
+            TestHabitFactory.entryLog(
+                on: recentNoonTimestamp,
+                value: 1,
+                createdAt: now,
+                calendar: calendar
+            )
+        ]
+
+        let resultCreatedNow = TimeInsightEngine.compute(
+            logs: logsCreatedNow,
+            globalLogs: logsCreatedNow,
+            allowGlobalBlending: false,
+            now: now,
+            calendar: calendar
+        )
+        let resultCreatedHistorical = TimeInsightEngine.compute(
+            logs: logsCreatedHistorical,
+            globalLogs: logsCreatedHistorical,
+            allowGlobalBlending: false,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(resultCreatedNow.peakHour, 12)
+        XCTAssertEqual(resultCreatedNow.peakHour, resultCreatedHistorical.peakHour)
+        XCTAssertEqual(resultCreatedNow.hourlyScores, resultCreatedHistorical.hourlyScores)
+    }
+
+    func testTimeInsightEngineSeparatedClustersChooseStrongerClusterNotMidpoint() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 18, hour: 23, calendar: calendar)
+        let noonDates = [14, 12, 10].map { days in
+            TestDateFactory.addingDays(-days, to: now, calendar: calendar)
+        }
+        let eveningDates = [7, 6, 5, 4, 3].map { days in
+            TestDateFactory.addingDays(-days, to: now, calendar: calendar)
+        }
+
+        let noonLogs = noonDates.map { date in
+            TestHabitFactory.entryLog(
+                on: calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date,
+                value: 1,
+                calendar: calendar
+            )
+        }
+        let eveningLogs = eveningDates.map { date in
+            TestHabitFactory.entryLog(
+                on: calendar.date(bySettingHour: 22, minute: 0, second: 0, of: date) ?? date,
+                value: 1,
+                calendar: calendar
+            )
+        }
+        let logs = noonLogs + eveningLogs
+
+        let result = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            allowGlobalBlending: false,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result.peakHour, 22)
+        XCTAssertNotEqual(result.peakHour, 17)
+    }
+
+    func testTimeInsightEngineDownweightsSyntheticTimestampsUsingCreatedAtDelta() {
+        let calendar = TestDateFactory.utcCalendar
+        let now = TestDateFactory.date(2026, 4, 18, hour: 23, calendar: calendar)
+        var logs: [HabitLog] = []
+
+        for dayOffset in 0..<4 {
+            let day = TestDateFactory.addingDays(-dayOffset, to: now, calendar: calendar)
+            let noonTimestamp = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
+            let eveningTimestamp = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: day) ?? day
+
+            // Synthetic/backfilled: timestamp far from createdAt -> low trust.
+            logs.append(
+                TestHabitFactory.entryLog(
+                    on: noonTimestamp,
+                    value: 1,
+                    createdAt: now,
+                    calendar: calendar
+                )
+            )
+
+            // Real-time log: timestamp close to createdAt -> high trust.
+            logs.append(
+                TestHabitFactory.entryLog(
+                    on: eveningTimestamp,
+                    value: 1,
+                    createdAt: eveningTimestamp.addingTimeInterval(60),
+                    calendar: calendar
+                )
+            )
+        }
+
+        let result = TimeInsightEngine.compute(
+            logs: logs,
+            globalLogs: logs,
+            allowGlobalBlending: false,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result.peakHour, 22)
+        XCTAssertGreaterThan(result.hourlyScores[22], result.hourlyScores[12])
+    }
+
     private func makeScores(peakHour: Int, peakValue: Double, baseline: Double) -> [Double] {
         var scores = Array(repeating: baseline, count: 24)
         scores[((peakHour % 24) + 24) % 24] = peakValue
