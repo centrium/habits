@@ -476,9 +476,9 @@ enum GuidanceEngine {
             ]
         case .forming:
             return [
-                template("forming-1", "Your pattern is still forming", "Consistent check-ins will sharpen this"),
-                template("forming-2", "Your strongest window is still emerging", "Keep showing up to define your rhythm"),
-                template("forming-3", "Your timing pattern is still emerging", "A quick check-in now moves this forward")
+                template("forming-1", "Keep this check-in simple", "A short session now keeps this moving"),
+                template("forming-2", "Consistency grows from repetition", "A quick check-in now reinforces the routine"),
+                template("forming-3", "Keep this lightweight today", "Simple follow-through is enough right now")
             ]
         }
     }
@@ -671,12 +671,12 @@ enum GuidanceEngine {
                 state: .forming,
                 strongestWindow: "--:--",
                 confidence: .low,
-                guidance: "Your pattern is still forming. A short session now keeps this on track",
+                guidance: "Keep this check-in simple. A short session now keeps this on track",
                 explanation: "State FORMING, confidence LOW, strongest window --:--"
             )
             return GuidanceOutput(
                 id: "fallback-safe",
-                title: "Your pattern is still forming",
+                title: "Keep this check-in simple",
                 action: "A short session now keeps this on track",
                 supportingContext: nil,
                 emphasisLabel: nil,

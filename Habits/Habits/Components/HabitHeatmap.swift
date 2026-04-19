@@ -10,6 +10,8 @@ import SwiftUI
 struct HabitHeatmap: View {
     @EnvironmentObject private var purchaseService: PurchaseService
     @State private var cache = HeatmapMetricsCache()
+    @State private var graphRefreshID = UUID()
+    @State private var graphObserverID = UUID()
 
     let habit: Habit
     let service: HabitLogService
@@ -90,14 +92,28 @@ struct HabitHeatmap: View {
     }
 
     var body: some View {
-        if isCompact {
-            if showsIdentityStateSummary {
-                identityStateBlock
+        Group {
+            if isCompact {
+                if showsIdentityStateSummary {
+                    identityStateBlock
+                } else {
+                    compactHeatmap
+                }
             } else {
-                compactHeatmap
+                fullHeatmap
             }
-        } else {
-            fullHeatmap
+        }
+        .id(graphRefreshID)
+        .onAppear {
+            GraphRecomputeCoordinator.shared.register(id: graphObserverID) {
+                self.recomputeGraph()
+            }
+        }
+        .onDisappear {
+            GraphRecomputeCoordinator.shared.unregister(id: graphObserverID)
+        }
+        .onChange(of: service.logsVersion) { _, _ in
+            GraphRecomputeCoordinator.shared.schedule(for: service.logsVersion)
         }
     }
 
@@ -122,6 +138,7 @@ struct HabitHeatmap: View {
         let cacheKey = HeatmapMetricsCacheKey(
             habitID: habit.id,
             revision: service.metricsRevision(for: habit.id),
+            logsVersion: service.logsVersion,
             calendarIdentifier: calendar.identifier,
             timeZoneIdentifier: calendar.timeZone.identifier,
             firstWeekday: calendar.firstWeekday,
@@ -178,6 +195,11 @@ struct HabitHeatmap: View {
         .padding(.top, heatmapTopPadding)
         .padding(.bottom, heatmapBottomPadding)
         .frame(height: heatmapHeight)
+    }
+
+    private func recomputeGraph() {
+        cache.invalidateAll()
+        graphRefreshID = UUID()
     }
     
     private func buildFullHeatmapDays(from weeks: [Week]) -> [Date] {

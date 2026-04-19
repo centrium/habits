@@ -370,12 +370,12 @@ private struct RGB {
 }
 
 enum CadenceStateKey: Equatable {
-    case gettingStarted
-    case building
+    case start
+    case build
     case steady
     case strong
-    case slipping
-    case rebuilding
+    case slip
+    case rebuild
 }
 
 enum CadenceCopyCatalog {
@@ -407,52 +407,52 @@ enum CadenceCopyCatalog {
 
     static func shortLabel(for state: CadenceStateKey) -> String {
         switch state {
-        case .gettingStarted:
-            return "Getting started"
-        case .building:
-            return "Building momentum"
+        case .start:
+            return "Start"
+        case .build:
+            return "Build"
         case .steady:
-            return "Staying consistent"
+            return "Steady"
         case .strong:
-            return "Strong rhythm"
-        case .slipping:
-            return "Losing momentum"
-        case .rebuilding:
-            return "Getting back on track"
+            return "Strong"
+        case .slip:
+            return "Slip"
+        case .rebuild:
+            return "Rebuild"
         }
     }
 
     static func identityLine(for state: CadenceStateKey) -> String {
         switch state {
-        case .gettingStarted:
-            return "Getting started"
-        case .building:
-            return "Building momentum"
+        case .start:
+            return "Start"
+        case .build:
+            return "Build"
         case .steady:
-            return "Staying consistent"
+            return "Steady"
         case .strong:
-            return "Strong rhythm"
-        case .slipping:
-            return "Losing momentum"
-        case .rebuilding:
-            return "Getting back on track"
+            return "Strong"
+        case .slip:
+            return "Slip"
+        case .rebuild:
+            return "Rebuild"
         }
     }
 
     static func insightLine(for state: CadenceStateKey) -> String {
         switch state {
-        case .gettingStarted:
-            return "You're getting started with this habit"
-        case .building:
-            return "This habit is building momentum"
+        case .start:
+            return "You're at the start of this habit journey"
+        case .build:
+            return "This habit is being built through repetition"
         case .steady:
-            return "This habit is staying consistent"
+            return "This habit is becoming steady"
         case .strong:
-            return "This habit has a strong rhythm"
-        case .slipping:
-            return "This habit is losing momentum"
-        case .rebuilding:
-            return "This habit is getting back on track"
+            return "This habit is strong and consistent"
+        case .slip:
+            return "This habit has slipped recently"
+        case .rebuild:
+            return "This habit is in rebuild mode"
         }
     }
 
@@ -997,17 +997,17 @@ private extension WidgetHabitIdentityState {
     var cadenceStateKey: CadenceStateKey {
         switch self {
         case .gettingStarted:
-            return .gettingStarted
+            return .start
         case .building:
-            return .building
+            return .build
         case .steady:
             return .steady
         case .strong:
             return .strong
         case .slipping:
-            return .slipping
+            return .slip
         case .rebuilding:
-            return .rebuilding
+            return .rebuild
         }
     }
 }

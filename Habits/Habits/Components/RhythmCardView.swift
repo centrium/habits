@@ -7,6 +7,7 @@ struct RhythmCardView: View {
     let isPremium: Bool
     let data: [HourValue]
     let rhythm: HabitRhythm?
+    let stateModel: HabitStateModel?
     let habit: Habit
     var onUnlock: (() -> Void)? = nil
     var onOpen: (() -> Void)? = nil
@@ -71,14 +72,7 @@ struct RhythmCardView: View {
     }
 
     private var primaryInsight: AttributedString {
-        let label: String
-        if resolvedInsight.confidence < 0.35 {
-            label = "Timing signal is still forming."
-        } else if resolvedInsight.confidence < 0.75 {
-            label = "Timing signal is becoming consistent."
-        } else {
-            label = "Timing signal is reliable."
-        }
+        let label = timingMessage(confidence: timingConfidence)
         var text = AttributedString(label)
         text.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
         return text
@@ -109,31 +103,43 @@ struct RhythmCardView: View {
     }
 
     private var confidenceInterpretation: String {
-        if resolvedInsight.confidence < 0.35 {
-            return "Pattern confidence is still forming"
-        }
-        if resolvedInsight.confidence < 0.75 {
-            return "This pattern is becoming consistent"
-        }
-        return "This is a reliable pattern"
+        timingMessage(confidence: timingConfidence)
     }
 
     private var confidenceSignal: String {
-        guard let rhythm else { return "Low confidence" }
-        switch rhythm.confidence {
+        timingMessage(confidence: timingConfidence)
+    }
+
+    private var timingConfidence: TimingConfidence {
+        if let stateModel {
+            return stateModel.timingConfidence
+        }
+        let confidence = rhythm?.confidence ?? resolvedInsight.confidence
+        switch confidence {
         case ..<0.35:
-            return "Low confidence"
+            return .low
         case ..<0.75:
-            return "Building confidence"
+            return .medium
         default:
-            return "High confidence"
+            return .high
+        }
+    }
+
+    private func timingMessage(confidence: TimingConfidence) -> String {
+        switch confidence {
+        case .low:
+            return "Timing is still forming"
+        case .medium:
+            return "A loose rhythm is emerging"
+        case .high:
+            return "A clear rhythm is established"
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
             HStack(spacing: CadenceTokens.Space.xs) {
-                Text("Momentum")
+                Text("Rhythm")
                     .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                     .foregroundStyle(CadenceTokens.Color.Text.primary)
 

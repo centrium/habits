@@ -1239,11 +1239,11 @@ private struct GreigModeCardView: View {
     private var confidenceText: String {
         switch block.confidence {
         case .high:
-            return "High confidence"
+            return "Projection signal: clear"
         case .medium:
-            return "Moderate confidence"
+            return "Projection signal: emerging"
         case .low:
-            return "Low confidence"
+            return "Projection signal: early"
         }
     }
 

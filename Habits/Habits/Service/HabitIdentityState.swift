@@ -6,6 +6,31 @@ struct IdentityOutput: Codable {
     let line2: String?
 }
 
+enum HabitState: String, Equatable, Codable {
+    case start
+    case build
+    case steady
+    case strong
+    case slip
+    case rebuild
+}
+
+enum TimingConfidence: String, Equatable, Codable {
+    case low
+    case medium
+    case high
+}
+
+struct HabitStateModel: Equatable {
+    let state: HabitState
+    let strongestTime: String?
+    let timingConfidence: TimingConfidence
+    let habitStrength: Double
+    let risk: Double
+    let consistency: Int
+    let streakState: String
+}
+
 enum HabitIdentityState: Equatable {
     case gettingStarted
     case building
@@ -14,8 +39,6 @@ enum HabitIdentityState: Equatable {
     case slipping
     case rebuilding
 }
-
-typealias HabitState = HabitIdentityState
 
 struct CadenceLanguage {
     // MARK: - Identity
@@ -48,7 +71,15 @@ struct CadenceLanguage {
         stateTitle(state)
     }
 
+    static func shortLabel(for state: HabitState) -> String {
+        CadenceCopyCatalog.shortLabel(for: state.cadenceStateKey)
+    }
+
     static func stateTitle(_ state: HabitIdentityState) -> String {
+        CadenceCopyCatalog.shortLabel(for: state.cadenceStateKey)
+    }
+
+    static func stateTitle(_ state: HabitState) -> String {
         CadenceCopyCatalog.shortLabel(for: state.cadenceStateKey)
     }
 
@@ -56,7 +87,15 @@ struct CadenceLanguage {
         CadenceCopyCatalog.identityLine(for: state.cadenceStateKey)
     }
 
+    static func identityLine(for state: HabitState) -> String {
+        CadenceCopyCatalog.identityLine(for: state.cadenceStateKey)
+    }
+
     static func insightLine(for state: HabitIdentityState) -> String {
+        CadenceCopyCatalog.insightLine(for: state.cadenceStateKey)
+    }
+
+    static func insightLine(for state: HabitState) -> String {
         CadenceCopyCatalog.insightLine(for: state.cadenceStateKey)
     }
 
@@ -104,17 +143,197 @@ private extension HabitIdentityState {
     var cadenceStateKey: CadenceStateKey {
         switch self {
         case .gettingStarted:
-            return .gettingStarted
+            return .start
         case .building:
-            return .building
+            return .build
         case .steady:
             return .steady
         case .strong:
             return .strong
         case .slipping:
-            return .slipping
+            return .slip
         case .rebuilding:
+            return .rebuild
+        }
+    }
+}
+
+private extension HabitState {
+    var cadenceStateKey: CadenceStateKey {
+        switch self {
+        case .start:
+            return .start
+        case .build:
+            return .build
+        case .steady:
+            return .steady
+        case .strong:
+            return .strong
+        case .slip:
+            return .slip
+        case .rebuild:
+            return .rebuild
+        }
+    }
+}
+
+extension HabitState {
+    var identityState: HabitIdentityState {
+        switch self {
+        case .start:
+            return .gettingStarted
+        case .build:
+            return .building
+        case .steady:
+            return .steady
+        case .strong:
+            return .strong
+        case .slip:
+            return .slipping
+        case .rebuild:
             return .rebuilding
+        }
+    }
+}
+
+extension HabitIdentityState {
+    var habitState: HabitState {
+        switch self {
+        case .gettingStarted:
+            return .start
+        case .building:
+            return .build
+        case .steady:
+            return .steady
+        case .strong:
+            return .strong
+        case .slipping:
+            return .slip
+        case .rebuilding:
+            return .rebuild
+        }
+    }
+}
+
+enum HabitStateResolver {
+    static func deriveState(
+        consistency: Int,
+        habitStrength: Double,
+        risk: Double,
+        streakState: String
+    ) -> HabitState {
+        // Identity state is the source of truth.
+        // Timing, momentum, and AI must never override this state.
+        _ = habitStrength
+        _ = streakState
+
+        if risk > 0.7 {
+            return .slip
+        }
+
+        if risk > 0.4 {
+            return .rebuild
+        }
+
+        if consistency < 30 {
+            return .start
+        }
+
+        if consistency < 60 {
+            return .build
+        }
+
+        if consistency < 80 {
+            return .steady
+        }
+
+        return .strong
+    }
+
+    static func resolve(
+        for habit: Habit,
+        globalLogs: [HabitLog] = [],
+        calendar: Calendar,
+        weekStartPreference: WeekStartPreference = .system,
+        now: Date = .now
+    ) -> HabitStateModel {
+        let normalizedLogs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
+        let consistency = HabitInsightsService(calendar: calendar).snapshot(
+            for: habit,
+            now: now
+        ).consistency
+        let habitStrength = PerformanceSignalsCalculator.habitStrengthScore(
+            for: habit,
+            logs: normalizedLogs,
+            calendar: calendar,
+            now: now
+        )
+        let risk = PerformanceSignalsCalculator.habitRiskScore(
+            for: habit,
+            logs: normalizedLogs,
+            calendar: calendar,
+            now: now
+        )
+        let streak = StreakStateEngine(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).streakState(for: habit, referenceDate: now)
+        let streakState = streakLabel(for: streak)
+        let timingSummary = TimeOfDayPerformanceService.peakTimingSummary(
+            habitLogs: habit.logs,
+            globalLogs: globalLogs.isEmpty ? habit.logs : globalLogs,
+            habitName: habit.name,
+            habitType: habit.goalType,
+            now: now,
+            calendar: calendar
+        )
+        let timingConfidence = timingConfidence(
+            from: timingSummary?.confidence ?? 0,
+            hasSummary: timingSummary != nil
+        )
+        let strongestTime = timingSummary.map { humanTime(for: $0.peakHour) }
+        let state = deriveState(
+            consistency: consistency,
+            habitStrength: habitStrength,
+            risk: risk,
+            streakState: streakState
+        )
+
+        return HabitStateModel(
+            state: state,
+            strongestTime: strongestTime,
+            timingConfidence: timingConfidence,
+            habitStrength: habitStrength,
+            risk: risk,
+            consistency: consistency,
+            streakState: streakState
+        )
+    }
+
+    private static func timingConfidence(
+        from confidence: Double,
+        hasSummary: Bool
+    ) -> TimingConfidence {
+        guard hasSummary else { return .low }
+        switch confidence {
+        case ..<0.35:
+            return .low
+        case ..<0.75:
+            return .medium
+        default:
+            return .high
+        }
+    }
+
+    private static func streakLabel(for streak: StreakState) -> String {
+        guard streak.currentStreak > 0 else { return "forming" }
+        switch streak.status {
+        case .safe:
+            return "\(streak.currentStreak)-period streak"
+        case .atRisk:
+            return "\(streak.currentStreak)-period streak at risk"
+        case .broken:
+            return "streak broken"
         }
     }
 }
@@ -139,40 +358,36 @@ enum HabitIdentityStateResolver {
         let safeRecentCompletedDays = max(recentCompletedDays, 0)
         let safeTotalLogCount = max(totalLogCount, 0)
         let safeWindowDays = max(windowDays, 1)
+        let consistency = Int(
+            (
+                Double(safeRecentCompletedDays) /
+                Double(safeWindowDays)
+            ) * 100
+        )
+        let habitStrength = min(max(Double(safeRecentCompletedDays) / Double(safeWindowDays), 0), 1)
+        let risk: Double = {
+            guard safeTotalLogCount > 2 else { return 0.2 }
+            guard safeRecentCompletedDays == 0 else {
+                if safeRecentCompletedDays <= 1 { return 0.45 }
+                return 0.2
+            }
 
-        // Guard early-stage habits so day-one activity never looks like recovery work.
-        if safeTotalLogCount <= 2 {
-            return .gettingStarted
-        }
+            let inactivityDays: Int = {
+                guard let lastActivityDay else { return safeWindowDays }
+                let today = calendar.startOfDay(for: now)
+                let lastDay = calendar.startOfDay(for: lastActivityDay)
+                return max(calendar.dateComponents([.day], from: lastDay, to: today).day ?? 0, 0)
+            }()
+            return inactivityDays >= safeWindowDays ? 0.8 : 0.6
+        }()
+        let state = HabitStateResolver.deriveState(
+            consistency: consistency,
+            habitStrength: habitStrength,
+            risk: risk,
+            streakState: "derived"
+        )
 
-        if safeRecentCompletedDays >= min(6, safeWindowDays) {
-            return .strong
-        }
-
-        if safeRecentCompletedDays >= min(4, safeWindowDays) {
-            return .steady
-        }
-
-        if safeRecentCompletedDays >= 2 {
-            return .building
-        }
-
-        if safeRecentCompletedDays == 0 && safeTotalLogCount > 0 {
-            guard let lastActivityDay else { return .slipping }
-            let today = calendar.startOfDay(for: now)
-            let lastDay = calendar.startOfDay(for: lastActivityDay)
-            let daysSinceLastActivity = max(
-                calendar.dateComponents([.day], from: lastDay, to: today).day ?? 0,
-                0
-            )
-            return daysSinceLastActivity >= safeWindowDays ? .rebuilding : .slipping
-        }
-
-        if safeRecentCompletedDays <= 2 && safeTotalLogCount > 5 {
-            return .rebuilding
-        }
-
-        return .building
+        return state.identityState
     }
 
     @available(*, deprecated, message: "Use resolve(recentCompletedDays:windowDays:totalLogCount:lastActivityDay:now:calendar:)")
@@ -180,24 +395,15 @@ enum HabitIdentityStateResolver {
         completionRate: Double?,
         hasRecentData: Bool
     ) -> HabitIdentityState {
-        guard let rate = completionRate else {
-            return .gettingStarted
-        }
-
-        switch rate {
-        case 0.85...:
-            return .strong
-        case 0.55..<0.85:
-            return .steady
-        case 0.3..<0.55:
-            return .building
-        case 0.15..<0.3:
-            return .rebuilding
-        case 0.01..<0.15:
-            return .slipping
-        default:
-            return hasRecentData ? .slipping : .gettingStarted
-        }
+        let normalizedRate = min(max(completionRate ?? 0, 0), 1)
+        let consistency = Int((normalizedRate * 100).rounded())
+        let risk = hasRecentData ? (normalizedRate <= 0.05 ? 0.75 : 0.45) : 0.2
+        return HabitStateResolver.deriveState(
+            consistency: consistency,
+            habitStrength: normalizedRate,
+            risk: risk,
+            streakState: "derived"
+        ).identityState
     }
 
     static func resolve(
@@ -206,12 +412,12 @@ enum HabitIdentityStateResolver {
         now: Date = .now,
         windowDays: Int = 7
     ) -> HabitIdentityState {
-        recentSnapshot(
+        _ = windowDays
+        return HabitStateResolver.resolve(
             for: habit,
             calendar: calendar,
-            now: now,
-            windowDays: windowDays
-        ).state
+            now: now
+        ).state.identityState
     }
 
     static func recentSnapshot(
@@ -236,14 +442,13 @@ enum HabitIdentityStateResolver {
         let lastActivityDay = qualifyingLogDays.max()
         let hasRecentData = recentCompletedDayCount > 0
         let completionRate = Double(recentCompletedDayCount) / Double(normalizedWindow)
-        let resolvedState = resolve(
-            recentCompletedDays: recentCompletedDayCount,
-            windowDays: normalizedWindow,
-            totalLogCount: totalLogCount,
-            lastActivityDay: lastActivityDay,
-            now: now,
-            calendar: calendar
-        )
+        _ = totalLogCount
+        _ = lastActivityDay
+        let resolvedState = HabitStateResolver.resolve(
+            for: habit,
+            calendar: calendar,
+            now: now
+        ).state.identityState
 
         return HabitIdentityStateSnapshot(
             state: resolvedState,

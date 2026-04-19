@@ -225,6 +225,8 @@ final class HabitLogService: ObservableObject {
     private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
     private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
     private let cueInsightService: CueInsightService
+    @Published private(set) var logsVersion: UUID = UUID()
+    @Published private(set) var lastLogUserActionAt: Date?
 
     init(
         modelContext: ModelContext,
@@ -309,11 +311,20 @@ final class HabitLogService: ObservableObject {
         _ = modelContext.saveAndSyncWidgetData()
     }
 
-    private func invalidateMetricsCache(for habitID: UUID) {
+    private func invalidateMetricsCache(
+        for habitID: UUID,
+        bumpRevision: Bool = true,
+        publishLogsVersion: Bool = true
+    ) {
         objectWillChange.send()
-        metricsRevisions[habitID, default: 0] += 1
+        if bumpRevision {
+            metricsRevisions[habitID, default: 0] += 1
+        }
         dayMetricsCache.removeValue(forKey: habitID)
         cueInsightService.resetCache()
+        if publishLogsVersion {
+            logsVersion = UUID()
+        }
     }
 
     private func dayKey(habitID: UUID, day: Date) -> String {
@@ -647,6 +658,8 @@ extension HabitLogService {
 
     @discardableResult
     func addLog(for habit: Habit, on day: Date, value: Double) -> Double {
+        lastLogUserActionAt = Date()
+        print("LOG: user action at \(Date())")
         let normalizedDay = calendar.startOfDay(for: day)
         let entryTimestamp = resolvedEntryTimestamp(for: day)
         let amount = max(0, value)
@@ -701,6 +714,7 @@ extension HabitLogService {
             progress: newProgress,
             isComplete: willBeComplete
         )
+        logsVersion = UUID()
         playHaptic(becameComplete: !wasComplete && willBeComplete)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -708,7 +722,11 @@ extension HabitLogService {
             // Preserve selected calendar day grouping while keeping real event timestamp.
             log.day = normalizedDay
             habit.logs.append(log)
-            self.invalidateMetricsCache(for: habit.id)
+            self.invalidateMetricsCache(
+                for: habit.id,
+                bumpRevision: false,
+                publishLogsVersion: false
+            )
             self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
             self.uiStateStore.clear(habitId: habit.id, date: normalizedDay)
             self.clearPendingDayMetrics(for: habit.id, day: normalizedDay)
@@ -719,6 +737,8 @@ extension HabitLogService {
 
     @discardableResult
     func updateEntry(_ entry: HabitLog, for habit: Habit, on day: Date, value: Double) -> Double {
+        lastLogUserActionAt = Date()
+        print("LOG: user action at \(Date())")
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let amount = max(0, value)
@@ -746,6 +766,8 @@ extension HabitLogService {
 
     @discardableResult
     func deleteEntry(_ entry: HabitLog, for habit: Habit, on day: Date) -> Double {
+        lastLogUserActionAt = Date()
+        print("LOG: user action at \(Date())")
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
@@ -759,6 +781,8 @@ extension HabitLogService {
 
     @discardableResult
     func clearEntries(for habit: Habit, on day: Date) -> Double {
+        lastLogUserActionAt = Date()
+        print("LOG: user action at \(Date())")
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
@@ -781,6 +805,8 @@ extension HabitLogService {
 
     @discardableResult
     func decrement(for habit: Habit, on day: Date) -> Int {
+        lastLogUserActionAt = Date()
+        print("LOG: user action at \(Date())")
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
         let dayLogs = logs(for: habit, on: normalizedDay)
@@ -805,6 +831,8 @@ extension HabitLogService {
 
     @discardableResult
     func setCount(for habit: Habit, on day: Date, to newValue: Int) -> Int {
+        lastLogUserActionAt = Date()
+        print("LOG: user action at \(Date())")
         let normalizedDay = calendar.startOfDay(for: day)
         let value = max(0, newValue)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)

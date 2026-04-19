@@ -44,32 +44,31 @@ enum PerformanceSignalsCalculator {
         calendar: Calendar,
         now: Date
     ) -> [HabitInsightsPerformanceSignal] {
-        let identity = identityAssessment(
+        _ = logs
+        let stateModel = HabitStateResolver.resolve(
             for: habit,
-            logs: logs,
             calendar: calendar,
             now: now
         )
-        debugValidateIdentityAlignment(identity)
-
+        let identityState = stateModel.state
         let risk = habitRiskAssessment(
             for: habit,
-            logs: logs,
-            identityState: identity.state,
+            logs: InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar),
+            identityState: identityState.identityState,
             calendar: calendar,
             now: now
         )
-        let strength = habitStrengthScore(for: habit, logs: logs, calendar: calendar, now: now)
+        let strength = stateModel.habitStrength
 
         return [
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
                     title: "Identity Signal",
-                    value: identity.score,
+                    value: identitySignalValue(for: identityState),
                     labels: identityStateLabels,
-                    explanation: identityBehaviourDescription(for: identity.state)
+                    explanation: identityBehaviourDescription(for: identityState)
                 ),
-                displayValue: identityScaleLabel(for: identity.state)
+                displayValue: identityScaleLabel(for: identityState)
             ),
             HabitInsightsPerformanceSignal(
                 gauge: InsightGauge(
@@ -416,79 +415,75 @@ private extension PerformanceSignalsCalculator {
         calendar: Calendar,
         now: Date
     ) -> HabitIdentityState {
-        let baselineState = HabitIdentityStateResolver.recentSnapshot(
+        _ = logs
+        return HabitStateResolver.resolve(
             for: habit,
-            calendar: calendar,
-            now: now,
-            windowDays: 7
-        ).state
-        let assessment = identityAssessment(
-            for: habit,
-            logs: logs,
             calendar: calendar,
             now: now
-        )
-        let bandState = state(for: assessment.score, allowsDegradationBands: assessment.allowsDegradationBands)
-        #if DEBUG
-        if baselineState != bandState {
-            print(
-                "[IdentitySignal] baseline_state=\(baselineState) overridden_state=\(bandState) " +
-                    "score=\(String(format: "%.3f", assessment.score))"
-            )
-        }
-        #endif
-        return bandState
+        ).state.identityState
     }
 
-    static func identitySignalValue(for state: HabitIdentityState) -> Double {
+    static func identitySignalValue(for state: HabitState) -> Double {
         switch state {
-        case .gettingStarted:
+        case .start:
             return 0.1
-        case .building:
+        case .build:
             return 0.3
         case .steady:
             return 0.5
         case .strong:
             return 0.7
-        case .slipping:
+        case .slip:
             return 0.85
-        case .rebuilding:
+        case .rebuild:
             return 0.95
         }
     }
 
-    static func identityScaleLabel(for state: HabitIdentityState) -> String {
+    static func identitySignalValue(for state: HabitIdentityState) -> Double {
+        identitySignalValue(for: state.habitState)
+    }
+
+    static func identityScaleLabel(for state: HabitState) -> String {
         switch state {
-        case .gettingStarted:
+        case .start:
             return "Start"
-        case .building:
+        case .build:
             return "Build"
         case .steady:
             return "Steady"
         case .strong:
             return "Strong"
-        case .slipping:
+        case .slip:
             return "Slip"
-        case .rebuilding:
+        case .rebuild:
             return "Rebuild"
         }
     }
 
-    static func identityBehaviourDescription(for state: HabitIdentityState) -> String {
+    static func identityScaleLabel(for state: HabitIdentityState) -> String {
+        identityScaleLabel(for: state.habitState)
+    }
+
+    static func identityBehaviourDescription(for state: HabitState) -> String {
         switch state {
-        case .gettingStarted:
+        case .start:
             return "You are beginning to establish this habit."
-        case .building:
+        case .build:
             return "This habit is taking shape."
         case .steady:
             return "You have built a reliable pattern."
         case .strong:
             return "You are showing up consistently."
-        case .slipping:
+        case .slip:
             return "Recent consistency has softened."
-        case .rebuilding:
+        case .rebuild:
             return "Recent follow-through has been interrupted."
         }
+    }
+
+    static func identityBehaviourDescription(for state: HabitIdentityState) -> String {
+        identityBehaviourDescription(for: state.habitState)
     }
 
     static func signedDisplayValue(_ value: Double) -> String {
