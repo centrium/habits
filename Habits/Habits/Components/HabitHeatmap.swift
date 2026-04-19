@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct HabitHeatmap: View {
+    private static let snapshotStableVersion = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
     @EnvironmentObject private var purchaseService: PurchaseService
     @State private var cache = HeatmapMetricsCache()
     @State private var graphRefreshID = UUID()
@@ -19,6 +21,7 @@ struct HabitHeatmap: View {
     let style: HeatmapStyleConfiguration = .premiumDefault
     let selectedDate: Date
     let earliestVisibleDate: Date?
+    let dailyCountsOverride: [Date: Int]?
     let isInteractive: Bool
     let onSelectDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
@@ -31,6 +34,7 @@ struct HabitHeatmap: View {
         calendarProvider: CalendarProvider,
         selectedDate: Date,
         earliestVisibleDate: Date? = nil,
+        dailyCountsOverride: [Date: Int]? = nil,
         isInteractive: Bool,
         onSelectDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void = { _ in },
@@ -42,6 +46,7 @@ struct HabitHeatmap: View {
         self.calendarProvider = calendarProvider
         self.selectedDate = selectedDate
         self.earliestVisibleDate = earliestVisibleDate
+        self.dailyCountsOverride = dailyCountsOverride
         self.isInteractive = isInteractive
         self.onSelectDay = onSelectDay
         self.onTapLockedDay = onTapLockedDay
@@ -91,6 +96,11 @@ struct HabitHeatmap: View {
         heatmapTopPadding + heatmapContentHeight + heatmapBottomPadding
     }
 
+    private var usesGraphRecomputeCoordinator: Bool {
+        // Snapshot-driven history views should update from data injection, not global recompute fan-out.
+        dailyCountsOverride == nil && isInteractive
+    }
+
     var body: some View {
         Group {
             if isCompact {
@@ -105,14 +115,17 @@ struct HabitHeatmap: View {
         }
         .id(graphRefreshID)
         .onAppear {
+            guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.register(id: graphObserverID) {
                 self.recomputeGraph()
             }
         }
         .onDisappear {
+            guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.unregister(id: graphObserverID)
         }
         .onChange(of: service.logsVersion) { _, _ in
+            guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.schedule(for: service.logsVersion)
         }
     }
@@ -138,7 +151,7 @@ struct HabitHeatmap: View {
         let cacheKey = HeatmapMetricsCacheKey(
             habitID: habit.id,
             revision: service.metricsRevision(for: habit.id),
-            logsVersion: service.logsVersion,
+            logsVersion: dailyCountsOverride == nil ? service.logsVersion : Self.snapshotStableVersion,
             calendarIdentifier: calendar.identifier,
             timeZoneIdentifier: calendar.timeZone.identifier,
             firstWeekday: calendar.firstWeekday,
@@ -147,16 +160,21 @@ struct HabitHeatmap: View {
 
         let entry = cache.entry(key: cacheKey) {
             let dayMetrics = service.dayMetrics(for: habit, on: fullGridDays)
-            let logsByDay = Dictionary(grouping: habit.logs) { log in
-                calendar.startOfDay(for: log.day)
-            }
+            let logsByDay = dailyCountsOverride == nil
+                ? Dictionary(grouping: habit.logs) { log in
+                    calendar.startOfDay(for: log.day)
+                }
+                : [:]
             let logCountMap = Dictionary(uniqueKeysWithValues: fullGridDays.map { day in
                 if lockGate.isLocked(date: day) {
                     return (day, 0)
                 }
 
-                let logsForDay = logsByDay[day] ?? []
-                return (day, logsForDay.count)
+                if let dailyCountsOverride {
+                    return (day, dailyCountsOverride[day] ?? 0)
+                }
+
+                return (day, logsByDay[day]?.count ?? 0)
             })
 
             return HeatmapMetricsCache.Entry(
@@ -219,11 +237,13 @@ struct HabitHeatmap: View {
             calendar.date(byAdding: .day, value: -$0, to: today)
         }.reversed()
 
-        let logsByDay = Dictionary(grouping: habit.logs) { log in
-            calendar.startOfDay(for: log.day)
-        }
         let dayCountMap = Dictionary(uniqueKeysWithValues: days.map { day in
-            let count = logsByDay[day]?.count ?? 0
+            let count: Int
+            if let dailyCountsOverride {
+                count = dailyCountsOverride[day] ?? 0
+            } else {
+                count = habit.logs(on: day, calendar: calendar).count
+            }
             return (day, count)
         })
 

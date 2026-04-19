@@ -10,11 +10,6 @@ import SwiftUI
 struct CalendarMonthView: View {
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
 
-    private enum SlideDirection {
-        case left
-        case right
-    }
-
     private struct AdjustingDate: Identifiable {
         let id: Date
         let date: Date
@@ -24,6 +19,7 @@ struct CalendarMonthView: View {
     let habit: Habit
     let service: HabitLogService
     let calendarProvider: CalendarProvider
+    let dailyCountsByDate: [Date: Int]
     let selectedDate: Date
     let monthSummaryText: String?
     let premiumHistoryGate: PremiumHistoryGate.Context
@@ -33,8 +29,6 @@ struct CalendarMonthView: View {
     let onTapDay: (Date) -> Void
     let onTapLockedDay: (Date) -> Void
 
-    @State private var slideDirection: SlideDirection?
-    @State private var slideResetToken = UUID()
     @State private var adjustingDate: AdjustingDate? = nil
 
     private let swipeIntentLock: CGFloat = 20
@@ -46,14 +40,13 @@ struct CalendarMonthView: View {
     private let edgePadding: CGFloat = 4
     private let navHitSize: CGFloat = 44
     private let navVisualSize: CGFloat = 34
-    private let monthAnimationDuration: Double = 0.28
-    private let headerFadeDuration: Double = 0.22
 
     init(
         month: Binding<Date>,
         habit: Habit,
         service: HabitLogService,
         calendarProvider: CalendarProvider,
+        dailyCountsByDate: [Date: Int] = [:],
         selectedDate: Date,
         monthSummaryText: String? = nil,
         premiumHistoryGate: PremiumHistoryGate.Context,
@@ -67,6 +60,7 @@ struct CalendarMonthView: View {
         self.habit = habit
         self.service = service
         self.calendarProvider = calendarProvider
+        self.dailyCountsByDate = dailyCountsByDate
         self.selectedDate = selectedDate
         self.monthSummaryText = monthSummaryText
         self.premiumHistoryGate = premiumHistoryGate
@@ -81,9 +75,6 @@ struct CalendarMonthView: View {
         let _ = uiStateStore.progressByHabitAndDate.count
         let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
         let dayMetrics = service.dayMetrics(for: habit, on: days)
-        let logsByDay = Dictionary(grouping: habit.logs) { log in
-            calendar.startOfDay(for: log.day)
-        }
 
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
@@ -112,7 +103,7 @@ struct CalendarMonthView: View {
                             let isInDisplayedMonth = isDisplayedMonth(day)
                             let isDisabledDay = isFutureDate(day)
                             let isLockedDay = premiumHistoryGate.isLocked(date: day)
-                            let count = isLockedDay ? 0 : (logsByDay[normalizedDay]?.count ?? 0)
+                            let count = isLockedDay ? 0 : (dailyCountsByDate[normalizedDay] ?? 0)
                             let indicatorText = isLockedDay || habit.goalType != .cumulative || metrics.value <= 0
                                 ? nil
                                 : service.formatValue(metrics.value, for: habit)
@@ -150,9 +141,7 @@ struct CalendarMonthView: View {
                     }
                 }
                 .id(monthIdentity)
-                .transition(calendarTransition)
             }
-            .animation(monthAnimation, value: monthIdentity)
             .sheet(item: $adjustingDate) { date in
                 Group {
                     if habit.goalType == .frequency {
@@ -258,28 +247,6 @@ struct CalendarMonthView: View {
             }
     }
 
-    private var calendarTransition: AnyTransition {
-        let fade = AnyTransition.opacity
-        switch slideDirection {
-        case .left:
-            return .asymmetric(
-                insertion: .move(edge: .trailing).combined(with: fade),
-                removal: .move(edge: .leading).combined(with: fade)
-            )
-        case .right:
-            return .asymmetric(
-                insertion: .move(edge: .leading).combined(with: fade),
-                removal: .move(edge: .trailing).combined(with: fade)
-            )
-        case .none:
-            return .identity
-        }
-    }
-
-    private var monthAnimation: Animation {
-        .easeInOut(duration: monthAnimationDuration)
-    }
-
     private var monthIdentity: String {
         let components = calendar.dateComponents([.year, .month], from: displayedMonth)
         let year = components.year ?? 0
@@ -363,17 +330,6 @@ struct CalendarMonthView: View {
         guard !isDisplayedMonth(day) else { return }
 
         let targetMonth = normalizedMonth(day)
-        let targetComponents = calendar.dateComponents([.year, .month], from: targetMonth)
-
-        switch compareMonth(targetComponents, monthComponents) {
-        case let comparison where comparison < 0:
-            slideDirection = .right
-        case let comparison where comparison > 0:
-            slideDirection = .left
-        default:
-            slideDirection = nil
-        }
-
         month = targetMonth
     }
 
@@ -445,36 +401,12 @@ struct CalendarMonthView: View {
            compareMonth(newComponents, earliestVisibleMonthComponents) < 0 {
             return
         }
-
-        slideDirection = value < 0 ? .right : .left
-        let token = UUID()
-        slideResetToken = token
-
-        withAnimation(monthAnimation) {
-            month = normalizedNewMonth
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + monthAnimationDuration) {
-            guard slideResetToken == token else { return }
-            slideDirection = nil
-        }
+        month = normalizedNewMonth
     }
 
     private func jumpToCurrentMonth() {
         let target = normalizedMonth(Date())
-        let targetComponents = calendar.dateComponents([.year, .month], from: target)
-        let comparison = compareMonth(monthComponents, targetComponents)
-        if comparison < 0 {
-            slideDirection = .left
-        } else if comparison > 0 {
-            slideDirection = .right
-        } else {
-            slideDirection = nil
-        }
-        slideResetToken = UUID()
-        withAnimation(monthAnimation) {
-            month = target
-        }
+        month = target
     }
 
     private func headerFadingText(
@@ -482,12 +414,8 @@ struct CalendarMonthView: View {
         id: String,
         font: Font
     ) -> some View {
-        ZStack {
-            Text(text)
-                .id(id)
-                .font(font)
-                .transition(.opacity)
-        }
-        .animation(.easeInOut(duration: headerFadeDuration), value: id)
+        Text(text)
+            .id(id)
+            .font(font)
     }
 }

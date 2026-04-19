@@ -1086,7 +1086,7 @@ enum GuidanceEngine {
         optimalBucket: TimeBucket?
     ) -> String {
         if confidence < 0.5 {
-            if let optimalBucket {
+            if optimalBucket != nil {
                 return "A short session now keeps this moving"
             }
             return "A short session now keeps this on track"

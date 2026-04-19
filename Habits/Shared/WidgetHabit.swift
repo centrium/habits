@@ -559,12 +559,6 @@ struct WidgetHabit: Codable, Identifiable {
         self.heatmapAggregationKind = heatmapAggregationKind
         self.recentActivity = recentActivity
 
-        WidgetHabitLogger.log(
-            context: "initialized",
-            habitName: name,
-            goalType: goalType,
-            progress: self.progress
-        )
     }
 
     init(from decoder: Decoder) throws {
@@ -610,12 +604,6 @@ struct WidgetHabit: Codable, Identifiable {
             identityLine1 = Self.normalizedLine(decodedLine1)
                 ?? Self.defaultLine1(from: recentActivity, windowDays: 7)
             identityLine2 = Self.normalizedLine(decodedLine2)
-            WidgetHabitLogger.log(
-                context: "decoded",
-                habitName: name,
-                goalType: goalType,
-                progress: progress
-            )
             return
         }
 
@@ -642,12 +630,6 @@ struct WidgetHabit: Codable, Identifiable {
         heatmapAggregationKind = .completion
         recentActivity = []
 
-        WidgetHabitLogger.log(
-            context: "decoded-legacy",
-            habitName: name,
-            goalType: goalType,
-            progress: progress
-        )
     }
 
     func encode(to encoder: Encoder) throws {

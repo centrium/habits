@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 private enum ActiveSheet: Identifiable {
     case edit
@@ -25,10 +26,113 @@ private struct IdentityReinforcement {
     let line: String
 }
 
+private struct HistorySnapshot: Equatable {
+    let dailyCounts: [Date: Int]
+    let activeDays: Int
+    let totalEntries: Int
+    let longestRun: Int
+
+    static let empty = HistorySnapshot(
+        dailyCounts: [:],
+        activeDays: 0,
+        totalEntries: 0,
+        longestRun: 0
+    )
+}
+
+@MainActor
+private final class HabitDetailViewModel: ObservableObject {
+    @Published private(set) var isActive = false
+    @Published private(set) var historySnapshot: HistorySnapshot = .empty
+
+    private var historySnapshotTask: Task<Void, Never>?
+
+    func activate() {
+        isActive = true
+    }
+
+    func deactivate() {
+        isActive = false
+    }
+
+    func applyOptimisticHistoryLog(on day: Date, calendar: Calendar) {
+        let normalizedDay = calendar.startOfDay(for: day)
+        var dailyCounts = historySnapshot.dailyCounts
+        dailyCounts[normalizedDay, default: 0] += 1
+        historySnapshot = HistorySnapshot(
+            dailyCounts: dailyCounts,
+            activeDays: dailyCounts.values.filter { $0 > 0 }.count,
+            totalEntries: dailyCounts.values.reduce(0, +),
+            longestRun: historySnapshot.longestRun
+        )
+    }
+
+    func refreshHistorySnapshot(logs: [HabitLog], calendar: Calendar) {
+        historySnapshotTask?.cancel()
+
+        let dayOrdinals: [(Date, Int)] = logs.compactMap { log in
+            let day = calendar.startOfDay(for: log.day)
+            guard let ordinality = calendar.ordinality(of: .day, in: .era, for: day) else {
+                return nil
+            }
+            return (day, ordinality)
+        }
+
+        historySnapshotTask = Task { @MainActor in
+            let snapshot = await Task.detached(priority: .utility) {
+                var countsByOrdinal: [Int: Int] = [:]
+                var dayByOrdinal: [Int: Date] = [:]
+                countsByOrdinal.reserveCapacity(dayOrdinals.count)
+                dayByOrdinal.reserveCapacity(dayOrdinals.count)
+
+                for (day, ordinality) in dayOrdinals {
+                    countsByOrdinal[ordinality, default: 0] += 1
+                    dayByOrdinal[ordinality] = day
+                }
+
+                let activeOrdinals = countsByOrdinal
+                    .filter { $0.value > 0 }
+                    .map(\.key)
+                    .sorted()
+
+                var longestRun = 0
+                var currentRun = 0
+                var previousOrdinal: Int?
+
+                for ordinality in activeOrdinals {
+                    if let previousOrdinal, ordinality == previousOrdinal + 1 {
+                        currentRun += 1
+                    } else {
+                        currentRun = 1
+                    }
+                    longestRun = max(longestRun, currentRun)
+                    previousOrdinal = ordinality
+                }
+
+                let dailyCounts = Dictionary(
+                    uniqueKeysWithValues: dayByOrdinal.map { ordinality, day in
+                        (day, countsByOrdinal[ordinality] ?? 0)
+                    }
+                )
+
+                return HistorySnapshot(
+                    dailyCounts: dailyCounts,
+                    activeDays: activeOrdinals.count,
+                    totalEntries: dailyCounts.values.reduce(0, +),
+                    longestRun: longestRun
+                )
+            }.value
+
+            guard !Task.isCancelled else { return }
+            self.historySnapshot = snapshot
+        }
+    }
+}
+
 struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
-    @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
@@ -51,6 +155,7 @@ struct HabitDetailSheet: View {
     @State private var frozenGuidanceOutput: GuidanceOutput?
     @State private var frozenStateModel: HabitStateModel?
     @State private var lastReconcileProbeKey: String?
+    @StateObject private var viewModel = HabitDetailViewModel()
     private let onDeleted: (() -> Void)?
 
     let habit: Habit
@@ -72,21 +177,36 @@ struct HabitDetailSheet: View {
         let calendar = habitLogService.calendar
         let progressRevision = habitLogService.metricsRevision(for: habit.id)
         let logsVersion = habitLogService.logsVersion
+        let isDetailWorkActive = viewModel.isActive && !isHistoryPresented
         let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
         let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
         let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
         let hasActivityToday = (optimisticProgress ?? 0) > 0
             || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
-        let streakState = StreakStateEngine(
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        ).streakState(
-            for: habit,
-            referenceDate: now,
-            progressOverride: optimisticProgress,
-            isCompleteOverride: optimisticComplete,
-            hasActivityOverride: hasActivityToday
-        )
+        let streakState: StreakState = {
+            guard isDetailWorkActive else {
+                return StreakState(
+                    currentStreak: 0,
+                    longestStreak: 0,
+                    hasMetRequirementToday: false,
+                    isRequiredToday: true,
+                    isAtRisk: false,
+                    isBroken: true,
+                    status: .broken
+                )
+            }
+
+            return StreakStateEngine(
+                calendar: calculationCalendar,
+                weekStartPreference: userSettings.weekStartPreference
+            ).streakState(
+                for: habit,
+                referenceDate: now,
+                progressOverride: optimisticProgress,
+                isCompleteOverride: optimisticComplete,
+                hasActivityOverride: hasActivityToday
+            )
+        }()
         let premiumHistoryGate = PremiumHistoryGate.Context(
             calendar: calendar,
             premiumStatus: purchaseService.premiumStatus,
@@ -226,10 +346,14 @@ struct HabitDetailSheet: View {
 
         }
         .onAppear {
+            viewModel.activate()
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
+            viewModel.refreshHistorySnapshot(logs: habit.logs, calendar: calculationCalendar)
             debugPrintRecentHabitLogTimestamps()
+            frozenStateModel = nil
+            frozenGuidanceOutput = nil
             freezeStateModelOnAppear()
             freezeGuidanceOutputOnAppear(now: now)
             updateAICoachTitleOnAppear()
@@ -250,31 +374,66 @@ struct HabitDetailSheet: View {
                 selectionState.selectCalendarMonth(minimumVisibleMonth, today: now)
             }
         }
+        .onDisappear {
+            viewModel.deactivate()
+            snapshotRefreshTask?.cancel()
+            freezeDetailState()
+        }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             habitLogService.updateCalendar(calculationCalendar)
+            viewModel.refreshHistorySnapshot(logs: habit.logs, calendar: calculationCalendar)
+            guard viewModel.isActive, !isHistoryPresented else { return }
             scheduleProgressSnapshotRefresh()
         }
         .onChange(of: selectedDate) { _, _ in
+            guard viewModel.isActive, !isHistoryPresented else { return }
             scheduleProgressSnapshotRefresh()
         }
         .onChange(of: selectionState.visibleMonth) { _, _ in
+            guard viewModel.isActive, !isHistoryPresented else { return }
             scheduleProgressSnapshotRefresh()
         }
         .onChange(of: progressRevision) { _, _ in
+            guard viewModel.isActive, !isHistoryPresented else { return }
             scheduleProgressSnapshotRefresh()
             Task { await refreshCueInsight() }
         }
         .onChange(of: logsVersion) { _, _ in
+            viewModel.refreshHistorySnapshot(logs: habit.logs, calendar: calculationCalendar)
+            guard viewModel.isActive, !isHistoryPresented else { return }
             recordUIReconcileProbe(stage: "logsVersion")
             scheduleProgressSnapshotRefresh()
         }
         .onReceive(uiStateStore.$progressByHabitAndDate) { _ in
+            guard viewModel.isActive, !isHistoryPresented else { return }
             recordUIReconcileProbe(stage: "uiState.progress")
         }
+        .onChange(of: isHistoryPresented) { _, presented in
+            if presented {
+                viewModel.deactivate()
+                freezeDetailState()
+                return
+            }
+
+            viewModel.activate()
+            frozenStateModel = nil
+            frozenGuidanceOutput = nil
+            scheduleProgressSnapshotRefresh()
+            Task {
+                await refreshCueInsight()
+                await refreshRhythmData()
+            }
+            updateAICoachTitleOnAppear()
+            regenerateAICoach(
+                requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
+            )
+        }
         .task(id: habit.id) {
+            guard viewModel.isActive, !isHistoryPresented else { return }
             await refreshCueInsight()
         }
         .task(id: rhythmTaskKey) {
+            guard viewModel.isActive, !isHistoryPresented else { return }
             await refreshRhythmData()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
@@ -289,6 +448,7 @@ struct HabitDetailSheet: View {
                 historyTabContent(
                     progressRevision: progressRevision,
                     logsVersion: logsVersion,
+                    snapshot: viewModel.historySnapshot,
                     calendarMonthSummaryText: calendarMonthSummaryText,
                     earliestCalendarDate: earliestCalendarDate,
                     premiumHistoryGate: premiumHistoryGate,
@@ -564,6 +724,7 @@ struct HabitDetailSheet: View {
     private func historyTabContent(
         progressRevision: Int,
         logsVersion: UUID,
+        snapshot: HistorySnapshot,
         calendarMonthSummaryText: String?,
         earliestCalendarDate: Date?,
         premiumHistoryGate: PremiumHistoryGate.Context,
@@ -571,11 +732,13 @@ struct HabitDetailSheet: View {
     ) -> some View {
         let now = Date()
         let historyInsight = historyInsightSummary(
+            snapshot: snapshot,
             visibleMonth: selectionState.visibleMonth,
             now: now,
             calendar: calendar
         )
         let selectedDayContext = selectedDayContextSummary(
+            snapshot: snapshot,
             selectedDate: selectedDate,
             calendar: calendar
         )
@@ -610,6 +773,7 @@ struct HabitDetailSheet: View {
                                 metricsRevision: progressRevision,
                                 logsVersion: logsVersion,
                                 earliestVisibleDate: earliestCalendarDate,
+                                historyDailyCounts: snapshot.dailyCounts,
                                 habit: habit,
                                 service: habitLogService,
                                 calendarProvider: heatmapCalendarProvider,
@@ -656,6 +820,7 @@ struct HabitDetailSheet: View {
                             logsVersion: logsVersion,
                             monthSummaryText: calendarMonthSummaryText,
                             earliestVisibleDate: earliestCalendarDate,
+                            historyDailyCounts: snapshot.dailyCounts,
                             isTapToLogEnabled: userSettings.tapToLogEnabled,
                             month: Binding(
                                 get: { selectionState.visibleMonth },
@@ -670,9 +835,7 @@ struct HabitDetailSheet: View {
                             calendarProvider: calendarViewProvider,
                             premiumHistoryGate: premiumHistoryGate,
                             onSelectDay: { day in
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    selectedDate = calendar.startOfDay(for: day)
-                                }
+                                selectedDate = calendar.startOfDay(for: day)
                             },
                             onTapDay: { day in
                                 quickLogFromCalendarDay(day)
@@ -735,7 +898,7 @@ struct HabitDetailSheet: View {
                 isCompletedToday: hasActivityToday(),
                 streakState: streakState,
                 completionHistory: habit.logs,
-                globalHistory: allHabits.flatMap(\.logs),
+                globalHistory: allHabitsSnapshot().flatMap(\.logs),
                 pattern: guidancePattern(),
                 goalType: habit.goalType
             ),
@@ -832,6 +995,9 @@ struct HabitDetailSheet: View {
             return
         }
 
+        if isHistoryPresented {
+            viewModel.applyOptimisticHistoryLog(on: resolvedDay, calendar: calculationCalendar)
+        }
         _ = habitLogService.quickLog(for: habit, on: resolvedDay)
     }
 
@@ -866,6 +1032,7 @@ struct HabitDetailSheet: View {
     }
 
     private func historyInsightSummary(
+        snapshot: HistorySnapshot,
         visibleMonth: Date,
         now: Date,
         calendar: Calendar
@@ -874,9 +1041,15 @@ struct HabitDetailSheet: View {
             Date.FormatStyle()
                 .month(.wide)
         )
-        let activeDays = monthlyActiveDays(for: visibleMonth, calendar: calendar)
-        let entries = monthlyEntryTotal(for: visibleMonth, calendar: calendar)
+        let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth)
+        let monthCounts = snapshot.dailyCounts.filter { day, _ in
+            guard let monthInterval else { return false }
+            return monthInterval.contains(day)
+        }
+        let activeDays = monthCounts.values.filter { $0 > 0 }.count
+        let entries = monthCounts.values.reduce(0, +)
         let bestStreak = historyBestStreak(
+            snapshot: snapshot,
             visibleMonth: visibleMonth,
             now: now,
             calendar: calendar
@@ -890,41 +1063,16 @@ struct HabitDetailSheet: View {
         )
     }
 
-    private func monthlyActiveDays(
-        for visibleMonth: Date,
-        calendar: Calendar
-    ) -> Int {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth) else {
-            return 0
-        }
-        let monthDays = days(in: monthInterval, calendar: calendar)
-        let dayMetrics = habitLogService.dayMetrics(for: habit, on: monthDays)
-        return monthDays.reduce(into: 0) { partial, day in
-            if (dayMetrics[day]?.count ?? 0) > 0 {
-                partial += 1
-            }
-        }
-    }
-
-    private func monthlyEntryTotal(
-        for visibleMonth: Date,
-        calendar: Calendar
-    ) -> Int {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth) else {
-            return 0
-        }
-        let monthDays = days(in: monthInterval, calendar: calendar)
-        let dayMetrics = habitLogService.dayMetrics(for: habit, on: monthDays)
-        return monthDays.reduce(into: 0) { partial, day in
-            partial += dayMetrics[day]?.count ?? 0
-        }
-    }
-
     private func historyBestStreak(
+        snapshot: HistorySnapshot,
         visibleMonth: Date,
         now: Date,
         calendar _: Calendar
     ) -> Int {
+        guard purchaseService.premiumStatus != .free else {
+            return snapshot.longestRun
+        }
+
         let streakCalendar = calculationCalendar
         guard let monthInterval = streakCalendar.dateInterval(of: .month, for: visibleMonth) else {
             return 0
@@ -946,6 +1094,7 @@ struct HabitDetailSheet: View {
     }
 
     private func selectedDayContextSummary(
+        snapshot: HistorySnapshot,
         selectedDate: Date,
         calendar: Calendar
     ) -> SelectedDayContextSummary {
@@ -959,7 +1108,7 @@ struct HabitDetailSheet: View {
         let loggedText: String
         switch habit.goalType {
         case .frequency:
-            let count = habitLogService.count(for: habit, on: normalizedDate)
+            let count = snapshot.dailyCounts[normalizedDate] ?? 0
             loggedText = "\(count) \(count == 1 ? "entry" : "entries")"
         case .cumulative:
             let total = habitLogService.value(for: habit, on: normalizedDate)
@@ -971,25 +1120,6 @@ struct HabitDetailSheet: View {
             dayLabel: dayLabel,
             loggedText: loggedText
         )
-    }
-
-    private func days(
-        in interval: DateInterval,
-        calendar: Calendar
-    ) -> [Date] {
-        var days: [Date] = []
-        var cursor = calendar.startOfDay(for: interval.start)
-        let end = calendar.startOfDay(for: interval.end)
-
-        while cursor < end {
-            days.append(cursor)
-            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else {
-                break
-            }
-            cursor = next
-        }
-
-        return days
     }
 
     private func fadingHistorySecondaryText(_ text: String, id: String) -> some View {
@@ -1100,12 +1230,13 @@ struct HabitDetailSheet: View {
     }
 
     private func cueSourceHabitName(for insight: CueInsight) -> String? {
-        allHabits.first(where: { $0.id == insight.sourceHabitId })?.name
+        allHabitsSnapshot().first(where: { $0.id == insight.sourceHabitId })?.name
     }
 
     private func guidancePattern() -> HabitPattern? {
+        let habits = allHabitsSnapshot()
         if let triggerHabitID = habit.triggerHabitID,
-           let triggerHabit = allHabits.first(where: { $0.id == triggerHabitID }) {
+           let triggerHabit = habits.first(where: { $0.id == triggerHabitID }) {
             return HabitPattern(
                 description: "after \(triggerHabit.name.lowercased())",
                 anchor: triggerHabit.name
@@ -1124,6 +1255,7 @@ struct HabitDetailSheet: View {
     }
 
     private func refreshCueInsight() async {
+        guard viewModel.isActive else { return }
         cueInsight = await habitLogService.detectCue(for: habit.id)
     }
 
@@ -1137,6 +1269,7 @@ struct HabitDetailSheet: View {
     }
 
     private func refreshRhythmData() async {
+        guard viewModel.isActive else { return }
         guard purchaseService.premiumStatus != .unknown else {
             rhythmData = []
             return
@@ -1144,7 +1277,7 @@ struct HabitDetailSheet: View {
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: habit,
-            globalLogs: allHabits.flatMap(\.logs),
+            globalLogs: allHabitsSnapshot().flatMap(\.logs),
             isPremium: purchaseService.premiumStatus == .premium,
             now: .now,
             calendar: calculationCalendar
@@ -1163,6 +1296,7 @@ struct HabitDetailSheet: View {
     }
 
     private func regenerateAICoach(requestKey: String) {
+        guard viewModel.isActive else { return }
         let input = buildAICoachInput()
         aiCoach.generate(input: input, requestKey: requestKey) { finalText in
             self.aiCoachText = finalText
@@ -1170,6 +1304,7 @@ struct HabitDetailSheet: View {
     }
 
     private func regenerateAICoachOnAppear() {
+        guard viewModel.isActive else { return }
         let requestKey = "onAppear-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
         regenerateAICoach(requestKey: requestKey)
     }
@@ -1180,11 +1315,13 @@ struct HabitDetailSheet: View {
     }
 
     private func freezeStateModelOnAppear() {
+        guard viewModel.isActive else { return }
         guard frozenStateModel == nil else { return }
         frozenStateModel = habitStateModel(now: appTime.now)
     }
 
     private func freezeGuidanceOutputOnAppear(now: Date) {
+        guard viewModel.isActive else { return }
         guard frozenGuidanceOutput == nil else { return }
 
         let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
@@ -1211,6 +1348,12 @@ struct HabitDetailSheet: View {
         )
     }
 
+    private func freezeDetailState() {
+        rhythmData = []
+        cueInsight = nil
+        snapshotRefreshTask?.cancel()
+    }
+
     private func buildAICoachInput() -> AICoachInput {
         let stateModel = frozenStateModel ?? habitStateModel(now: appTime.now)
         return AICoachInput(
@@ -1231,11 +1374,16 @@ struct HabitDetailSheet: View {
     private func habitStateModel(now: Date = Date()) -> HabitStateModel {
         HabitStateResolver.resolve(
             for: habit,
-            globalLogs: allHabits.flatMap(\.logs),
+            globalLogs: allHabitsSnapshot().flatMap(\.logs),
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference,
             now: now
         )
+    }
+
+    private func allHabitsSnapshot() -> [Habit] {
+        let descriptor = FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.orderIndex)])
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     private func recentLogsSummary() -> String {
@@ -1823,6 +1971,7 @@ private struct HeatmapSection: View, Equatable {
     let metricsRevision: Int
     let logsVersion: UUID
     let earliestVisibleDate: Date?
+    let historyDailyCounts: [Date: Int]
     let habit: Habit
     let service: HabitLogService
     let calendarProvider: CalendarProvider
@@ -1834,7 +1983,8 @@ private struct HeatmapSection: View, Equatable {
         lhs.selectedDate == rhs.selectedDate &&
         lhs.metricsRevision == rhs.metricsRevision &&
         lhs.logsVersion == rhs.logsVersion &&
-        lhs.earliestVisibleDate == rhs.earliestVisibleDate
+        lhs.earliestVisibleDate == rhs.earliestVisibleDate &&
+        lhs.historyDailyCounts == rhs.historyDailyCounts
     }
 
     var body: some View {
@@ -1844,6 +1994,7 @@ private struct HeatmapSection: View, Equatable {
             calendarProvider: calendarProvider,
             selectedDate: selectedDate,
             earliestVisibleDate: earliestVisibleDate,
+            dailyCountsOverride: historyDailyCounts,
             isInteractive: true,
             onSelectDay: onSelectDay,
             onTapLockedDay: onTapLockedDay
@@ -1859,6 +2010,7 @@ private struct CalendarSection: View, Equatable {
     let logsVersion: UUID
     let monthSummaryText: String?
     let earliestVisibleDate: Date?
+    let historyDailyCounts: [Date: Int]
     let isTapToLogEnabled: Bool
     let month: Binding<Date>
     let habit: Habit
@@ -1876,7 +2028,8 @@ private struct CalendarSection: View, Equatable {
         lhs.metricsRevision == rhs.metricsRevision &&
         lhs.logsVersion == rhs.logsVersion &&
         lhs.monthSummaryText == rhs.monthSummaryText &&
-        lhs.earliestVisibleDate == rhs.earliestVisibleDate
+        lhs.earliestVisibleDate == rhs.earliestVisibleDate &&
+        lhs.historyDailyCounts == rhs.historyDailyCounts
     }
 
     var body: some View {
@@ -1885,6 +2038,7 @@ private struct CalendarSection: View, Equatable {
             habit: habit,
             service: service,
             calendarProvider: calendarProvider,
+            dailyCountsByDate: historyDailyCounts,
             selectedDate: selectedDate,
             monthSummaryText: monthSummaryText,
             premiumHistoryGate: premiumHistoryGate,

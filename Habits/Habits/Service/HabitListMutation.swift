@@ -82,13 +82,6 @@ func mapToWidgetHabits(
             )
         }
 
-        WidgetHabitLogger.log(
-            context: "mapped",
-            habitName: widgetHabit.name,
-            goalType: widgetHabit.goalType,
-            progress: widgetHabit.progress
-        )
-
         return widgetHabit
     }
 }
@@ -204,6 +197,27 @@ enum WidgetDataSync {
     }
 }
 
+@MainActor
+private final class WidgetSyncScheduler {
+    static let shared = WidgetSyncScheduler()
+
+    private var pendingTask: Task<Void, Never>?
+    private var latestModelContext: ModelContext?
+
+    private init() {}
+
+    func schedule(in modelContext: ModelContext, delayNanoseconds: UInt64 = 1_500_000_000) {
+        latestModelContext = modelContext
+        pendingTask?.cancel()
+
+        pendingTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled, let context = latestModelContext else { return }
+            _ = WidgetDataSync.sync(in: context)
+        }
+    }
+}
+
 private func widgetIdentityState(from state: HabitIdentityState) -> WidgetHabitIdentityState {
     switch state {
     case .gettingStarted:
@@ -242,7 +256,8 @@ extension ModelContext {
             return false
         }
 
-        return WidgetDataSync.sync(in: self)
+        WidgetSyncScheduler.shared.schedule(in: self)
+        return true
     }
 }
 

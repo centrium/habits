@@ -86,15 +86,6 @@ final class WidgetDataStore {
         do {
             let data = try JSONEncoder().encode(validatedHabits)
             defaults.set(data, forKey: Self.key)
-
-            for habit in validatedHabits {
-                WidgetHabitLogger.logCompactSummary(
-                    habitName: habit.name,
-                    goalType: habit.goalType,
-                    progress: habit.progress
-                )
-            }
-
             WidgetHabitLogger.logWidgetWrite(count: validatedHabits.count)
             return true
         } catch {

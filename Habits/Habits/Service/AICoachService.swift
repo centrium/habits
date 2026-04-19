@@ -70,7 +70,7 @@ final class AICoachService {
         )
     }
 
-    private static func buildPrompt(from input: AICoachInput) -> String {
+    nonisolated private static func buildPrompt(from input: AICoachInput) -> String {
         let strongest = input.strongestTime ?? "none"
         let weakest = input.weakestTime ?? "none"
         let stacking = input.stacking ?? "none"
