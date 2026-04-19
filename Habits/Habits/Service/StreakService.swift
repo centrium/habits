@@ -146,9 +146,9 @@ private extension StreakService {
     ) -> [Date] {
         let days: Set<Date> = Set(
             goal.logs.compactMap { log -> Date? in
-                let timestamp = log.effectiveTimestamp
-                guard timestamp <= referenceDate else { return nil }
-                return calendar.startOfDay(for: timestamp)
+                let day = calendar.startOfDay(for: log.day)
+                guard day <= calendar.startOfDay(for: referenceDate) else { return nil }
+                return day
             }
         )
 

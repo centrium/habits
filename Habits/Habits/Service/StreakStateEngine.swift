@@ -220,7 +220,7 @@ private extension StreakStateEngine {
         period: DateInterval?
     ) -> CalculationWindow? {
         let firstLogDay = logs
-            .map(\.effectiveTimestamp)
+            .map(\.day)
             .map { calendar.startOfDay(for: $0) }
             .min()
 
@@ -262,7 +262,8 @@ private extension StreakStateEngine {
                 logsByDay[openGoalDay, default: []].append(log)
             }
 
-            let goalContributionDay = calendar.startOfDay(for: log.effectiveTimestamp)
+            // Streak math should follow the habit's logical day, matching progress/goal completion.
+            let goalContributionDay = calendar.startOfDay(for: log.day)
             guard goalContributionDay >= startDay, goalContributionDay <= endDay else { continue }
 
             frequencyByDay[goalContributionDay, default: 0] += max(0, log.frequencyContribution)

@@ -101,6 +101,50 @@ final class StreakEngineResultTests: XCTestCase {
         XCTAssertEqual(result.current, 1)
     }
 
+    func testFrequencyStreakUsesLogicalDayInsteadOfTimestamp() {
+        let day1 = TestDateFactory.date(2026, 4, 1, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 4, 2, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 4, 3, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            target: 1,
+            entries: [
+                .init(timestamp: day1, value: 1),
+                .init(timestamp: day2, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        habit.logs[0].day = day2
+        habit.logs[1].day = day3
+
+        let result = engine.calculateStreak(for: habit, logs: habit.logs, asOf: day3)
+
+        XCTAssertEqual(result.best, 2)
+        XCTAssertEqual(result.current, 2)
+    }
+
+    func testCumulativeStreakUsesLogicalDayInsteadOfTimestamp() {
+        let day1 = TestDateFactory.date(2026, 4, 1, calendar: calendar)
+        let day2 = TestDateFactory.date(2026, 4, 2, calendar: calendar)
+        let day3 = TestDateFactory.date(2026, 4, 3, calendar: calendar)
+        let habit = TestHabitFactory.cumulative(
+            target: 10,
+            entries: [
+                .init(timestamp: day1, value: 10),
+                .init(timestamp: day2, value: 10),
+            ],
+            calendar: calendar
+        )
+
+        habit.logs[0].day = day2
+        habit.logs[1].day = day3
+
+        let result = engine.calculateStreak(for: habit, logs: habit.logs, asOf: day3)
+
+        XCTAssertEqual(result.best, 2)
+        XCTAssertEqual(result.current, 2)
+    }
+
     func testPeriodScopeResetsAtWindowStart() {
         let start = TestDateFactory.date(2026, 3, 28, calendar: calendar)
         let entries = (0..<14).map { offset in
