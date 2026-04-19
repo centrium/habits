@@ -16,13 +16,15 @@ enum StreakStatus: Equatable {
     case broken
 }
 
-struct StreakStateEngine {
-    private enum ResolvedGoalType {
-        case open
-        case frequency
-        case cumulative
-    }
+struct StreakResult: Equatable {
+    let current: Int
+    let best: Int
+    let lastCompletedDate: Date?
+    let isAtRisk: Bool
+    let isBroken: Bool
+}
 
+struct StreakStateEngine {
     private let calendar: Calendar
     private let weekStartPreference: WeekStartPreference
 
@@ -34,6 +36,62 @@ struct StreakStateEngine {
         self.weekStartPreference = weekStartPreference
     }
 
+    func calculateStreak(
+        for habit: Habit,
+        logs: [HabitLog],
+        asOf date: Date,
+        period: DateInterval? = nil
+    ) -> StreakResult {
+        let asOfDay = calendar.startOfDay(for: date)
+        let window = calculationWindow(
+            logs: logs,
+            asOfDay: asOfDay,
+            period: period
+        )
+
+        guard let window else {
+            return StreakResult(
+                current: 0,
+                best: 0,
+                lastCompletedDate: nil,
+                isAtRisk: false,
+                isBroken: true
+            )
+        }
+
+        let summary = successSummary(
+            for: habit,
+            logs: logs,
+            from: window.startDay,
+            through: window.endDay
+        )
+
+        let todaySuccessful = summary.successfulDays.contains(window.endDay)
+        let previousDay = calendar.date(byAdding: .day, value: -1, to: window.endDay)
+        let previousSuccessful = previousDay.map { summary.successfulDays.contains($0) } ?? false
+
+        return StreakResult(
+            current: summary.current,
+            best: summary.best,
+            lastCompletedDate: summary.lastCompletedDate,
+            isAtRisk: !todaySuccessful && previousSuccessful,
+            isBroken: !todaySuccessful && !previousSuccessful
+        )
+    }
+
+    func calculateStreak(
+        for habit: Habit,
+        asOf date: Date,
+        period: DateInterval? = nil
+    ) -> StreakResult {
+        calculateStreak(
+            for: habit,
+            logs: habit.logs,
+            asOf: date,
+            period: period
+        )
+    }
+
     func streakState(
         for habit: Habit,
         referenceDate: Date = .now,
@@ -41,266 +99,233 @@ struct StreakStateEngine {
         isCompleteOverride: Bool? = nil,
         hasActivityOverride: Bool? = nil
     ) -> StreakState {
-        let currentInterval = periodRange(for: habit, containing: referenceDate)
-        let hasMetCurrentRequirement = requirementMet(
+        let asOfDay = calendar.startOfDay(for: referenceDate)
+        let base = calculateStreak(
             for: habit,
-            in: currentInterval,
-            referenceDate: referenceDate,
+            logs: habit.logs,
+            asOf: referenceDate,
+            period: nil
+        )
+
+        let overriddenTodaySuccess = resolvedTodayOverride(
+            for: habit,
             progressOverride: progressOverride,
             isCompleteOverride: isCompleteOverride,
             hasActivityOverride: hasActivityOverride
         )
-        let currentStreak = currentStreak(
-            for: habit,
-            referenceDate: referenceDate,
-            currentInterval: currentInterval,
-            hasMetCurrentRequirement: hasMetCurrentRequirement
-        )
-        let longestStreak = longestStreak(for: habit, referenceDate: referenceDate)
-        let priorPeriodIntact = priorPeriodKeepsStreakIntact(
-            for: habit,
-            currentIntervalStart: currentInterval.start
-        )
-        let status: StreakStatus = {
-            if hasMetCurrentRequirement {
-                return .safe
-            }
-            if referenceDate < currentInterval.end, priorPeriodIntact {
-                return .atRisk
-            }
-            return .broken
-        }()
 
-        return StreakState(
-            currentStreak: currentStreak,
-            longestStreak: longestStreak,
-            hasMetRequirementToday: hasMetCurrentRequirement,
-            isRequiredToday: isRequiredToday(
-                for: habit,
-                referenceDate: referenceDate,
-                currentInterval: currentInterval,
-                hasMetCurrentRequirement: hasMetCurrentRequirement
-            ),
-            isAtRisk: status == .atRisk,
-            isBroken: status == .broken,
-            status: status
+        guard let overriddenTodaySuccess else {
+            return state(from: base, hasMetRequirementToday: !base.isAtRisk && !base.isBroken)
+        }
+
+        let previousDay = calendar.date(byAdding: .day, value: -1, to: asOfDay) ?? asOfDay
+        let previous = calculateStreak(
+            for: habit,
+            logs: habit.logs,
+            asOf: previousDay,
+            period: nil
         )
+
+        let current = overriddenTodaySuccess ? (previous.current + 1) : previous.current
+        let best = max(base.best, current)
+        let lastCompletedDate: Date? = {
+            if overriddenTodaySuccess { return asOfDay }
+            if base.lastCompletedDate == asOfDay { return previous.lastCompletedDate }
+            return base.lastCompletedDate
+        }()
+        let result = StreakResult(
+            current: current,
+            best: best,
+            lastCompletedDate: lastCompletedDate,
+            isAtRisk: !overriddenTodaySuccess && previous.current > 0,
+            isBroken: !overriddenTodaySuccess && previous.current == 0
+        )
+
+        return state(from: result, hasMetRequirementToday: overriddenTodaySuccess)
     }
 
     func currentStreak(
         for habit: Habit,
         referenceDate: Date = .now
     ) -> Int {
-        streakState(for: habit, referenceDate: referenceDate).currentStreak
+        calculateStreak(for: habit, logs: habit.logs, asOf: referenceDate).current
     }
 
     func bestStreak(
         for habit: Habit,
         referenceDate: Date = .now
     ) -> Int {
-        streakState(for: habit, referenceDate: referenceDate).longestStreak
+        calculateStreak(for: habit, logs: habit.logs, asOf: referenceDate).best
+    }
+}
+
+private extension StreakStateEngine {
+    struct CalculationWindow {
+        let startDay: Date
+        let endDay: Date
     }
 
-    private func currentStreak(
-        for habit: Habit,
-        referenceDate: Date,
-        currentInterval: DateInterval,
-        hasMetCurrentRequirement: Bool
-    ) -> Int {
-        var streak = 0
-        var cursor = hasMetCurrentRequirement
-            ? currentInterval.start
-            : previousPeriodStart(for: habit, before: currentInterval.start)
+    struct SuccessSummary {
+        let current: Int
+        let best: Int
+        let lastCompletedDate: Date?
+        let successfulDays: Set<Date>
+    }
 
-        while let periodStart = cursor, isRelevantPeriod(periodStart, for: habit) {
-            let interval = periodRange(for: habit, startingAt: periodStart)
-            guard requirementMet(for: habit, in: interval, referenceDate: referenceDate) else {
-                break
-            }
-            streak += 1
-            cursor = previousPeriodStart(for: habit, before: periodStart)
+    func state(
+        from result: StreakResult,
+        hasMetRequirementToday: Bool
+    ) -> StreakState {
+        let status: StreakStatus = {
+            if hasMetRequirementToday { return .safe }
+            if result.isAtRisk { return .atRisk }
+            return .broken
+        }()
+
+        return StreakState(
+            currentStreak: result.current,
+            longestStreak: result.best,
+            hasMetRequirementToday: hasMetRequirementToday,
+            isRequiredToday: !hasMetRequirementToday,
+            isAtRisk: result.isAtRisk,
+            isBroken: result.isBroken,
+            status: status
+        )
+    }
+
+    func resolvedTodayOverride(
+        for habit: Habit,
+        progressOverride: Double?,
+        isCompleteOverride: Bool?,
+        hasActivityOverride: Bool?
+    ) -> Bool? {
+        if !habit.hasGoal {
+            return hasActivityOverride
         }
 
-        return streak
+        if let isCompleteOverride {
+            return isCompleteOverride
+        }
+
+        if let progressOverride {
+            return progressOverride >= 1
+        }
+
+        return nil
     }
 
-    private func longestStreak(
+    func calculationWindow(
+        logs: [HabitLog],
+        asOfDay: Date,
+        period: DateInterval?
+    ) -> CalculationWindow? {
+        let firstLogDay = logs
+            .map(\.effectiveTimestamp)
+            .map { calendar.startOfDay(for: $0) }
+            .min()
+
+        if let period {
+            let periodStartDay = calendar.startOfDay(for: period.start)
+            let periodLastDay = resolvedPeriodLastDay(for: period)
+            guard periodStartDay <= periodLastDay else { return nil }
+            let endDay = min(asOfDay, periodLastDay)
+            guard periodStartDay <= endDay else { return nil }
+            return CalculationWindow(startDay: periodStartDay, endDay: endDay)
+        }
+
+        guard let firstLogDay, firstLogDay <= asOfDay else { return nil }
+        return CalculationWindow(startDay: firstLogDay, endDay: asOfDay)
+    }
+
+    func resolvedPeriodLastDay(for period: DateInterval) -> Date {
+        let endStartOfDay = calendar.startOfDay(for: period.end)
+        let endIsStartOfDay = period.end == endStartOfDay
+        if endIsStartOfDay {
+            return calendar.date(byAdding: .day, value: -1, to: endStartOfDay) ?? endStartOfDay
+        }
+        return endStartOfDay
+    }
+
+    func successSummary(
         for habit: Habit,
-        referenceDate: Date
-    ) -> Int {
-        let firstPeriodStart = periodRange(for: habit, containing: habit.createdAt).start
-        let currentPeriod = periodRange(for: habit, containing: referenceDate)
-        var longest = 0
-        var active = 0
-        var cursor = firstPeriodStart
+        logs: [HabitLog],
+        from startDay: Date,
+        through endDay: Date
+    ) -> SuccessSummary {
+        var frequencyByDay: [Date: Int] = [:]
+        var cumulativeByDay: [Date: Double] = [:]
+        var logsByDay: [Date: [HabitLog]] = [:]
 
-        while cursor <= currentPeriod.start {
-            let interval = periodRange(for: habit, startingAt: cursor)
-            let periodClosed = interval.end <= referenceDate
-            let includeCurrentOpenPeriod = interval.start == currentPeriod.start &&
-                requirementMet(for: habit, in: interval, referenceDate: referenceDate)
+        for log in logs {
+            let openGoalDay = calendar.startOfDay(for: log.day)
+            if openGoalDay >= startDay, openGoalDay <= endDay {
+                logsByDay[openGoalDay, default: []].append(log)
+            }
 
-            if periodClosed || includeCurrentOpenPeriod {
-                if requirementMet(for: habit, in: interval, referenceDate: referenceDate) {
-                    active += 1
-                    longest = max(longest, active)
-                } else {
-                    active = 0
+            let goalContributionDay = calendar.startOfDay(for: log.effectiveTimestamp)
+            guard goalContributionDay >= startDay, goalContributionDay <= endDay else { continue }
+
+            frequencyByDay[goalContributionDay, default: 0] += max(0, log.frequencyContribution)
+            cumulativeByDay[goalContributionDay, default: 0] += max(0, log.numericValue)
+        }
+
+        let frequencyTarget = Int(ceil(habit.effectiveTargetValue ?? 1))
+        let cumulativeTarget = habit.targetValue ?? 0
+
+        var successfulDays: Set<Date> = []
+        var cursor = startDay
+        while cursor <= endDay {
+            let isSuccessful: Bool = {
+                if !habit.hasGoal {
+                    // Open goals are successful when there is at least one log on that day.
+                    return !(logsByDay[cursor]?.isEmpty ?? true)
                 }
+
+                switch habit.goalType {
+                case .frequency:
+                    return frequencyByDay[cursor, default: 0] >= max(1, frequencyTarget)
+                case .cumulative:
+                    return cumulativeByDay[cursor, default: 0] >= max(0, cumulativeTarget)
+                }
+            }()
+
+            if isSuccessful {
+                successfulDays.insert(cursor)
             }
 
-            guard let next = nextPeriodStart(for: habit, after: cursor) else {
-                break
-            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
         }
 
-        return longest
-    }
-
-    private func priorPeriodKeepsStreakIntact(
-        for habit: Habit,
-        currentIntervalStart: Date
-    ) -> Bool {
-        guard let previousStart = previousPeriodStart(for: habit, before: currentIntervalStart) else {
-            return true
-        }
-        guard isRelevantPeriod(previousStart, for: habit) else {
-            return true
-        }
-        return requirementMet(
-            for: habit,
-            in: periodRange(for: habit, startingAt: previousStart),
-            referenceDate: currentIntervalStart
-        )
-    }
-
-    private func requirementMet(
-        for habit: Habit,
-        in interval: DateInterval,
-        referenceDate: Date,
-        progressOverride: Double? = nil,
-        isCompleteOverride: Bool? = nil,
-        hasActivityOverride: Bool? = nil
-    ) -> Bool {
-        let goalType = resolvedGoalType(for: habit)
-        let isCurrentPeriod = periodRange(for: habit, containing: referenceDate).start == interval.start
-
-        if isCurrentPeriod {
-            if let isCompleteOverride, goalType != .open {
-                return isCompleteOverride
+        var best = 0
+        var run = 0
+        var lastCompletedDate: Date?
+        cursor = startDay
+        while cursor <= endDay {
+            if successfulDays.contains(cursor) {
+                run += 1
+                best = max(best, run)
+                lastCompletedDate = cursor
+            } else {
+                run = 0
             }
-
-            if let progressOverride, goalType != .open {
-                return progressOverride >= 1
-            }
-
-            if let hasActivityOverride, goalType == .open {
-                return hasActivityOverride
-            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
         }
 
-        switch goalType {
-        case .open:
-            return habit.logs.contains { log in
-                log.effectiveTimestamp >= interval.start && log.effectiveTimestamp < interval.end
-            }
-        case .frequency, .cumulative:
-            guard let target = habit.effectiveTargetValue else { return false }
-            return habit.progressTotal(in: interval) >= target
-        }
-    }
-
-    private func isRequiredToday(
-        for habit: Habit,
-        referenceDate: Date,
-        currentInterval: DateInterval,
-        hasMetCurrentRequirement: Bool
-    ) -> Bool {
-        guard !hasMetCurrentRequirement, referenceDate < currentInterval.end else {
-            return false
+        var current = 0
+        cursor = endDay
+        while cursor >= startDay, successfulDays.contains(cursor) {
+            current += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
         }
 
-        let goalType = resolvedGoalType(for: habit)
-        if habit.goalPeriod == .daily {
-            return true
-        }
-
-        let today = calendar.startOfDay(for: referenceDate)
-        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else {
-            return false
-        }
-
-        switch goalType {
-        case .open:
-            return tomorrow >= currentInterval.end
-        case .frequency:
-            let remainingSessions = max(0, Int(ceil((habit.effectiveTargetValue ?? 0) - habit.progressTotal(in: currentInterval))))
-            let remainingDays = max(0, calendar.dateComponents([.day], from: today, to: currentInterval.end).day ?? 0)
-            return remainingSessions >= remainingDays
-        case .cumulative:
-            return tomorrow >= currentInterval.end
-        }
-    }
-
-    private func resolvedGoalType(for habit: Habit) -> ResolvedGoalType {
-        guard habit.hasGoal else { return .open }
-
-        switch habit.goalType {
-        case .frequency:
-            return .frequency
-        case .cumulative:
-            return .cumulative
-        }
-    }
-
-    private func isRelevantPeriod(
-        _ periodStart: Date,
-        for habit: Habit
-    ) -> Bool {
-        periodRange(for: habit, startingAt: periodStart).end > habit.createdAt
-    }
-
-    private func periodRange(
-        for habit: Habit,
-        containing date: Date
-    ) -> DateInterval {
-        habit.goalPeriod.periodRange(
-            for: date,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
+        return SuccessSummary(
+            current: current,
+            best: best,
+            lastCompletedDate: lastCompletedDate,
+            successfulDays: successfulDays
         )
-    }
-
-    private func periodRange(
-        for habit: Habit,
-        startingAt start: Date
-    ) -> DateInterval {
-        let end = nextPeriodStart(for: habit, after: start) ?? start
-        return DateInterval(start: start, end: end)
-    }
-
-    private func previousPeriodStart(
-        for habit: Habit,
-        before date: Date
-    ) -> Date? {
-        let previous = habit.goalPeriod.previousPeriodStart(
-            before: date,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-        return previous < date ? previous : nil
-    }
-
-    private func nextPeriodStart(
-        for habit: Habit,
-        after date: Date
-    ) -> Date? {
-        let next = habit.goalPeriod.nextPeriodStart(
-            after: date,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        )
-        return next > date ? next : nil
     }
 }

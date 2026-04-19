@@ -392,7 +392,7 @@ final class InsightEngineTests: XCTestCase {
         guard let trend = trendBlock(from: viewModel) else {
             return XCTFail("Expected trend card")
         }
-        XCTAssertEqual(trend.insightText, "You've stayed consistent recently")
+        XCTAssertEqual(trend.insightText, "Your activity is steady this month")
     }
 
     func testInsightsForDecliningActivityReportsTrendDip() {
@@ -420,7 +420,79 @@ final class InsightEngineTests: XCTestCase {
         guard let trend = trendBlock(from: viewModel) else {
             return XCTFail("Expected trend card")
         }
-        XCTAssertEqual(trend.insightText, "Your activity dipped slightly this month")
+        XCTAssertEqual(trend.insightText, "Your activity dipped this month")
+    }
+
+    func testStrongestMonthClaimIsHiddenForInProgressCurrentMonth() {
+        // Given
+        let now = TestDateFactory.date(2026, 4, 15, hour: 12, calendar: calendar)
+        let marchA = TestDateFactory.date(2026, 3, 3, calendar: calendar)
+        let marchB = TestDateFactory.date(2026, 3, 10, calendar: calendar)
+        let aprilA = TestDateFactory.date(2026, 4, 2, calendar: calendar)
+        let aprilB = TestDateFactory.date(2026, 4, 6, calendar: calendar)
+        let aprilC = TestDateFactory.date(2026, 4, 10, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            period: .monthly,
+            target: 1,
+            entries: [
+                .init(timestamp: marchA, value: 1),
+                .init(timestamp: marchB, value: 1),
+                .init(timestamp: aprilA, value: 1),
+                .init(timestamp: aprilB, value: 1),
+                .init(timestamp: aprilC, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let trend = trendBlock(from: viewModel) else {
+            return XCTFail("Expected trend card")
+        }
+        XCTAssertNil(trend.insightText)
+    }
+
+    func testMonthComparisonShowsImprovedWhenClosedMonthBeatsPreviousMonth() {
+        // Given
+        let now = TestDateFactory.date(2026, 5, 15, hour: 12, calendar: calendar)
+        let marchA = TestDateFactory.date(2026, 3, 3, calendar: calendar)
+        let marchB = TestDateFactory.date(2026, 3, 10, calendar: calendar)
+        let aprilA = TestDateFactory.date(2026, 4, 2, calendar: calendar)
+        let aprilB = TestDateFactory.date(2026, 4, 6, calendar: calendar)
+        let aprilC = TestDateFactory.date(2026, 4, 10, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            period: .monthly,
+            target: 1,
+            entries: [
+                .init(timestamp: marchA, value: 1),
+                .init(timestamp: marchB, value: 1),
+                .init(timestamp: aprilA, value: 1),
+                .init(timestamp: aprilB, value: 1),
+                .init(timestamp: aprilC, value: 1),
+            ],
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let trend = trendBlock(from: viewModel) else {
+            return XCTFail("Expected trend card")
+        }
+        XCTAssertEqual(trend.insightText, "Your activity improved this month")
     }
 
     func testInsightsForGoalHabitWithoutLogsShowsZeroAchievement() {

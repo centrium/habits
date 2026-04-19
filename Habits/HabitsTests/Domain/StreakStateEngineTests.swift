@@ -55,69 +55,67 @@ final class StreakStateEngineTests: XCTestCase {
         XCTAssertEqual(state.currentStreak, 0)
     }
 
-    func testFrequencyGoalWithTimeLeftIsAtRisk() {
-        let monday = TestDateFactory.date(2026, 4, 13, calendar: calendar)
-        let tuesday = TestDateFactory.date(2026, 4, 14, calendar: calendar)
-        let friday = TestDateFactory.date(2026, 4, 17, hour: 10, calendar: calendar)
-        let previousWeek = TestDateFactory.date(2026, 4, 9, calendar: calendar)
+    func testFrequencyGoalNotLoggedTodayIsAtRisk() {
+        let yesterday = TestDateFactory.date(2026, 4, 14, calendar: calendar)
+        let today = TestDateFactory.date(2026, 4, 15, hour: 10, calendar: calendar)
+        let twoDaysAgo = TestDateFactory.date(2026, 4, 13, calendar: calendar)
         let habit = TestHabitFactory.frequency(
-            period: .weekly,
             target: 3,
             entries: [
-                TestHabitFactory.entry(on: previousWeek),
-                TestHabitFactory.entry(on: monday),
-                TestHabitFactory.entry(on: tuesday),
+                TestHabitFactory.entry(on: twoDaysAgo),
+                TestHabitFactory.entry(on: twoDaysAgo),
+                TestHabitFactory.entry(on: twoDaysAgo),
+                TestHabitFactory.entry(on: yesterday),
+                TestHabitFactory.entry(on: yesterday),
+                TestHabitFactory.entry(on: yesterday),
             ],
             calendar: calendar
         )
 
-        let state = engine.streakState(for: habit, referenceDate: friday)
+        let state = engine.streakState(for: habit, referenceDate: today)
 
         XCTAssertEqual(state.status, .atRisk)
-        XCTAssertEqual(state.currentStreak, 1)
+        XCTAssertEqual(state.currentStreak, 2)
         XCTAssertFalse(state.hasMetRequirementToday)
     }
 
-    func testFrequencyGoalMetForPeriodIsSafe() {
-        let monday = TestDateFactory.date(2026, 4, 13, calendar: calendar)
-        let tuesday = TestDateFactory.date(2026, 4, 14, calendar: calendar)
-        let thursday = TestDateFactory.date(2026, 4, 16, hour: 10, calendar: calendar)
-        let previousWeek = TestDateFactory.date(2026, 4, 9, calendar: calendar)
+    func testFrequencyGoalAtTargetTodayIsSafe() {
+        let yesterday = TestDateFactory.date(2026, 4, 14, calendar: calendar)
+        let today = TestDateFactory.date(2026, 4, 15, hour: 10, calendar: calendar)
         let habit = TestHabitFactory.frequency(
-            period: .weekly,
             target: 3,
             entries: [
-                TestHabitFactory.entry(on: previousWeek),
-                TestHabitFactory.entry(on: monday),
-                TestHabitFactory.entry(on: tuesday),
-                TestHabitFactory.entry(on: thursday),
+                TestHabitFactory.entry(on: yesterday),
+                TestHabitFactory.entry(on: yesterday),
+                TestHabitFactory.entry(on: yesterday),
+                TestHabitFactory.entry(on: today),
+                TestHabitFactory.entry(on: today),
+                TestHabitFactory.entry(on: today),
             ],
             calendar: calendar
         )
 
-        let state = engine.streakState(for: habit, referenceDate: thursday)
+        let state = engine.streakState(for: habit, referenceDate: today)
 
         XCTAssertEqual(state.status, .safe)
         XCTAssertEqual(state.currentStreak, 2)
         XCTAssertTrue(state.hasMetRequirementToday)
     }
 
-    func testFrequencyGoalMissedPreviousPeriodIsBroken() {
-        let currentWeek = TestDateFactory.date(2026, 4, 20, hour: 10, calendar: calendar)
+    func testFrequencyGoalMissedYesterdayIsBroken() {
+        let twoDaysAgo = TestDateFactory.date(2026, 4, 13, calendar: calendar)
+        let today = TestDateFactory.date(2026, 4, 15, hour: 10, calendar: calendar)
         let habit = TestHabitFactory.frequency(
-            period: .weekly,
             target: 3,
             entries: [
-                TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 7, calendar: calendar)),
-                TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 8, calendar: calendar)),
-                TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 9, calendar: calendar)),
-                TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 14, calendar: calendar)),
-                TestHabitFactory.entry(on: TestDateFactory.date(2026, 4, 15, calendar: calendar)),
+                TestHabitFactory.entry(on: twoDaysAgo),
+                TestHabitFactory.entry(on: twoDaysAgo),
+                TestHabitFactory.entry(on: twoDaysAgo),
             ],
             calendar: calendar
         )
 
-        let state = engine.streakState(for: habit, referenceDate: currentWeek)
+        let state = engine.streakState(for: habit, referenceDate: today)
 
         XCTAssertEqual(state.status, .broken)
         XCTAssertEqual(state.currentStreak, 0)

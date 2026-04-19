@@ -569,6 +569,17 @@ struct HabitDetailSheet: View {
         premiumHistoryGate: PremiumHistoryGate.Context,
         calendar: Calendar
     ) -> some View {
+        let now = Date()
+        let historyInsight = historyInsightSummary(
+            visibleMonth: selectionState.visibleMonth,
+            now: now,
+            calendar: calendar
+        )
+        let selectedDayContext = selectedDayContextSummary(
+            selectedDate: selectedDate,
+            calendar: calendar
+        )
+
         ScrollView {
             VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
@@ -576,26 +587,21 @@ struct HabitDetailSheet: View {
                         .font(CadenceTokens.Typography.sectionHeader)
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
 
-                    HStack(spacing: 4) {
-                        fadingHistorySecondaryText(
-                            historyMonthLabel(for: selectionState.visibleMonth),
-                            id: "history-month-label-\(historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))"
-                        )
-
-                        Text("•")
-                            .font(CadenceTokens.Typography.supporting)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-                        fadingHistorySecondaryText(
-                            historyTotalText(for: selectionState.visibleMonth, calendar: calendar),
-                            id: "history-month-total-\(historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))-\(historyTotalText(for: selectionState.visibleMonth, calendar: calendar))"
-                        )
-                    }
+                    fadingHistorySecondaryText(
+                        historyMonthLabel(for: selectionState.visibleMonth),
+                        id: "history-month-label-\(historyMonthKey(for: selectionState.visibleMonth, calendar: calendar))"
+                    )
                 }
                 .padding(.horizontal, CadenceTokens.Space.lg)
                 .padding(.top, CadenceTokens.Space.sm)
 
                 VStack(alignment: .leading, spacing: 0) {
+                    Text("Your activity over time")
+                        .font(CadenceTokens.Typography.supporting)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .padding(.horizontal, CadenceTokens.Space.sm)
+                        .padding(.top, CadenceTokens.Space.sm)
+
                     ZStack {
                         EquatableView(
                             content: HeatmapSection(
@@ -632,6 +638,14 @@ struct HabitDetailSheet: View {
                     .padding(.bottom, CadenceTokens.Space.md + 2)
 
                     Divider().opacity(0.08)
+
+                    HistoryInsightSummarySection(summary: historyInsight)
+                        .padding(.top, CadenceTokens.Space.md)
+
+                    Divider().opacity(0.08)
+
+                    SelectedDayContextSection(context: selectedDayContext)
+                        .padding(.top, CadenceTokens.Space.md)
 
                     EquatableView(
                         content: CalendarSection(
@@ -851,28 +865,131 @@ struct HabitDetailSheet: View {
         return "\(year)-\(month)"
     }
 
-    private func historyTotalText(for visibleMonth: Date, calendar: Calendar) -> String {
+    private func historyInsightSummary(
+        visibleMonth: Date,
+        now: Date,
+        calendar: Calendar
+    ) -> HistoryInsightSummary {
+        let monthTitle = visibleMonth.formatted(
+            Date.FormatStyle()
+                .month(.wide)
+        )
+        let activeDays = monthlyActiveDays(for: visibleMonth, calendar: calendar)
+        let entries = monthlyEntryTotal(for: visibleMonth, calendar: calendar)
+        let bestStreak = historyBestStreak(
+            visibleMonth: visibleMonth,
+            now: now,
+            calendar: calendar
+        )
+
+        return HistoryInsightSummary(
+            monthTitle: monthTitle,
+            activeDays: activeDays,
+            entries: entries,
+            bestStreak: bestStreak
+        )
+    }
+
+    private func monthlyActiveDays(
+        for visibleMonth: Date,
+        calendar: Calendar
+    ) -> Int {
         guard let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth) else {
-            return "0"
+            return 0
+        }
+        let monthDays = days(in: monthInterval, calendar: calendar)
+        let dayMetrics = habitLogService.dayMetrics(for: habit, on: monthDays)
+        return monthDays.reduce(into: 0) { partial, day in
+            if (dayMetrics[day]?.count ?? 0) > 0 {
+                partial += 1
+            }
+        }
+    }
+
+    private func monthlyEntryTotal(
+        for visibleMonth: Date,
+        calendar: Calendar
+    ) -> Int {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth) else {
+            return 0
+        }
+        let monthDays = days(in: monthInterval, calendar: calendar)
+        let dayMetrics = habitLogService.dayMetrics(for: habit, on: monthDays)
+        return monthDays.reduce(into: 0) { partial, day in
+            partial += dayMetrics[day]?.count ?? 0
+        }
+    }
+
+    private func historyBestStreak(
+        visibleMonth: Date,
+        now: Date,
+        calendar _: Calendar
+    ) -> Int {
+        let streakCalendar = calculationCalendar
+        guard let monthInterval = streakCalendar.dateInterval(of: .month, for: visibleMonth) else {
+            return 0
         }
 
+        let periodEndDayExclusive = streakCalendar.startOfDay(for: monthInterval.end)
+        let periodLastDay = streakCalendar.date(byAdding: .day, value: -1, to: periodEndDayExclusive) ?? monthInterval.start
+        let asOf = min(streakCalendar.startOfDay(for: now), periodLastDay)
+
+        return StreakStateEngine(
+            calendar: streakCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        ).calculateStreak(
+            for: habit,
+            logs: habit.logs,
+            asOf: asOf,
+            period: monthInterval
+        ).best
+    }
+
+    private func selectedDayContextSummary(
+        selectedDate: Date,
+        calendar: Calendar
+    ) -> SelectedDayContextSummary {
+        let normalizedDate = calendar.startOfDay(for: selectedDate)
+        let dayLabel = normalizedDate.formatted(
+            Date.FormatStyle()
+                .day()
+                .month(.abbreviated)
+        )
+
+        let loggedText: String
         switch habit.goalType {
         case .frequency:
-            let totalEntries = habit.logs.reduce(into: 0) { partial, log in
-                let timestamp = log.effectiveTimestamp
-                guard timestamp >= monthInterval.start, timestamp < monthInterval.end else {
-                    return
-                }
-                partial += log.frequencyContribution
-            }
-            let label = totalEntries == 1 ? "entry" : "entries"
-            return "\(totalEntries) \(label)"
-
+            let count = habitLogService.count(for: habit, on: normalizedDate)
+            loggedText = "\(count) \(count == 1 ? "entry" : "entries")"
         case .cumulative:
-            let totalValue = habitLogService.value(for: habit, in: monthInterval)
-            let valueText = habitLogService.formatValue(totalValue, for: habit)
-            return "\(valueText)\(habitLogService.displayUnitSuffix(for: habit))"
+            let total = habitLogService.value(for: habit, on: normalizedDate)
+            let valueText = habitLogService.formatValue(total, for: habit)
+            loggedText = "\(valueText)\(habitLogService.displayUnitSuffix(for: habit))"
         }
+
+        return SelectedDayContextSummary(
+            dayLabel: dayLabel,
+            loggedText: loggedText
+        )
+    }
+
+    private func days(
+        in interval: DateInterval,
+        calendar: Calendar
+    ) -> [Date] {
+        var days: [Date] = []
+        var cursor = calendar.startOfDay(for: interval.start)
+        let end = calendar.startOfDay(for: interval.end)
+
+        while cursor < end {
+            days.append(cursor)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else {
+                break
+            }
+            cursor = next
+        }
+
+        return days
     }
 
     private func fadingHistorySecondaryText(_ text: String, id: String) -> some View {
@@ -1777,6 +1894,62 @@ private struct CalendarSection: View, Equatable {
             onTapDay: onTapDay,
             onTapLockedDay: onTapLockedDay
         )
+    }
+}
+
+private struct HistoryInsightSummary: Equatable {
+    let monthTitle: String
+    let activeDays: Int
+    let entries: Int
+    let bestStreak: Int
+}
+
+private struct SelectedDayContextSummary: Equatable {
+    let dayLabel: String
+    let loggedText: String
+}
+
+private struct HistoryInsightSummarySection: View {
+    let summary: HistoryInsightSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+            Text("\(summary.monthTitle) Summary")
+                .font(CadenceTokens.Typography.sectionHeader)
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+            Text("• \(summary.activeDays) \(summary.activeDays == 1 ? "active day" : "active days")")
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+            Text("• \(summary.entries) total \(summary.entries == 1 ? "entry" : "entries")")
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+            Text("• Longest run: \(summary.bestStreak) \(summary.bestStreak == 1 ? "day" : "days")")
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+        }
+        .padding(.horizontal, CadenceTokens.Space.sm)
+        .padding(.bottom, CadenceTokens.Space.md)
+    }
+}
+
+private struct SelectedDayContextSection: View {
+    let context: SelectedDayContextSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(context.dayLabel)
+                .font(CadenceTokens.Typography.body.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+            Text(context.loggedText)
+                .font(CadenceTokens.Typography.body)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+        }
+        .padding(.horizontal, CadenceTokens.Space.sm)
+        .padding(.bottom, CadenceTokens.Space.sm)
     }
 }
 

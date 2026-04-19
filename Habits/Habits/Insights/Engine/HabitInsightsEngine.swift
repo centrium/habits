@@ -235,8 +235,18 @@ struct HabitInsightsEngine {
                     points: trendPoints,
                     targetLine: trendTargetLine,
                     unitText: trendUnitText,
-                    insightText: trendInsightText(points: trendPoints, isOpenEnded: isOpenEnded),
-                    insightSupportingText: trendInsightSupportingText(points: trendPoints, isOpenEnded: isOpenEnded),
+                    insightText: trendInsightText(
+                        points: trendPoints,
+                        isOpenEnded: isOpenEnded,
+                        referenceDate: now,
+                        calendar: calendar
+                    ),
+                    insightSupportingText: trendInsightSupportingText(
+                        points: trendPoints,
+                        isOpenEnded: isOpenEnded,
+                        referenceDate: now,
+                        calendar: calendar
+                    ),
                     isValueBased: trendUnitText != nil,
                     isCompletionRatioBars: trendUsesCompletionRatios
                 )
@@ -616,46 +626,100 @@ struct HabitInsightsEngine {
 
     private static func trendInsightText(
         points: [HabitInsightsTrendPoint],
-        isOpenEnded: Bool
+        isOpenEnded: Bool,
+        referenceDate: Date,
+        calendar: Calendar
     ) -> String? {
-        guard points.count >= 2 else { return nil }
-        let last = points[points.count - 1].value
-        let previous = points[points.count - 2].value
-        let previousMax = points.dropLast().map(\.value).max() ?? 0
+        guard let insightInput = trendInsightInput(
+            points: points,
+            referenceDate: referenceDate,
+            calendar: calendar
+        ) else {
+            return nil
+        }
+        let current = insightInput.candidateValue
+        let previous = insightInput.previousValue
         let epsilon = 0.0001
+        let threshold = 0.02
 
-        if last > previousMax + epsilon {
-            return "This was your strongest month yet"
+        guard previous > epsilon else { return nil }
+
+        let deltaRatio = (current - previous) / previous
+        if deltaRatio > threshold {
+            return "Your activity improved this month"
         }
-        if last > previous + epsilon {
-            return isOpenEnded ? "You're building a routine" : "You're improving month to month"
+        if deltaRatio < -threshold {
+            return "Your activity dipped this month"
         }
-        if abs(last - previous) <= epsilon {
-            return "You've stayed consistent recently"
-        }
-        return "Your activity dipped slightly this month"
+        _ = isOpenEnded
+        return "Your activity is steady this month"
     }
 
     private static func trendInsightSupportingText(
         points: [HabitInsightsTrendPoint],
-        isOpenEnded: Bool
+        isOpenEnded: Bool,
+        referenceDate: Date,
+        calendar: Calendar
     ) -> String? {
-        guard points.count >= 2 else { return nil }
-        let last = points[points.count - 1].value
-        let previous = points[points.count - 2].value
-        let previousMax = points.dropLast().map(\.value).max() ?? 0
+        guard let insightInput = trendInsightInput(
+            points: points,
+            referenceDate: referenceDate,
+            calendar: calendar
+        ) else {
+            return nil
+        }
+        let current = insightInput.candidateValue
+        let previous = insightInput.previousValue
         let epsilon = 0.0001
+        let threshold = 0.02
 
-        if last > previousMax + epsilon {
-            return "You're building consistency"
+        guard previous > epsilon else { return nil }
+
+        let deltaRatio = (current - previous) / previous
+        if deltaRatio > threshold {
+            return isOpenEnded ? "You're building consistency" : "You're building consistency"
         }
-        if last > previous + epsilon {
-            return isOpenEnded ? "A quick check-in can keep this routine growing" : "You're strengthening this routine each month"
+        if deltaRatio < -threshold {
+            return "A quick check-in could support your return to this routine"
         }
-        if abs(last - previous) <= epsilon {
-            return "Keep this steady rhythm going"
-        }
-        return "A quick check-in could support your return to this routine"
+        return "Keep this steady rhythm going"
+    }
+
+    private struct TrendInsightInput {
+        let candidateValue: Double
+        let previousValue: Double
+    }
+
+    private static func trendInsightInput(
+        points: [HabitInsightsTrendPoint],
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> TrendInsightInput? {
+        guard points.count >= 2 else { return nil }
+        let currentMonthStart = calendar.dateInterval(of: .month, for: referenceDate)?.start
+
+        let candidateIndex: Int = {
+            guard let currentMonthStart else { return points.count - 1 }
+            let lastIndex = points.count - 1
+            let lastPointMonth = points[lastIndex].periodStart
+            let isLastPointCurrentMonth = calendar.isDate(
+                lastPointMonth,
+                equalTo: currentMonthStart,
+                toGranularity: .month
+            )
+            if isLastPointCurrentMonth {
+                return points.count - 2
+            }
+            return lastIndex
+        }()
+
+        guard candidateIndex >= 1 else { return nil }
+        guard !points[..<candidateIndex].isEmpty else { return nil }
+
+        return TrendInsightInput(
+            candidateValue: points[candidateIndex].value,
+            previousValue: points[candidateIndex - 1].value
+        )
     }
 
     private static func goalPaceBlock(

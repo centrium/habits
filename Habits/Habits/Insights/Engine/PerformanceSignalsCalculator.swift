@@ -122,8 +122,11 @@ enum PerformanceSignalsCalculator {
                 return Double(max(dayCount, 0))
             }
 
+            guard let lifecycleInterval = nonEmptyInterval(start: trackingStart, end: windows.windowEnd) else {
+                return 0
+            }
             let trackedDays = availableDays(
-                in: DateInterval(start: trackingStart, end: windows.windowEnd),
+                in: lifecycleInterval,
                 trackingStart: trackingStart,
                 calendar: calendar
             )
@@ -152,9 +155,13 @@ enum PerformanceSignalsCalculator {
         let windows = signalWindows(calendar: calendar, now: now)
         let trackingStart = calendar.startOfDay(for: habit.createdAt)
         let activity = activitySummary(logs: logs, windowEnd: windows.windowEnd)
-        let lifecycleInterval = DateInterval(start: trackingStart, end: windows.windowEnd)
+        guard let lifecycleInterval = nonEmptyInterval(start: trackingStart, end: windows.windowEnd) else {
+            return 0
+        }
         let last30Start = calendar.date(byAdding: .day, value: -30, to: windows.windowEnd) ?? trackingStart
-        let last30Interval = DateInterval(start: last30Start, end: windows.windowEnd)
+        guard let last30Interval = nonEmptyInterval(start: last30Start, end: windows.windowEnd) else {
+            return 0
+        }
 
         let consistency = completionRate(
             in: lifecycleInterval,
@@ -498,6 +505,11 @@ private extension PerformanceSignalsCalculator {
         min(max(value, lower), upper)
     }
 
+    static func nonEmptyInterval(start: Date, end: Date) -> DateInterval? {
+        guard start < end else { return nil }
+        return DateInterval(start: start, end: end)
+    }
+
     struct IdentityAssessment {
         let score: Double
         let state: HabitIdentityState
@@ -524,7 +536,15 @@ private extension PerformanceSignalsCalculator {
                 recentCompletion: 0
             )
         }
-        let lifecycleInterval = DateInterval(start: trackingStart, end: windows.windowEnd)
+        guard let lifecycleInterval = nonEmptyInterval(start: trackingStart, end: windows.windowEnd) else {
+            return IdentityAssessment(
+                score: 0.1,
+                state: .gettingStarted,
+                allowsDegradationBands: false,
+                longTermConsistency: 0,
+                recentCompletion: 0
+            )
+        }
         let longTermConsistency = completionRate(
             in: lifecycleInterval,
             trackingStart: trackingStart,

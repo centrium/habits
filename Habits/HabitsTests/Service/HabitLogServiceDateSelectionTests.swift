@@ -334,3 +334,201 @@ final class HabitLogServiceTimestampAssignmentTests: XCTestCase {
         return resolved
     }
 }
+
+@MainActor
+final class HabitLogServiceMonthlyBehaviourComparisonTests: XCTestCase {
+    func testMonthlyBehaviourComparisonReportsIncreaseForMatchedWindow() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let asOf = makeDate(2026, 4, 19, 10, 0, calendar: calendar)
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(calendar: calendar)
+
+        for day in 1...19 {
+            let aprilDay = makeDate(2026, 4, day, 9, 0, calendar: calendar)
+            for offset in 0..<5 {
+                habit.logs.append(
+                    TestHabitFactory.entryLog(
+                        on: aprilDay.addingTimeInterval(TimeInterval(offset * 60)),
+                        value: 1,
+                        calendar: calendar
+                    )
+                )
+            }
+
+            let marchDay = makeDate(2026, 3, day, 9, 0, calendar: calendar)
+            for offset in 0..<4 {
+                habit.logs.append(
+                    TestHabitFactory.entryLog(
+                        on: marchDay.addingTimeInterval(TimeInterval(offset * 60)),
+                        value: 1,
+                        calendar: calendar
+                    )
+                )
+            }
+        }
+
+        persistence.insert(habit)
+        try persistence.save()
+
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let comparison = service.monthlyBehaviourComparison(
+            for: habit,
+            selectedMonth: makeDate(2026, 4, 1, 0, 0, calendar: calendar),
+            asOf: asOf
+        )
+
+        XCTAssertEqual(comparison?.insightText, "Your activity increased this month")
+    }
+
+    func testMonthlyBehaviourComparisonReportsDipForMatchedWindow() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let asOf = makeDate(2026, 4, 19, 10, 0, calendar: calendar)
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(calendar: calendar)
+
+        for day in 1...19 {
+            let aprilDay = makeDate(2026, 4, day, 9, 0, calendar: calendar)
+            for offset in 0..<3 {
+                habit.logs.append(
+                    TestHabitFactory.entryLog(
+                        on: aprilDay.addingTimeInterval(TimeInterval(offset * 60)),
+                        value: 1,
+                        calendar: calendar
+                    )
+                )
+            }
+
+            let marchDay = makeDate(2026, 3, day, 9, 0, calendar: calendar)
+            for offset in 0..<5 {
+                habit.logs.append(
+                    TestHabitFactory.entryLog(
+                        on: marchDay.addingTimeInterval(TimeInterval(offset * 60)),
+                        value: 1,
+                        calendar: calendar
+                    )
+                )
+            }
+        }
+
+        persistence.insert(habit)
+        try persistence.save()
+
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let comparison = service.monthlyBehaviourComparison(
+            for: habit,
+            selectedMonth: makeDate(2026, 4, 1, 0, 0, calendar: calendar),
+            asOf: asOf
+        )
+
+        XCTAssertEqual(comparison?.insightText, "Your activity dipped this month")
+    }
+
+    func testMonthlyBehaviourComparisonReportsSteadyInsideThreshold() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let asOf = makeDate(2026, 4, 19, 10, 0, calendar: calendar)
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(calendar: calendar)
+
+        for day in 1...19 {
+            let aprilDay = makeDate(2026, 4, day, 9, 0, calendar: calendar)
+            for offset in 0..<46 {
+                habit.logs.append(
+                    TestHabitFactory.entryLog(
+                        on: aprilDay.addingTimeInterval(TimeInterval(offset * 60)),
+                        value: 1,
+                        calendar: calendar
+                    )
+                )
+            }
+
+            let marchDay = makeDate(2026, 3, day, 9, 0, calendar: calendar)
+            for offset in 0..<45 {
+                habit.logs.append(
+                    TestHabitFactory.entryLog(
+                        on: marchDay.addingTimeInterval(TimeInterval(offset * 60)),
+                        value: 1,
+                        calendar: calendar
+                    )
+                )
+            }
+        }
+
+        persistence.insert(habit)
+        try persistence.save()
+
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let comparison = service.monthlyBehaviourComparison(
+            for: habit,
+            selectedMonth: makeDate(2026, 4, 1, 0, 0, calendar: calendar),
+            asOf: asOf
+        )
+
+        XCTAssertEqual(comparison?.insightText, "Your activity is steady this month")
+    }
+
+    func testMonthlyBehaviourComparisonReturnsNilWithoutPreviousBaseline() throws {
+        let calendar = TestDateFactory.utcCalendar
+        let asOf = makeDate(2026, 4, 19, 10, 0, calendar: calendar)
+        let persistence = try TestPersistence()
+        let habit = TestHabitFactory.frequency(calendar: calendar)
+
+        for day in 1...19 {
+            let aprilDay = makeDate(2026, 4, day, 9, 0, calendar: calendar)
+            habit.logs.append(TestHabitFactory.entryLog(on: aprilDay, value: 1, calendar: calendar))
+        }
+
+        persistence.insert(habit)
+        try persistence.save()
+
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let comparison = service.monthlyBehaviourComparison(
+            for: habit,
+            selectedMonth: makeDate(2026, 4, 1, 0, 0, calendar: calendar),
+            asOf: asOf
+        )
+
+        XCTAssertNil(comparison)
+    }
+
+    private func makeDate(
+        _ year: Int,
+        _ month: Int,
+        _ day: Int,
+        _ hour: Int,
+        _ minute: Int,
+        calendar: Calendar
+    ) -> Date {
+        let components = DateComponents(
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        )
+        guard let resolved = calendar.date(from: components) else {
+            fatalError("Unable to create deterministic test date")
+        }
+        return resolved
+    }
+}

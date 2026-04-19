@@ -49,20 +49,39 @@ struct StreakService {
         for goal: Habit,
         referenceDate: Date = .now
     ) -> Int {
-        StreakStateEngine(
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ).currentStreak(for: goal, referenceDate: referenceDate)
+        calculateStreak(
+            for: goal,
+            logs: goal.logs,
+            asOf: referenceDate
+        ).current
     }
 
     func bestStreak(
         for goal: Habit,
         through referenceDate: Date = .now
     ) -> Int {
+        calculateStreak(
+            for: goal,
+            logs: goal.logs,
+            asOf: referenceDate
+        ).best
+    }
+
+    func calculateStreak(
+        for goal: Habit,
+        logs: [HabitLog],
+        asOf referenceDate: Date = .now,
+        period: DateInterval? = nil
+    ) -> StreakResult {
         StreakStateEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        ).bestStreak(for: goal, referenceDate: referenceDate)
+        ).calculateStreak(
+            for: goal,
+            logs: logs,
+            asOf: referenceDate,
+            period: period
+        )
     }
 
     func streak(

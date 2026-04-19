@@ -384,6 +384,13 @@ struct HabitDayMetrics {
     static let zero = HabitDayMetrics(count: 0, value: 0, intensity: 0)
 }
 
+struct MonthlyBehaviourComparison {
+    let currentAverageUnitsPerActiveDay: Double
+    let previousAverageUnitsPerActiveDay: Double
+    let percentChange: Double
+    let insightText: String
+}
+
 extension HabitLogService {
     var calendarProvider: CalendarProvider {
         CalendarProvider(calendar: calendar)
@@ -630,11 +637,169 @@ extension HabitLogService {
     func detectCue(for habitId: UUID) async -> CueInsight? {
         await cueInsightService.detectCue(for: habitId)
     }
+
+    func monthlyBehaviourComparison(
+        for habit: Habit,
+        selectedMonth: Date,
+        asOf now: Date,
+        threshold: Double = 0.05
+    ) -> MonthlyBehaviourComparison? {
+        guard let windows = matchedMonthlyWindows(selectedMonth: selectedMonth, asOf: now) else {
+            return nil
+        }
+
+        let currentStats = averageSuccessfulUnitsPerActiveDay(
+            for: habit,
+            in: windows.current
+        )
+        let previousStats = averageSuccessfulUnitsPerActiveDay(
+            for: habit,
+            in: windows.previous
+        )
+
+        guard previousStats.activeDays > 0, previousStats.average > 0 else {
+            return nil
+        }
+
+        let percentChange = (currentStats.average - previousStats.average) / previousStats.average
+
+        let insightText: String = {
+            if percentChange > threshold {
+                return "Your activity increased this month"
+            }
+            if percentChange < -threshold {
+                return "Your activity dipped this month"
+            }
+            return "Your activity is steady this month"
+        }()
+
+        return MonthlyBehaviourComparison(
+            currentAverageUnitsPerActiveDay: currentStats.average,
+            previousAverageUnitsPerActiveDay: previousStats.average,
+            percentChange: percentChange,
+            insightText: insightText
+        )
+    }
 }
 
 private extension HabitLogService {
     func clamp(_ value: Double) -> Double {
         min(max(value, 0), 1)
+    }
+
+    struct ActiveDayAverageStats {
+        let average: Double
+        let activeDays: Int
+    }
+
+    struct MatchedMonthlyWindows {
+        let current: DateInterval
+        let previous: DateInterval
+    }
+
+    func matchedMonthlyWindows(
+        selectedMonth: Date,
+        asOf now: Date
+    ) -> MatchedMonthlyWindows? {
+        guard
+            let currentMonth = calendar.dateInterval(of: .month, for: selectedMonth),
+            let previousMonthStart = calendar.date(byAdding: .month, value: -1, to: currentMonth.start),
+            let previousMonth = calendar.dateInterval(of: .month, for: previousMonthStart)
+        else {
+            return nil
+        }
+
+        let today = calendar.startOfDay(for: now)
+        let currentMonthLastDay = calendar.date(byAdding: .day, value: -1, to: currentMonth.end) ?? currentMonth.start
+        let currentEndDay = min(today, currentMonthLastDay)
+        guard currentEndDay >= currentMonth.start else {
+            return nil
+        }
+
+        let elapsedDayCount = (calendar.dateComponents([.day], from: currentMonth.start, to: currentEndDay).day ?? 0) + 1
+        guard elapsedDayCount > 0 else {
+            return nil
+        }
+
+        guard let previousEndExclusive = calendar.date(byAdding: .day, value: elapsedDayCount, to: previousMonth.start) else {
+            return nil
+        }
+        guard previousEndExclusive <= previousMonth.end else {
+            return nil
+        }
+
+        guard
+            let currentEndExclusive = calendar.date(byAdding: .day, value: 1, to: currentEndDay),
+            currentMonth.start < currentEndExclusive
+        else {
+            return nil
+        }
+
+        return MatchedMonthlyWindows(
+            current: DateInterval(start: currentMonth.start, end: currentEndExclusive),
+            previous: DateInterval(start: previousMonth.start, end: previousEndExclusive)
+        )
+    }
+
+    func averageSuccessfulUnitsPerActiveDay(
+        for habit: Habit,
+        in interval: DateInterval
+    ) -> ActiveDayAverageStats {
+        let days = days(in: interval)
+        guard !days.isEmpty else {
+            return ActiveDayAverageStats(average: 0, activeDays: 0)
+        }
+        let metricsByDay = dayMetrics(for: habit, on: days)
+
+        var totalUnits: Double = 0
+        var activeDays = 0
+
+        for day in days {
+            let metrics = metricsByDay[day] ?? .zero
+            let units = successfulUnits(for: habit, metrics: metrics)
+            if units > 0 {
+                activeDays += 1
+                totalUnits += units
+            }
+        }
+
+        guard activeDays > 0 else {
+            return ActiveDayAverageStats(average: 0, activeDays: 0)
+        }
+
+        return ActiveDayAverageStats(
+            average: totalUnits / Double(activeDays),
+            activeDays: activeDays
+        )
+    }
+
+    func successfulUnits(
+        for habit: Habit,
+        metrics: HabitDayMetrics
+    ) -> Double {
+        if !habit.hasGoal {
+            return Double(max(0, metrics.count))
+        }
+        switch habit.goalType {
+        case .frequency:
+            return Double(max(0, metrics.count))
+        case .cumulative:
+            return max(0, metrics.value)
+        }
+    }
+
+    func days(in interval: DateInterval) -> [Date] {
+        var result: [Date] = []
+        var cursor = calendar.startOfDay(for: interval.start)
+        let end = calendar.startOfDay(for: interval.end)
+        while cursor < end {
+            result.append(cursor)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else {
+                break
+            }
+            cursor = next
+        }
+        return result
     }
 }
 
