@@ -589,15 +589,18 @@ struct HabitDetailSheet: View {
                         onSelectDay: { _ in },
                         onTapLockedDay: { _ in },
                         isCompact: true,
-                        showsIdentityStateSummary: false
+                        showsIdentityStateSummary: false,
+                        activityStripStyle: .subtle
                     )
                     .opacity(isLowDataActivityState ? 0.7 : 1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.leading, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, sectionPadding)
-                .padding(.top, CadenceTokens.Space.xs)
+                .padding(.top, 8)
 
                 if let guidanceOutput {
                     GuidanceCard(
@@ -610,7 +613,7 @@ struct HabitDetailSheet: View {
                         loadingText: aiCoach.loadingText
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, CadenceTokens.Space.lg)
+                    .padding(.top, 16)
                 }
 
                 if let streakCardConfiguration {

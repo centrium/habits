@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+enum ActivityStripStyle {
+    case primary
+    case subtle
+}
+
 struct HabitHeatmap: View {
     private static let snapshotStableVersion = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
@@ -27,6 +32,7 @@ struct HabitHeatmap: View {
     let onTapLockedDay: (Date) -> Void
     let isCompact: Bool
     let showsIdentityStateSummary: Bool
+    let activityStripStyle: ActivityStripStyle
 
     init(
         habit: Habit,
@@ -39,7 +45,8 @@ struct HabitHeatmap: View {
         onSelectDay: @escaping (Date) -> Void,
         onTapLockedDay: @escaping (Date) -> Void = { _ in },
         isCompact: Bool = false,
-        showsIdentityStateSummary: Bool = true
+        showsIdentityStateSummary: Bool = true,
+        activityStripStyle: ActivityStripStyle = .primary
     ) {
         self.habit = habit
         self.service = service
@@ -52,6 +59,7 @@ struct HabitHeatmap: View {
         self.onTapLockedDay = onTapLockedDay
         self.isCompact = isCompact
         self.showsIdentityStateSummary = showsIdentityStateSummary
+        self.activityStripStyle = activityStripStyle
     }
 
     private var accent: Color {
@@ -247,7 +255,7 @@ struct HabitHeatmap: View {
             return (day, count)
         })
 
-        return HStack(spacing: 2) {
+        return HStack(spacing: compactCellSpacing) {
             weekGrid(
                 days: Array(days.prefix(7)),
                 dayCountMap: dayCountMap
@@ -259,9 +267,9 @@ struct HabitHeatmap: View {
             )
         }
         .id(revision)
-        .padding(.top, 6)
-        .padding(.bottom, 4)
-        .frame(height: 32)
+        .padding(.top, compactTopPadding)
+        .padding(.bottom, compactBottomPadding)
+        .frame(height: compactHeight)
     }
     
     private func weekGrid(
@@ -269,9 +277,9 @@ struct HabitHeatmap: View {
         dayCountMap: [Date: Int]
     ) -> some View {
         let calendar = calendarProvider.calendar
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: compactCellSpacing), count: 7)
 
-        return LazyVGrid(columns: columns, spacing: 2) {
+        return LazyVGrid(columns: columns, spacing: compactCellSpacing) {
             ForEach(Array(days.enumerated()), id: \.offset) { _, day in
                 let count = dayCountMap[day] ?? 0
 
@@ -280,11 +288,12 @@ struct HabitHeatmap: View {
                     isSelected: false,
                     logCount: count,
                     habitColor: habit.curatedColor,
-                    selectionAccent: accent
+                    selectionAccent: accent,
+                    activityStripStyle: activityStripStyle
                 )
-                    .frame(height: 10)
+                    .frame(height: activityStripStyle == .subtle ? 9 : 10)
                     .overlay {
-                        if calendar.isDateInToday(day) {
+                        if activityStripStyle == .primary, calendar.isDateInToday(day) {
                             RoundedRectangle(cornerRadius: 2)
                                 .stroke(
                                     Color.primary.opacity(0.35),
@@ -294,6 +303,22 @@ struct HabitHeatmap: View {
                     }
             }
         }
+    }
+
+    private var compactCellSpacing: CGFloat {
+        activityStripStyle == .subtle ? 3 : 2
+    }
+
+    private var compactHeight: CGFloat {
+        activityStripStyle == .subtle ? 28 : 32
+    }
+
+    private var compactTopPadding: CGFloat {
+        activityStripStyle == .subtle ? 4 : 6
+    }
+
+    private var compactBottomPadding: CGFloat {
+        activityStripStyle == .subtle ? 3 : 4
     }
     
     private var identityStateBlock: some View {
