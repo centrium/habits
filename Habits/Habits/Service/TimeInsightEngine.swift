@@ -89,7 +89,9 @@ enum TimeInsightEngine {
             useRecencyWeighting: true
         )
 
-        let baseConfidence = min(1.0, Double(habitSignal.activeDays) / 14.0)
+        let eventCoverage = min(1.0, Double(habitEvents.count) / 24.0)
+        let dayCoverage = min(1.0, Double(habitSignal.activeDays) / 14.0)
+        let baseConfidence = (eventCoverage * 0.75) + (dayCoverage * 0.25)
         let historicalPeak = argmax(historicalHabitSignal.normalized)
         let recentPeak = argmax(habitSignal.normalized)
         let blendingConfidence = blendingConfidence(
@@ -97,8 +99,7 @@ enum TimeInsightEngine {
             globalSignal: globalSignal,
             baseConfidence: baseConfidence
         )
-        let isInsufficientSignal = habitEvents.count < minimumEventCountForSignal ||
-            habitSignal.activeDays < minimumActiveDaysForSignal
+        let isInsufficientSignal = habitEvents.count < minimumEventCountForSignal
 
         let blended = (0..<24).map { hour in
             if !allowGlobalBlending {
@@ -120,7 +121,8 @@ enum TimeInsightEngine {
             ? 0
             : confidenceFromDistribution(
                 scores: smoothed,
-                activeDays: habitSignal.activeDays
+                activeDays: habitSignal.activeDays,
+                eventCount: habitEvents.count
             )
         let confidence = isInsufficientSignal
             ? 0
@@ -189,7 +191,6 @@ enum TimeInsightEngine {
 
 private extension TimeInsightEngine {
     static let minimumEventCountForSignal: Int = 3
-    static let minimumActiveDaysForSignal: Int = 2
 
     struct DeduplicatedEvent {
         let logID: UUID
@@ -216,9 +217,6 @@ private extension TimeInsightEngine {
         now: Date,
         calendar: Calendar
     ) -> [DeduplicatedEvent] {
-        var seen = Set<Date>()
-        seen.reserveCapacity(logs.count)
-
         var events: [DeduplicatedEvent] = []
         events.reserveCapacity(logs.count)
 
@@ -227,9 +225,6 @@ private extension TimeInsightEngine {
                   let timestamp = log.timestamp,
                   timestamp <= now,
                   let minuteStart = calendar.dateInterval(of: .minute, for: timestamp)?.start else {
-                continue
-            }
-            guard seen.insert(minuteStart).inserted else {
                 continue
             }
 
@@ -449,14 +444,15 @@ private extension TimeInsightEngine {
 
     static func confidenceFromDistribution(
         scores: [Double],
-        activeDays: Int
+        activeDays: Int,
+        eventCount: Int
     ) -> Double {
         let topScores = scores.sorted(by: >).prefix(3)
         guard let peakScore = topScores.first else { return 0 }
 
         let topSum = max(topScores.reduce(0, +), 0.0001)
         var confidence = peakScore / topSum
-        confidence *= dataQualityFactor(activeDays: activeDays)
+        confidence *= dataQualityFactor(activeDays: activeDays, eventCount: eventCount)
 
         let secondHighest = topScores.dropFirst().first ?? 0
         if secondHighest >= (peakScore * 0.85) {
@@ -468,9 +464,25 @@ private extension TimeInsightEngine {
         return min(max(confidence, 0), 0.97)
     }
 
-    static func dataQualityFactor(activeDays: Int) -> Double {
+    static func dataQualityFactor(activeDays: Int, eventCount: Int) -> Double {
+        let events = max(0, eventCount)
+        let eventFactor: Double = {
+            switch events {
+            case ..<5:
+                let progress = Double(events) / 4.0
+                return 0.35 + (0.25 * progress)
+            case 5...12:
+                let progress = Double(events - 5) / 7.0
+                return 0.6 + (0.2 * progress)
+            default:
+                let progress = min(Double(events - 12) / 12.0, 1.0)
+                return 0.8 + (0.2 * progress)
+            }
+        }()
+
         let days = max(0, activeDays)
-        switch days {
+        let dayFactor: Double = {
+            switch days {
         case ..<5:
             let progress = Double(days) / 4.0
             return 0.4 + (0.2 * progress)
@@ -480,7 +492,10 @@ private extension TimeInsightEngine {
         default:
             let progress = min(Double(days - 10) / 10.0, 1.0)
             return 0.8 + (0.2 * progress)
-        }
+            }
+        }()
+
+        return min(1, max(0, (eventFactor * 0.75) + (dayFactor * 0.25)))
     }
 
     static let recencyDecayFactorDays: Double = 14.0
@@ -563,8 +578,8 @@ private extension TimeInsightEngine {
         lines.append("A. Input summary")
         lines.append("[input] now=\(formatter.string(from: now)) timezone=\(calendar.timeZone.identifier)")
         lines.append("[input] logsIncluded=\(habitEvents.count) uniqueActiveDays=\(uniqueActiveDays) globalEvents=\(globalEvents.count)")
-        lines.append("[input] logsExcluded nonEntry=\(exclusions.nonEntry) missingTimestamp=\(exclusions.missingTimestamp) future=\(exclusions.futureTimestamp) duplicateMinute=\(exclusions.duplicateMinute)")
-        lines.append("[input] insufficientData=\(isInsufficientSignal) minEvents=\(minimumEventCountForSignal) minActiveDays=\(minimumActiveDaysForSignal)")
+        lines.append("[input] logsExcluded nonEntry=\(exclusions.nonEntry) missingTimestamp=\(exclusions.missingTimestamp) future=\(exclusions.futureTimestamp)")
+        lines.append("[input] insufficientData=\(isInsufficientSignal) minEvents=\(minimumEventCountForSignal)")
         lines.append("[input] placementSource=timestamp weightingSource=timestamp recencyDecayDays=\(String(format: "%.1f", recencyDecayFactorDays))")
 
         lines.append("B. Per-log trace")
@@ -646,7 +661,6 @@ private extension TimeInsightEngine {
         let nonEntry: Int
         let missingTimestamp: Int
         let futureTimestamp: Int
-        let duplicateMinute: Int
     }
 
     static func debugExclusionSummary(
@@ -654,11 +668,9 @@ private extension TimeInsightEngine {
         now: Date,
         calendar: Calendar
     ) -> DebugExclusionSummary {
-        var seen = Set<Date>()
         var nonEntry = 0
         var missingTimestamp = 0
         var futureTimestamp = 0
-        var duplicateMinute = 0
 
         for log in logs {
             guard log.kind == .entry else {
@@ -673,12 +685,8 @@ private extension TimeInsightEngine {
                 futureTimestamp += 1
                 continue
             }
-            guard let minuteStart = calendar.dateInterval(of: .minute, for: timestamp)?.start else {
+            guard calendar.dateInterval(of: .minute, for: timestamp)?.start != nil else {
                 missingTimestamp += 1
-                continue
-            }
-            guard seen.insert(minuteStart).inserted else {
-                duplicateMinute += 1
                 continue
             }
         }
@@ -686,8 +694,7 @@ private extension TimeInsightEngine {
         return DebugExclusionSummary(
             nonEntry: nonEntry,
             missingTimestamp: missingTimestamp,
-            futureTimestamp: futureTimestamp,
-            duplicateMinute: duplicateMinute
+            futureTimestamp: futureTimestamp
         )
     }
 
@@ -696,7 +703,6 @@ private extension TimeInsightEngine {
         now: Date,
         calendar: Calendar
     ) -> [DebugIncludedRow] {
-        var seen = Set<Date>()
         var rows: [DebugIncludedRow] = []
 
         for log in logs {
@@ -706,10 +712,6 @@ private extension TimeInsightEngine {
                   let minuteStart = calendar.dateInterval(of: .minute, for: timestamp)?.start else {
                 continue
             }
-            guard seen.insert(minuteStart).inserted else {
-                continue
-            }
-
             let hour = calendar.component(.hour, from: minuteStart)
             let minute = calendar.component(.minute, from: minuteStart)
             let ageDays = max(0, now.timeIntervalSince(minuteStart) / 86_400.0)
@@ -837,8 +839,6 @@ private extension TimeInsightEngine {
         let adjustedWeight: Double?
         let includedInTiming: Bool
         let exclusionReason: String?
-        let includedAfterMinuteDedup: Bool
-        let dedupedByLogID: UUID?
     }
 
     static func debugAllLogsReport(
@@ -860,7 +860,6 @@ private extension TimeInsightEngine {
         let entryCount = rows.filter { $0.kind == .entry }.count
         let legacyCount = rows.filter { $0.kind == .legacyDailyTotal }.count
         let includedCount = rows.filter(\.includedInTiming).count
-        let dedupIncludedCount = rows.filter(\.includedAfterMinuteDedup).count
         let uniqueDays = Set(rows.map { calendar.startOfDay(for: $0.effectiveTimestamp) }).count
 
         var lines: [String] = []
@@ -868,7 +867,7 @@ private extension TimeInsightEngine {
         lines.append("[habit] id=\(habit.id.uuidString) goalType=\(habit.goalType.rawValue) hasGoal=\(habit.hasGoal) createdAt=\(formatter.string(from: habit.createdAt))")
         lines.append("[context] now=\(formatter.string(from: now)) timezone=\(calendar.timeZone.identifier)")
         lines.append("[counts] total=\(total) entry=\(entryCount) legacy=\(legacyCount) uniqueDays=\(uniqueDays)")
-        lines.append("[timing-input] eligibleBeforeDedup=\(includedCount) eligibleAfterMinuteDedup=\(dedupIncludedCount) excluded=\(total - includedCount)")
+        lines.append("[timing-input] eligible=\(includedCount) excluded=\(total - includedCount)")
         lines.append("[timing-config] placementSource=timestamp weightingSource=timestamp recencyDecayDays=\(String(format: "%.1f", recencyDecayFactorDays))")
 
         if rows.isEmpty {
@@ -884,10 +883,8 @@ private extension TimeInsightEngine {
                 let adjustedWeightText = row.adjustedWeight.map { String(format: "%.4f", $0) } ?? "nil"
                 let binText = row.bin.map(String.init) ?? "nil"
                 let excludedText = row.exclusionReason ?? "none"
-                let dedupByText = row.dedupedByLogID?.uuidString ?? "nil"
-
                 lines.append(
-                    "[log] id=\(row.logID.uuidString) kind=\(row.kind.rawValue) day=\(formatter.string(from: row.logicalDay)) timestamp=\(timestampText) effective=\(formatter.string(from: row.effectiveTimestamp)) createdAt=\(formatter.string(from: row.createdAt)) localTOD=\(row.localTOD) minuteStart=\(minuteStartText) bin=\(binText) count=\(row.count) value=\(row.value.map { String(format: "%.4f", $0) } ?? "nil") numeric=\(String(format: "%.4f", row.numericValue)) freqContribution=\(row.frequencyContribution) timingEligible=\(row.includedInTiming) dedupIncluded=\(row.includedAfterMinuteDedup) dedupedBy=\(dedupByText) exclusion=\(excludedText) ageDays(timestamp)=\(ageByTimestampText) ageDays(createdAt)=\(String(format: "%.2f", row.ageDaysByCreatedAt)) weight(timestamp)=\(weightByTimestampText) weight(createdAt)=\(String(format: "%.4f", row.recencyWeightByCreatedAt)) [trust] deltaHours=\(trustDeltaHoursText) trust=\(trustText) adjustedWeight=\(adjustedWeightText)"
+                    "[log] id=\(row.logID.uuidString) kind=\(row.kind.rawValue) day=\(formatter.string(from: row.logicalDay)) timestamp=\(timestampText) effective=\(formatter.string(from: row.effectiveTimestamp)) createdAt=\(formatter.string(from: row.createdAt)) localTOD=\(row.localTOD) minuteStart=\(minuteStartText) bin=\(binText) count=\(row.count) value=\(row.value.map { String(format: "%.4f", $0) } ?? "nil") numeric=\(String(format: "%.4f", row.numericValue)) freqContribution=\(row.frequencyContribution) timingEligible=\(row.includedInTiming) exclusion=\(excludedText) ageDays(timestamp)=\(ageByTimestampText) ageDays(createdAt)=\(String(format: "%.2f", row.ageDaysByCreatedAt)) weight(timestamp)=\(weightByTimestampText) weight(createdAt)=\(String(format: "%.4f", row.recencyWeightByCreatedAt)) [trust] deltaHours=\(trustDeltaHoursText) trust=\(trustText) adjustedWeight=\(adjustedWeightText)"
                 )
             }
         }
@@ -911,7 +908,6 @@ private extension TimeInsightEngine {
             return lhs.effectiveTimestamp < rhs.effectiveTimestamp
         }
 
-        var acceptedByMinute: [Date: UUID] = [:]
         var rows: [LogDumpRow] = []
         rows.reserveCapacity(sorted.count)
 
@@ -927,18 +923,6 @@ private extension TimeInsightEngine {
                 return nil
             }()
             let includedInTiming = exclusionReason == nil
-
-            var includedAfterMinuteDedup = false
-            var dedupedByLogID: UUID?
-            if includedInTiming, let minuteStart {
-                if let existing = acceptedByMinute[minuteStart] {
-                    includedAfterMinuteDedup = false
-                    dedupedByLogID = existing
-                } else {
-                    includedAfterMinuteDedup = true
-                    acceptedByMinute[minuteStart] = log.id
-                }
-            }
 
             let hour = minuteStart.map { calendar.component(.hour, from: $0) }
             let minute = minuteStart.map { calendar.component(.minute, from: $0) }
@@ -988,9 +972,7 @@ private extension TimeInsightEngine {
                     trust: trust,
                     adjustedWeight: adjustedWeight,
                     includedInTiming: includedInTiming,
-                    exclusionReason: exclusionReason,
-                    includedAfterMinuteDedup: includedAfterMinuteDedup,
-                    dedupedByLogID: dedupedByLogID
+                    exclusionReason: exclusionReason
                 )
             )
         }

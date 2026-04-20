@@ -262,16 +262,16 @@ final class TodayInsightSelectionService {
         let output: String
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
             output = "Momentum drops for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
-        } else if rhythm.confidence < 0.35 {
-            output = "Timing is still forming for \(candidate.habit.name), strongest window around \(humanTime(for: rhythm.peakHour))"
-        } else if rhythm.confidence < 0.75 {
+        } else if rhythm.confidence < 0.3 {
+            output = "Early signal around \(humanTime(for: rhythm.peakHour)) for \(candidate.habit.name)"
+        } else if rhythm.confidence < 0.7 {
             output = "Often around \(humanTime(for: rhythm.peakHour)) for \(candidate.habit.name)"
         } else if wrappedHourDistance(currentHour, rhythm.peakHour) <= 2 {
             output = "You're in your strongest window for \(candidate.habit.name)"
         } else if isBeforePeak(currentHour, peakHour: rhythm.peakHour) {
-            output = "Your strongest window is approaching for \(candidate.habit.name)"
+            output = "Your strongest window is coming up for \(candidate.habit.name)"
         } else {
-            output = "Your strongest window has passed for \(candidate.habit.name)"
+            output = "You usually do this later in the day for \(candidate.habit.name)"
         }
 
         logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
@@ -299,7 +299,7 @@ final class TodayInsightSelectionService {
     }
 
     private func hasReliableTimingSignal(_ rhythm: HabitRhythm) -> Bool {
-        rhythm.uniqueEventCount >= 3 && rhythm.uniqueActiveDays >= 2 && rhythm.confidence >= 0.15
+        rhythm.uniqueEventCount >= 5 && rhythm.confidence >= 0.12
     }
 
     private func stateDescriptor(for state: HabitIdentityState) -> String {

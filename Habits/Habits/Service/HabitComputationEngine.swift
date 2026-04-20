@@ -262,7 +262,7 @@ private extension HabitComputationEngine {
             totalLogs: logs.count,
             uniqueCompletedDays: completedDays.count,
             recentActiveDays: recentActiveDays,
-            validTimingSamples: timingDiagnostics.uniqueActiveDays
+            validTimingSamples: timingDiagnostics.uniqueEventCount
         )
     }
 

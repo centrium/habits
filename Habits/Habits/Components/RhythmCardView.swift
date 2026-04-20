@@ -144,7 +144,7 @@ struct RhythmCardView: View {
 
         switch confidence {
         case .low:
-            return "Timing is still forming"
+            return "Early timing signal"
         case .medium:
             return "Your timing is becoming more consistent"
         case .high:

@@ -54,7 +54,7 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
         let candidate = makeCandidate(
             peakHour: 21,
             confidence: 0.2,
-            uniqueEventCount: 4,
+            uniqueEventCount: 8,
             now: now,
             uniqueCompletedDays: 6
         )
@@ -65,7 +65,7 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
             calendar: TestDateFactory.utcCalendar
         )
 
-        XCTAssertEqual(insight?.message, "Usually later in the evening for Reading")
+        XCTAssertEqual(insight?.message, "Early signal around 9PM for Reading")
     }
 
     @MainActor

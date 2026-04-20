@@ -26,6 +26,13 @@ private struct IdentityReinforcement {
     let line: String
 }
 
+private struct TodayGoalProgressPresentation {
+    let summaryText: String
+    let readinessText: String?
+    let fraction: Double
+    let isComplete: Bool
+}
+
 private struct HistorySnapshot: Equatable {
     let dailyCounts: [Date: Int]
     let activeDays: Int
@@ -144,6 +151,8 @@ struct HabitDetailSheet: View {
     @State private var frozenGuidanceOutput: GuidanceOutput?
     @State private var frozenStateModel: HabitStateModel?
     @State private var lastReconcileProbeKey: String?
+    @State private var shouldAnimateGoalProgress = false
+    @State private var goalProgressAnimationResetTask: Task<Void, Never>?
     @StateObject private var viewModel = HabitDetailViewModel()
     private let onDeleted: (() -> Void)?
 
@@ -336,6 +345,7 @@ struct HabitDetailSheet: View {
         .onDisappear {
             viewModel.deactivate()
             snapshotRefreshTask?.cancel()
+            goalProgressAnimationResetTask?.cancel()
             freezeDetailState()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
@@ -362,6 +372,10 @@ struct HabitDetailSheet: View {
             guard viewModel.isActive, !isHistoryPresented else { return }
             recordUIReconcileProbe(stage: "logsVersion")
             scheduleProgressSnapshotRefresh()
+        }
+        .onChange(of: habitLogService.lastLogUserActionAt) { _, actionDate in
+            guard actionDate != nil else { return }
+            triggerGoalProgressAnimation()
         }
         .onReceive(uiStateStore.$progressByHabitAndDate) { _ in
             guard viewModel.isActive, !isHistoryPresented else { return }
@@ -549,6 +563,10 @@ struct HabitDetailSheet: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let goalProgress = todayGoalProgressPresentation {
+                        todayGoalProgressRow(goalProgress)
+                    }
 
                     KeyActionsSection(
                         isCumulativeGoal: isCumulativeGoal,
@@ -1283,6 +1301,121 @@ struct HabitDetailSheet: View {
         }
     }
 
+    @ViewBuilder
+    private func todayGoalProgressRow(_ progress: TodayGoalProgressPresentation) -> some View {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.xs) {
+                Text(progress.summaryText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if progress.isComplete {
+                    Image(systemName: "checkmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let readinessText = progress.readinessText {
+                Text(readinessText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary.opacity(0.8))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GeometryReader { proxy in
+                let clampedProgress = min(max(progress.fraction, 0), 1)
+                let fillWidth = clampedProgress * proxy.size.width
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(CadenceTokens.Color.accent(for: habit).primary.opacity(0.12))
+                    Capsule()
+                        .fill(CadenceTokens.Color.accent(for: habit).primary.opacity(0.7))
+                        .frame(width: fillWidth)
+                }
+            }
+            .frame(height: 5)
+            .animation(
+                shouldAnimateGoalProgress ? .easeOut(duration: 0.24) : nil,
+                value: progress.fraction
+            )
+        }
+    }
+
+    private var todayGoalProgressPresentation: TodayGoalProgressPresentation? {
+        guard habit.hasGoal,
+              let targetValue = habit.effectiveTargetValue,
+              targetValue > 0 else {
+            return nil
+        }
+
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        let currentValue: Double
+        switch habit.goalType {
+        case .frequency:
+            currentValue = Double(habitLogService.count(for: habit, on: today))
+        case .cumulative:
+            currentValue = habitLogService.value(for: habit, on: today)
+        }
+
+        let clampedProgress = min(max(currentValue / targetValue, 0), 1)
+        let isComplete = clampedProgress >= 1
+        let displayCurrent = isComplete ? targetValue : max(0, currentValue)
+        let summaryText = "\(formattedTodayGoalValue(displayCurrent)) of \(formattedTodayGoalValue(targetValue)) today"
+
+        if clampedProgress == 0 {
+            return TodayGoalProgressPresentation(
+                summaryText: summaryText,
+                readinessText: "Start when ready",
+                fraction: clampedProgress,
+                isComplete: false
+            )
+        }
+
+        if isComplete {
+            return TodayGoalProgressPresentation(
+                summaryText: summaryText,
+                readinessText: nil,
+                fraction: clampedProgress,
+                isComplete: true
+            )
+        }
+
+        let remainingValue = max(0, targetValue - currentValue)
+        let summaryWithRemaining: String
+        switch habit.goalType {
+        case .frequency:
+            let remainingCount = max(0, Int(remainingValue.rounded(.up)))
+            summaryWithRemaining = "\(summaryText) • \(remainingCount) more to hit today"
+        case .cumulative:
+            summaryWithRemaining = "\(summaryText) • \(formattedTodayGoalValue(remainingValue)) to go"
+        }
+
+        return TodayGoalProgressPresentation(
+            summaryText: summaryWithRemaining,
+            readinessText: nil,
+            fraction: clampedProgress,
+            isComplete: false
+        )
+    }
+
+    private func formattedTodayGoalValue(_ value: Double) -> String {
+        switch habit.goalType {
+        case .frequency:
+            return "\(max(0, Int(value.rounded(.down))))"
+        case .cumulative:
+            let baseText = habit.formatProgressValue(max(0, value))
+            guard MetricKindResolver.resolve(habit) == .genericValue,
+                  let normalizedUnit = normalizedGoalDescriptorUnit else {
+                return baseText
+            }
+            return "\(baseText) \(normalizedUnit)"
+        }
+    }
+
     private var normalizedGoalDescriptorUnit: String? {
         guard let unit = habit.trimmedUnit else { return nil }
         switch unit.lowercased() {
@@ -1414,6 +1547,17 @@ struct HabitDetailSheet: View {
         cueInsight = nil
         aiCoachIsLoading = false
         snapshotRefreshTask?.cancel()
+        goalProgressAnimationResetTask?.cancel()
+        shouldAnimateGoalProgress = false
+    }
+
+    private func triggerGoalProgressAnimation() {
+        shouldAnimateGoalProgress = true
+        goalProgressAnimationResetTask?.cancel()
+        goalProgressAnimationResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            shouldAnimateGoalProgress = false
+        }
     }
 
     private func buildAICoachInput() -> AICoachInput {
