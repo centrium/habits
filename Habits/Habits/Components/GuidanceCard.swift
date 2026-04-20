@@ -39,15 +39,15 @@ struct GuidanceCard: View {
                             .font(.body)
                             .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             .opacity(pulseOpacity)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(4)
+                            .frame(maxWidth: .infinity, minHeight: guidanceTextMinHeight, alignment: .topLeading)
                             .transition(.opacity)
                     } else {
                         Text(resolvedGuidanceText)
                             .font(hasCustomGuidance ? .body : .system(size: 13))
                             .foregroundStyle(hasCustomGuidance ? .primary : CadenceTokens.Color.Text.secondary.opacity(0.9))
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(4)
+                            .frame(maxWidth: .infinity, minHeight: guidanceTextMinHeight, alignment: .topLeading)
                             .transition(.opacity)
                     }
                 }
@@ -109,6 +109,10 @@ struct GuidanceCard: View {
 
     private var topPadding: CGFloat {
         variant == .pinnedMoment ? CadenceTokens.Space.lg + 2 : CadenceTokens.Space.lg
+    }
+
+    private var guidanceTextMinHeight: CGFloat {
+        84
     }
 
     private var shadowColor: Color {

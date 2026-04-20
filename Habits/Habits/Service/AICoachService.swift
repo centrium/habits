@@ -21,7 +21,7 @@ final class AICoachService {
     static let shared = AICoachService()
 
     let loadingText = "Thinking…"
-    private let fallbackGuidance = "Pattern still forming. Keep the next step clear and repeatable."
+    private let fallbackGuidance = "Your timing signal is becoming clearer as you keep showing up. Keep today’s check-in light and specific so this routine stays easy to repeat."
     private var generationTask: Task<Void, Never>?
     private var requestSequence: UInt64 = 0
     private var lastRequestKey: String?
@@ -66,7 +66,7 @@ final class AICoachService {
             identity: input.identity,
             stacking: input.stacking,
             todayStatus: input.todayStatus.isEmpty ? "not completed yet" : input.todayStatus,
-            behaviourSummary: input.behaviourSummary.isEmpty ? "Pattern still forming." : input.behaviourSummary
+            behaviourSummary: input.behaviourSummary.isEmpty ? "Routine is still forming." : input.behaviourSummary
         )
     }
 
@@ -108,22 +108,25 @@ final class AICoachService {
         Write exactly 2 sentences.
 
         Rules:
-        - Maximum 30 words total
+        - Target 28-45 words total
+        - Minimum 2 full sentences
         - Do NOT mention scores, percentages, or metrics
         - Convert everything into natural behaviour language
         - Only mention time if it is not "none"
         - Only mention stacking if it is not "none"
         - Use the habit name naturally
         - Focus on the single strongest signal only
-        - Do NOT mention secondary patterns, dips, or weaker signals
-        - Remove any unnecessary qualifiers (e.g. "consistent", "clear")
+        - Do NOT mention dips or weak windows
         - Use direct, confident phrasing
-        - Prefer fewer words over more explanation
+        - Be concise but substantial enough to feel complete
         - The strongest time window represents where the habit most reliably occurs and must be treated as a positive anchor, not a weakness
         - Do not contradict the provided signals
         - Do not invent or infer times that are not explicitly provided
         - Use natural verbs that match real behaviour (e.g. "happens", "shows up", "occurs")
         - Avoid artificial verbs like "test", "execute", "perform"
+        - Avoid generic motivational lines
+        - Avoid empty praise and filler
+        - Use the phrase "strongest window" when mentioning timing
         - Match tone to State:
           - STRONG = confident, stable, reinforcing
           - BUILD/START = exploratory
@@ -162,8 +165,8 @@ final class AICoachService {
         - Never downgrade a strong state due to weak timing
 
         Structure:
-        - Sentence 1 must reflect the dominant (strongest) observed pattern
-        - Sentence 2 should reinforce or stabilise the pattern, not repeat or restate it
+        - Sentence 1: state the concrete behaviour pattern, grounded in timing/logging behaviour.
+        - Sentence 2: give a calm, specific nudge for today that reinforces consistency or identity.
 
         Tone:
         - Calm, sharp, observational

@@ -138,8 +138,9 @@ struct HabitDetailSheet: View {
     @State private var cueInsight: CueInsight?
     @State private var rhythmData: [HourValue] = []
     @State private var prefersIdentityFocusOnEdit = false
-    @State private var aiCoachTitle: String = "AI Coach"
+    private let aiCoachTitle: String = "AI Coach"
     @State private var aiCoachText: String = ""
+    @State private var aiCoachIsLoading = false
     @State private var frozenGuidanceOutput: GuidanceOutput?
     @State private var frozenStateModel: HabitStateModel?
     @State private var lastReconcileProbeKey: String?
@@ -165,36 +166,7 @@ struct HabitDetailSheet: View {
         let calendar = habitLogService.calendar
         let progressRevision = habitLogService.metricsRevision(for: habit.id)
         let logsVersion = habitLogService.logsVersion
-        let isDetailWorkActive = viewModel.isActive && !isHistoryPresented
-        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-        let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
-        let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
-        let hasActivityToday = (optimisticProgress ?? 0) > 0
-            || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
-        let streakState: StreakState = {
-            guard isDetailWorkActive else {
-                return StreakState(
-                    currentStreak: 0,
-                    longestStreak: 0,
-                    hasMetRequirementToday: false,
-                    isRequiredToday: true,
-                    isAtRisk: false,
-                    isBroken: true,
-                    status: .broken
-                )
-            }
-
-            return StreakStateEngine(
-                calendar: calculationCalendar,
-                weekStartPreference: userSettings.weekStartPreference
-            ).streakState(
-                for: habit,
-                referenceDate: now,
-                progressOverride: optimisticProgress,
-                isCompleteOverride: optimisticComplete,
-                hasActivityOverride: hasActivityToday
-            )
-        }()
+        let streakState = currentStreakState(now: now)
         let premiumHistoryGate = PremiumHistoryGate.Context(
             calendar: calendar,
             premiumStatus: purchaseService.premiumStatus,
@@ -344,7 +316,6 @@ struct HabitDetailSheet: View {
             frozenGuidanceOutput = nil
             freezeStateModelOnAppear()
             freezeGuidanceOutputOnAppear(now: now)
-            updateAICoachTitleOnAppear()
             regenerateAICoachOnAppear()
 
             guard purchaseService.premiumStatus == .free else { return }
@@ -411,7 +382,6 @@ struct HabitDetailSheet: View {
                 await refreshCueInsight()
                 await refreshRhythmData()
             }
-            updateAICoachTitleOnAppear()
             regenerateAICoach(
                 requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
             )
@@ -497,11 +467,13 @@ struct HabitDetailSheet: View {
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
         let heroSupportingText = heroSupportingInsightText(identityState: identityState)
+        let streakMetaText = streakState.currentStreak > 0
+            ? "\(streakState.currentStreak) day streak"
+            : "Build your first streak"
         let identityText = userDefinedIdentityText
         let identityStatText = identityText == nil
             ? nil
             : CadenceLanguage.identityStat(days: identityState.activeDays, window: identityState.windowDays)
-        let streakCardConfiguration = streakCardConfiguration(streakState: streakState)
         let guidanceOutput = frozenGuidanceOutput
         let identityReflectionText = pairedIdentityReflection(for: guidanceOutput)
 
@@ -515,7 +487,7 @@ struct HabitDetailSheet: View {
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
 
-                VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(heroStatus)
                         .font(CadenceTokens.Typography.body.weight(.semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
@@ -542,6 +514,19 @@ struct HabitDetailSheet: View {
                             .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    Button {
+                        openHistoryFromDetail(earliestCalendarDate: earliestCalendarDate)
+                    } label: {
+                        Text(streakMetaText)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 2)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.sm)
@@ -570,14 +555,7 @@ struct HabitDetailSheet: View {
                 .padding(.top, CadenceTokens.Space.md)
 
                 Button {
-                    if let earliestCalendarDate {
-                        let normalizedEarliest = calculationCalendar.startOfDay(for: earliestCalendarDate)
-                        if selectedDate < normalizedEarliest {
-                            selectedDate = normalizedEarliest
-                            selectionState.select(date: normalizedEarliest)
-                        }
-                    }
-                    isHistoryPresented = true
+                    openHistoryFromDetail(earliestCalendarDate: earliestCalendarDate)
                 } label: {
                     HabitHeatmap(
                         habit: habit,
@@ -600,7 +578,7 @@ struct HabitDetailSheet: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, sectionPadding)
-                .padding(.top, 8)
+                .padding(.top, CadenceTokens.Space.md + 2)
 
                 if let guidanceOutput {
                     GuidanceCard(
@@ -608,22 +586,12 @@ struct HabitDetailSheet: View {
                         accent: accent,
                         variant: GuidanceEngine.visualVariant(for: guidanceOutput),
                         label: aiCoachTitle,
-                        guidanceText: aiCoachText,
-                        isLoading: false,
+                        guidanceText: resolvedAICoachMessage(for: guidanceOutput),
+                        isLoading: aiCoachIsLoading && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                         loadingText: aiCoach.loadingText
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, 16)
-                }
-
-                if let streakCardConfiguration {
-                    StreakNudgeCard(
-                        configuration: streakCardConfiguration,
-                        accent: accent
-                    )
-                    .padding(.horizontal, sectionPadding)
-                    .padding(.top, guidanceOutput == nil ? CadenceTokens.Space.md : CadenceTokens.Space.sm + 2)
-                    .opacity(guidanceOutput == nil ? 1 : 0.94)
+                    .padding(.top, CadenceTokens.Space.lg + 4)
                 }
 
                 if !rhythmData.isEmpty {
@@ -641,8 +609,8 @@ struct HabitDetailSheet: View {
                         }
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, guidanceOutput == nil ? CadenceTokens.Space.md : CadenceTokens.Space.sm + 2)
-                    .opacity(guidanceOutput == nil ? 1 : 0.95)
+                    .padding(.top, guidanceOutput == nil ? CadenceTokens.Space.md + 2 : CadenceTokens.Space.md + 6)
+                    .opacity(guidanceOutput == nil ? 0.96 : 0.9)
                 }
 
                 HabitIdentityCard(
@@ -655,8 +623,8 @@ struct HabitDetailSheet: View {
                     activeSheet = .edit
                 }
                 .padding(.horizontal, sectionPadding)
-                .padding(.top, CadenceTokens.Space.md)
-                .opacity(guidanceOutput == nil ? 1 : 0.985)
+                .padding(.top, CadenceTokens.Space.md + 2)
+                .opacity(guidanceOutput == nil ? 0.95 : 0.88)
 
                 if showsInsightsSection {
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
@@ -878,6 +846,25 @@ struct HabitDetailSheet: View {
         let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
         let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
         return (optimisticProgress ?? 0) > 0 || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
+    }
+
+    private func currentStreakState(now: Date) -> StreakState {
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
+        let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
+        let hasActivityToday = (optimisticProgress ?? 0) > 0
+            || !habit.logs(on: today, calendar: calculationCalendar).isEmpty
+
+        return StreakStateEngine(
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        ).streakState(
+            for: habit,
+            referenceDate: now,
+            progressOverride: optimisticProgress,
+            isCompleteOverride: optimisticComplete,
+            hasActivityOverride: hasActivityToday
+        )
     }
 
     private func heroSupportingInsightText(
@@ -1308,8 +1295,10 @@ struct HabitDetailSheet: View {
     private func regenerateAICoach(requestKey: String) {
         guard viewModel.isActive else { return }
         let input = buildAICoachInput()
+        aiCoachIsLoading = true
         aiCoach.generate(input: input, requestKey: requestKey) { finalText in
             self.aiCoachText = finalText
+            self.aiCoachIsLoading = false
         }
     }
 
@@ -1317,11 +1306,6 @@ struct HabitDetailSheet: View {
         guard viewModel.isActive else { return }
         let requestKey = "onAppear-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
         regenerateAICoach(requestKey: requestKey)
-    }
-
-    private func updateAICoachTitleOnAppear() {
-        let stateModel = frozenStateModel ?? habitStateModel(now: appTime.now)
-        aiCoachTitle = "AI Coach • \(CadenceLanguage.shortLabel(for: stateModel.state))"
     }
 
     private func freezeStateModelOnAppear() {
@@ -1361,6 +1345,7 @@ struct HabitDetailSheet: View {
     private func freezeDetailState() {
         rhythmData = []
         cueInsight = nil
+        aiCoachIsLoading = false
         snapshotRefreshTask?.cancel()
     }
 
@@ -1424,7 +1409,7 @@ struct HabitDetailSheet: View {
     private func behaviourSummary(
         for state: HabitState
     ) -> String {
-        guard !habit.logs.isEmpty else { return "Pattern still forming." }
+        guard !habit.logs.isEmpty else { return "Routine is still forming." }
         switch state {
         case .strong:
             return "Recent behaviour is stable and reliable."
@@ -1437,6 +1422,47 @@ struct HabitDetailSheet: View {
         case .slip, .rebuild:
             return "Recent behaviour needs re-engagement."
         }
+    }
+
+    private func resolvedAICoachMessage(for output: GuidanceOutput) -> String {
+        let trimmedAI = aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedAI.isEmpty {
+            return normalizeAICoachMessage(trimmedAI)
+        }
+
+        return fallbackAICoachMessage(for: output.type)
+    }
+
+    private func normalizeAICoachMessage(_ text: String) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "Most active around", with: "Strongest window:")
+            .replacingOccurrences(of: "most active around", with: "strongest window:")
+            .replacingOccurrences(of: "Pattern still forming", with: "Timing is still forming")
+        return normalized
+    }
+
+    private func fallbackAICoachMessage(for type: GuidanceType) -> String {
+        switch type {
+        case .momentum:
+            return "Your strongest window is becoming more repeatable, and your recent check-ins are reinforcing that pattern. Keep today’s entry quick and specific so this rhythm stays easy to maintain."
+        case .atRisk:
+            return "Your strongest window is still available today, even if the timing feels tighter than usual. A short check-in now keeps this routine intact and makes tomorrow easier to repeat."
+        case .recovery:
+            return "Your recent timing has become less steady, but your strongest window still gives you a reliable place to restart. Keep today’s step small and concrete so consistency can rebuild naturally."
+        case .identity:
+            return "Your check-ins are settling into a recognizable strongest window that supports this habit day to day. Show up once today with a light, repeatable action so this identity keeps strengthening."
+        }
+    }
+
+    private func openHistoryFromDetail(earliestCalendarDate: Date?) {
+        if let earliestCalendarDate {
+            let normalizedEarliest = calculationCalendar.startOfDay(for: earliestCalendarDate)
+            if selectedDate < normalizedEarliest {
+                selectedDate = normalizedEarliest
+                selectionState.select(date: normalizedEarliest)
+            }
+        }
+        isHistoryPresented = true
     }
 
 }
@@ -1712,82 +1738,101 @@ private struct HabitIdentityCard: View {
     let reflectionText: String
     let accent: CadenceAccentTokens
     let onTap: () -> Void
+    @State private var isIdentityInfoPresented = false
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .top, spacing: 12) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(accent.primary.opacity(0.72))
-                    .frame(width: 3)
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(accent.primary.opacity(0.72))
+                .frame(width: 3)
 
-                VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
                     Text(CadenceLanguage.identityTitle())
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
 
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            if let identityText {
-                                Text(identityText)
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.primary.opacity(0.9))
-                                    .lineSpacing(2)
-                                    .lineLimit(2)
+                    Button {
+                        isIdentityInfoPresented = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Identity help")
+                }
 
-                                if let statText {
-                                    Text(statText)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.secondary.opacity(0.9))
-                                        .lineLimit(2)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let identityText {
+                            Text(identityText)
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(.primary.opacity(0.9))
+                                .lineSpacing(2)
+                                .lineLimit(2)
 
-                                    Text(reflectionText)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.secondary.opacity(0.94))
-                                        .padding(.top, 3)
-                                        .lineLimit(2)
-                                }
-                            } else {
-                                Text("Someone who keeps moving forward")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.primary.opacity(0.9))
-                                    .lineLimit(2)
-
-                                Text("This is taking shape")
+                            if let statText {
+                                Text(statText)
                                     .font(.system(size: 13))
                                     .foregroundStyle(.secondary.opacity(0.9))
                                     .lineLimit(2)
 
-                                Text("This is how consistency builds")
+                                Text(reflectionText)
                                     .font(.system(size: 13))
                                     .foregroundStyle(.secondary.opacity(0.94))
                                     .padding(.top, 3)
                                     .lineLimit(2)
                             }
+                        } else {
+                            Text("Someone who keeps moving forward")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(.primary.opacity(0.9))
+                                .lineLimit(2)
+
+                            Text("This is taking shape")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary.opacity(0.9))
+                                .lineLimit(2)
+
+                            Text("This is how consistency builds")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary.opacity(0.94))
+                                .padding(.top, 3)
+                                .lineLimit(2)
                         }
-
-                        Spacer(minLength: CadenceTokens.Space.sm)
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary.opacity(0.6))
                     }
+
+                    Spacer(minLength: CadenceTokens.Space.sm)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary.opacity(0.6))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(CadenceTokens.Space.lg)
-            .background(
-                RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                    .fill(tintColor.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
-            .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(CadenceTokens.Space.lg)
+        .background(
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .fill(tintColor.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
+        .sheet(isPresented: $isIdentityInfoPresented) {
+            IdentityExplainerSheet()
+                .presentationDetents([.height(340), .medium])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+        }
     }
 
     private var tintColor: Color {
@@ -1796,6 +1841,32 @@ private struct HabitIdentityCard: View {
         }
 
         return CadenceTokens.Color.Background.secondary
+    }
+}
+
+private struct IdentityExplainerSheet: View {
+    private let paragraphOne = "Identity-based habits start with the person you want to become. You act like that version of yourself before it fully feels true, using small consistent behaviours as proof. Instead of chasing outcomes, you focus on becoming someone who naturally does those things."
+    private let paragraphTwo = "Each action reinforces that identity. Over time, the evidence builds, belief strengthens, and the behaviour feels automatic. What began as intention becomes reality. You are no longer trying to change, you have become the person who lives it."
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
+                Text("Identity")
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+                Text(paragraphOne)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+                Text(paragraphTwo)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(CadenceTokens.Space.lg)
+        }
+        .presentationBackground(CadenceTokens.Color.Background.primary)
     }
 }
 

@@ -92,6 +92,7 @@ struct PeakTimingSummary: Equatable {
     let peakHour: Int
     let confidence: Double
     let uniqueEventCount: Int
+    let uniqueActiveDays: Int
 }
 
 nonisolated func bestTimeRecommendation(
@@ -367,7 +368,8 @@ final class TimeOfDayPerformanceService {
         return PeakTimingSummary(
             peakHour: computation.result.peakHour,
             confidence: computation.result.confidence,
-            uniqueEventCount: computation.diagnostics.uniqueEventCount
+            uniqueEventCount: computation.diagnostics.uniqueEventCount,
+            uniqueActiveDays: computation.diagnostics.uniqueActiveDays
         )
     }
 

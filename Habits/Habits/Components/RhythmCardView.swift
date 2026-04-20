@@ -13,10 +13,7 @@ struct RhythmCardView: View {
     var onOpen: (() -> Void)? = nil
 
     @State private var selectedHour: Int?
-
-    private var insight: RhythmInsight {
-        generateRhythmInsight(from: resolvedInsight)
-    }
+    @State private var isTimingStrengthInfoPresented = false
 
     private var resolvedInsight: TimeInsightResult {
         if let existing = rhythm?.timeInsight {
@@ -64,56 +61,42 @@ struct RhythmCardView: View {
             return nil
         }
 
-        return "\(formattedTime(selectedHour)) - \(Int((point.value * 100).rounded()))%"
+        return "\(formattedTime(selectedHour)) - \(Int((point.value * 100).rounded()))% timing strength"
     }
 
     private var currentHour: Int {
         calendar.component(.hour, from: .now)
     }
 
-    private var primaryInsight: AttributedString {
-        let label = timingMessage(confidence: timingConfidence)
-        var text = AttributedString(label)
-        text.foregroundColor = CadenceTokens.Color.Text.primary.opacity(0.9)
-        return text
+    private var primaryInsight: String {
+        timingMessage(confidence: timingConfidence)
     }
 
-    private var secondaryDetail: AttributedString {
+    private var passiveDetail: AttributedString {
         var text = AttributedString("Strongest window: ")
         text.foregroundColor = CadenceTokens.Color.Text.secondary
 
         var peak = AttributedString(formattedTime(resolvedInsight.peakHour))
-        peak.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.8 : 0.72)
+        peak.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.72 : 0.64)
         text += peak
 
         return text
-    }
-
-    private var behaviouralSignal: String {
-        let options = [
-            "Activity clusters around this time",
-            "Recent logs concentrate here"
-        ]
-        let seed = "\(habit.id.uuidString)|\(resolvedInsight.peakHour)|\(calendar.component(.day, from: .now))"
-        let hash = seed.unicodeScalars.reduce(5381) { partial, scalar in
-            ((partial << 5) &+ partial) &+ Int(scalar.value)
-        }
-        let index = abs(hash) % options.count
-        return options[index]
-    }
-
-    private var confidenceInterpretation: String {
-        timingMessage(confidence: timingConfidence)
-    }
-
-    private var confidenceSignal: String {
-        timingMessage(confidence: timingConfidence)
     }
 
     private var timingConfidence: TimingConfidence {
         if let stateModel {
             return stateModel.timingConfidence
         }
+
+        if let rhythm {
+            let hasMatureTimingVolume = rhythm.uniqueEventCount >= 24 && rhythm.uniqueActiveDays >= 10
+            if hasMatureTimingVolume, rhythm.confidence >= 0.18 {
+                if rhythm.confidence < 0.55 {
+                    return .medium
+                }
+            }
+        }
+
         let confidence = rhythm?.confidence ?? resolvedInsight.confidence
         switch confidence {
         case ..<0.35:
@@ -130,32 +113,35 @@ struct RhythmCardView: View {
         case .low:
             return "Timing is still forming"
         case .medium:
-            return "A loose rhythm is emerging"
+            return "Your timing is becoming more consistent"
         case .high:
-            return "A clear rhythm is established"
+            return "Your timing is consistent"
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm + 2) {
             HStack(spacing: CadenceTokens.Space.xs) {
                 Text("Rhythm")
                     .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                     .foregroundStyle(CadenceTokens.Color.Text.primary)
 
-                Spacer(minLength: 0)
-
-                if isPremium {
-                    Text(confidenceSignal)
-                        .font(CadenceTokens.Typography.microCopy)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.82))
+                Button {
+                    isTimingStrengthInfoPresented = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
+                        .padding(.vertical, 2)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Timing strength help")
             }
 
             if isPremium {
                 Text(primaryInsight)
-                    .font(CadenceTokens.Typography.body.weight(.medium))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.9))
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -171,26 +157,27 @@ struct RhythmCardView: View {
                 showTrailingIncompletenessFade: !isPremium
             )
 
-            if let selectedLabel {
-                Text(selectedLabel)
-                    .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            if isPremium {
+                Group {
+                    if let selectedLabel {
+                        Text(selectedLabel)
+                            .font(CadenceTokens.Typography.microCopy)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    } else {
+                        Text("12PM - 100% timing strength")
+                            .font(CadenceTokens.Typography.microCopy)
+                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                            .opacity(0)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if isPremium {
-                Text(secondaryDetail)
+                Text(passiveDetail)
                     .font(CadenceTokens.Typography.microCopy)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(behaviouralSignal)
-                    .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.82))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(confidenceInterpretation)
-                    .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Button {
@@ -223,6 +210,12 @@ struct RhythmCardView: View {
         .onChange(of: rhythm?.timeInsight.peakHour) { _, _ in
             logTimingTrace()
         }
+        .sheet(isPresented: $isTimingStrengthInfoPresented) {
+            TimingStrengthInfoSheet()
+                .presentationDetents([.height(230)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+        }
     }
 
     private func formattedTime(_ hour: Int) -> String {
@@ -247,5 +240,26 @@ struct RhythmCardView: View {
         assert(displayedHour == enginePeak, "displayed peak label hour must equal engine peakHour")
         assert(chartHighlightedHour == enginePeak, "chart marker hour must equal engine peakHour")
         #endif
+    }
+}
+
+private struct TimingStrengthInfoSheet: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
+            Text("Timing strength")
+                .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+            Text("This percentage shows how favorable this hour is for this habit, compared with your strongest hour.")
+                .font(CadenceTokens.Typography.supporting)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+
+            Text("100% means strongest hour. Lower values are weaker, but still usable.")
+                .font(CadenceTokens.Typography.supporting)
+                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(CadenceTokens.Space.lg)
+        .presentationBackground(CadenceTokens.Color.Background.primary)
     }
 }

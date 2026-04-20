@@ -131,21 +131,30 @@ struct RhythmLineChart: View {
                 Rectangle()
                     .fill(.clear)
                     .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.14)
+                            .sequenced(before: DragGesture(minimumDistance: 8, coordinateSpace: .local))
                             .onChanged { value in
                                 guard selectionEnabled else { return }
-                                guard let plotFrame = proxy.plotFrame else { return }
-                                let frame = geometry[plotFrame]
-                                let xPosition = value.location.x - frame.origin.x
-
-                                guard xPosition >= 0,
-                                      xPosition <= frame.width,
-                                      let hourValue = proxy.value(atX: xPosition, as: Double.self) else {
-                                    return
+                                switch value {
+                                case .first:
+                                    break
+                                case .second(true, let drag?):
+                                    let horizontal = abs(drag.translation.width)
+                                    let vertical = abs(drag.translation.height)
+                                    // Keep vertical screen scrolling responsive while finger is over the chart.
+                                    guard horizontal > vertical + 6 else {
+                                        selectedHour = nil
+                                        return
+                                    }
+                                    updateSelection(
+                                        for: drag.location,
+                                        proxy: proxy,
+                                        geometry: geometry
+                                    )
+                                default:
+                                    break
                                 }
-
-                                selectedHour = min(23, max(0, Int(hourValue.rounded())))
                             }
                             .onEnded { _ in
                                 guard selectionEnabled else { return }
@@ -191,6 +200,24 @@ struct RhythmLineChart: View {
         default:
             return "\(hour)"
         }
+    }
+
+    private func updateSelection(
+        for location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy
+    ) {
+        guard let plotFrame = proxy.plotFrame else { return }
+        let frame = geometry[plotFrame]
+        let xPosition = location.x - frame.origin.x
+
+        guard xPosition >= 0,
+              xPosition <= frame.width,
+              let hourValue = proxy.value(atX: xPosition, as: Double.self) else {
+            return
+        }
+
+        selectedHour = min(23, max(0, Int(hourValue.rounded())))
     }
 
     private func smoothedData(from source: [HourValue], sigma: Double, preferredPeakHour: Int?) -> [HourValue] {

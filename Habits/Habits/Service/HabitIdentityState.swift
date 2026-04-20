@@ -289,7 +289,9 @@ enum HabitStateResolver {
         )
         let timingConfidence = timingConfidence(
             from: timingSummary?.confidence ?? 0,
-            hasSummary: timingSummary != nil
+            hasSummary: timingSummary != nil,
+            uniqueEventCount: timingSummary?.uniqueEventCount ?? 0,
+            uniqueActiveDays: timingSummary?.uniqueActiveDays ?? 0
         )
         let strongestTime = timingSummary.map { humanTime(for: $0.peakHour) }
         let state = deriveState(
@@ -312,9 +314,21 @@ enum HabitStateResolver {
 
     private static func timingConfidence(
         from confidence: Double,
-        hasSummary: Bool
+        hasSummary: Bool,
+        uniqueEventCount: Int,
+        uniqueActiveDays: Int
     ) -> TimingConfidence {
         guard hasSummary else { return .low }
+
+        // Mature habits with broad but real timing data should not fall back to "forming"
+        // unless confidence is effectively absent.
+        let hasMatureTimingVolume = uniqueEventCount >= 24 && uniqueActiveDays >= 10
+        if hasMatureTimingVolume, confidence >= 0.18 {
+            if confidence < 0.55 {
+                return .medium
+            }
+        }
+
         switch confidence {
         case ..<0.35:
             return .low
