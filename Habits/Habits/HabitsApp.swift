@@ -104,6 +104,7 @@ struct HabitsApp: App {
     @StateObject private var userSettings = UserSettings()
     @StateObject private var purchaseService = PurchaseService()
     @StateObject private var habitUIStateStore = HabitUIStateStore()
+    @StateObject private var habitVersionStore = HabitVersionStore()
     @State private var habitLogService: HabitLogService?
     
     @State private var container: ModelContainer?
@@ -132,6 +133,7 @@ struct HabitsApp: App {
                     .environmentObject(deepLinkManager)
                     .environmentObject(purchaseService)
                     .environmentObject(habitUIStateStore)
+                    .environmentObject(habitVersionStore)
                     .environmentObject(habitLogService)
                 } else {
                     Color.clear
@@ -187,7 +189,8 @@ struct HabitsApp: App {
         if habitLogService == nil {
             habitLogService = HabitLogService(
                 modelContext: startupModelContext,
-                uiStateStore: habitUIStateStore
+                uiStateStore: habitUIStateStore,
+                habitVersionStore: habitVersionStore
             )
         }
 

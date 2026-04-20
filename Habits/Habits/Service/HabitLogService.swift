@@ -220,12 +220,13 @@ final class HabitLogService: ObservableObject {
     private let hapticCooldown: TimeInterval = 0.1
     private var pendingSaveWorkItem: DispatchWorkItem?
     private var pendingSyncReferenceDate: Date?
-    private let saveCoalescingDelay: TimeInterval = 0.12
+    private var pendingChangedHabitIDs: Set<UUID> = []
+    private let saveCoalescingDelay: TimeInterval = 1.2
     private var metricsRevisions: [UUID: Int] = [:]
     private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
     private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
     private let cueInsightService: CueInsightService
-    @Published private(set) var logsVersion: UUID = UUID()
+    let habitVersionStore: HabitVersionStore
     @Published private(set) var computedStateByHabitID: [UUID: HabitComputedState] = [:]
     @Published private(set) var lastLogUserActionAt: Date?
 
@@ -233,12 +234,14 @@ final class HabitLogService: ObservableObject {
         modelContext: ModelContext,
         calendar: Calendar = .current,
         lastValueStore: any LastValueStore = LogDerivedLastValueStore(),
-        uiStateStore: HabitUIStateStore
+        uiStateStore: HabitUIStateStore,
+        habitVersionStore: HabitVersionStore = HabitVersionStore()
     ) {
         self.modelContext = modelContext
         self.calendar = calendar
         self.lastValueStore = lastValueStore
         self.uiStateStore = uiStateStore
+        self.habitVersionStore = habitVersionStore
         self.cueInsightService = CueInsightService(modelContext: modelContext)
     }
 
@@ -264,8 +267,8 @@ final class HabitLogService: ObservableObject {
     }
 
     private func saveAndPlayHaptic(for habit: Habit, referenceDate: Date, wasComplete: Bool) {
-        publishComputedState(for: habit, referenceDate: referenceDate)
-        schedulePersistAndReflectionSync(referenceDate: referenceDate)
+        scheduleHabitComputedStateRefresh(for: habit, referenceDate: referenceDate)
+        schedulePersistAndReflectionSync(referenceDate: referenceDate, habitID: habit.id)
 
         let isComplete = habit.isComplete(for: referenceDate, calendar: calendar)
         DispatchQueue.main.async {
@@ -273,18 +276,20 @@ final class HabitLogService: ObservableObject {
         }
     }
 
-    private func schedulePersistAndReflectionSync(referenceDate: Date) {
+    private func schedulePersistAndReflectionSync(referenceDate: Date, habitID: UUID) {
         pendingSyncReferenceDate = referenceDate
         pendingSaveWorkItem?.cancel()
 
         let workItem = DispatchWorkItem { [self] in
             let syncReferenceDate = pendingSyncReferenceDate ?? referenceDate
+            let changedHabitIDs = pendingChangedHabitIDs
             pendingSyncReferenceDate = nil
             pendingSaveWorkItem = nil
+            pendingChangedHabitIDs.removeAll()
 
-            _ = modelContext.saveAndSyncWidgetData()
-
+            guard changedHabitIDs.contains(habitID) else { return }
             Task { @MainActor in
+                _ = modelContext.saveAndSyncWidgetData()
                 await NotificationService.shared.syncEveningReflectionFromStoredSettings(
                     referenceDate: syncReferenceDate
                 )
@@ -292,7 +297,7 @@ final class HabitLogService: ObservableObject {
         }
 
         pendingSaveWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
+        DispatchQueue.global(qos: .utility).asyncAfter(
             deadline: .now() + saveCoalescingDelay,
             execute: workItem
         )
@@ -315,18 +320,15 @@ final class HabitLogService: ObservableObject {
 
     private func invalidateMetricsCache(
         for habitID: UUID,
-        bumpRevision: Bool = true,
-        publishLogsVersion: Bool = true
+        bumpRevision: Bool = true
     ) {
-        objectWillChange.send()
         if bumpRevision {
             metricsRevisions[habitID, default: 0] += 1
         }
         dayMetricsCache.removeValue(forKey: habitID)
         cueInsightService.resetCache()
-        if publishLogsVersion {
-            logsVersion = UUID()
-        }
+        habitVersionStore.bump(for: habitID)
+        pendingChangedHabitIDs.insert(habitID)
     }
 
     private func dayKey(habitID: UUID, day: Date) -> String {
@@ -399,19 +401,22 @@ final class HabitLogService: ObservableObject {
         }
     }
 
-    private func publishComputedState(for habit: Habit, referenceDate: Date) {
-        let allHabits = (try? modelContext.fetch(FetchDescriptor<Habit>())) ?? [habit]
-        let globalLogs = allHabits.flatMap(\.logs)
-        let state = HabitComputationEngine(
-            calendar: calendar,
-            weekStartPreference: .system
-        ).compute(
-            habit: habit,
-            logs: habit.logs,
-            globalLogs: globalLogs,
-            now: referenceDate
-        )
-        computedStateByHabitID[habit.id] = state
+    private func scheduleHabitComputedStateRefresh(for habit: Habit, referenceDate: Date) {
+        let startedAt = CACurrentMediaTime()
+        Task { @MainActor in
+            let state = HabitComputationEngine(
+                calendar: calendar,
+                weekStartPreference: .system
+            ).compute(
+                habit: habit,
+                logs: habit.logs,
+                globalLogs: habit.logs,
+                now: referenceDate
+            )
+            computedStateByHabitID[habit.id] = state
+            let elapsedMs = (CACurrentMediaTime() - startedAt) * 1_000
+            print(String(format: "PERF: habit recompute in %.1fms", elapsedMs))
+        }
     }
 }
 
@@ -474,6 +479,10 @@ extension HabitLogService {
 
     func metricsRevision(for habitID: UUID) -> Int {
         metricsRevisions[habitID, default: 0]
+    }
+
+    func habitVersion(for habitID: UUID) -> Int {
+        habitVersionStore.version(for: habitID)
     }
 
     func dayMetrics(for habit: Habit, on days: [Date]) -> [Date: HabitDayMetrics] {

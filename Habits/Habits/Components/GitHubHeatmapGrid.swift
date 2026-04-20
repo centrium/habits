@@ -97,8 +97,8 @@ struct GitHubHeatmapGrid: View {
         ZStack(alignment: .topLeading) {
             ForEach(monthMarkers) { marker in
                 Text(marker.label)
-                    .font(.caption2)
-                    .foregroundStyle(Color.secondary.opacity(style.monthLabelOpacity))
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary.opacity(max(0.7, style.monthLabelOpacity)))
                     .tracking(style.monthLabelTracking)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(height: style.monthLabelHeight, alignment: .leading)

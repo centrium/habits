@@ -233,12 +233,11 @@ private extension InsightSelectionService {
         _ = timingAction
         let enginePeak = peakHour
         let consumerHour = peakHour
-        let match = consumerHour == enginePeak
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Growth Plan")
-        print("enginePeak: \(enginePeak)")
-        print("consumerHour: \(consumerHour)")
-        print("match: \(match)")
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Growth Plan",
+            enginePeak: enginePeak,
+            consumerHour: consumerHour
+        )
         assert(consumerHour == enginePeak, "growth plan displayed hour must equal engine peakHour")
         assert(peakTime == humanTime(for: peakHour), "growth plan peak label must match peakHour")
         #endif

@@ -116,6 +116,20 @@ enum CadenceTokens {
         static let body = Font.system(size: 14)
         static let supporting = Font.system(size: 14)
         static let microCopy = Font.system(size: 13, weight: .medium)
+
+        // Strict cross-screen type roles for hierarchy and data emphasis.
+        static let roleTitle = Font.title2
+        static let roleSectionHeader = Font.title3
+        static let roleLabel = Font.subheadline
+        static let roleBody = Font.body
+        static let roleCaption = Font.caption
+        static let roleDataPrimaryCompact = Font.body
+        static let roleDataPrimaryProminent = Font.title3
+        static let roleDataSecondary = Font.subheadline
+
+        static let roleLabelOpacity: Double = 0.75
+        static let roleCaptionOpacity: Double = 0.65
+        static let roleDataSecondaryOpacity: Double = 0.7
     }
 
     enum Surface {

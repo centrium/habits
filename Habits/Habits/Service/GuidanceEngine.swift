@@ -353,11 +353,11 @@ enum GuidanceEngine {
         _ = supportingContext
         let consumerHour = expectedHour
         let match = consumerHour == expectedHour
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Detail")
-        print("enginePeak: \(expectedHour)")
-        print("consumerHour: \(consumerHour)")
-        print("match: \(match)")
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Detail",
+            enginePeak: expectedHour,
+            consumerHour: consumerHour
+        )
         assert(match, "habit detail now card hour must equal engine peakHour")
         #endif
     }

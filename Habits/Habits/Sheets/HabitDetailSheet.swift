@@ -153,6 +153,7 @@ struct HabitDetailSheet: View {
     @State private var lastReconcileProbeKey: String?
     @State private var shouldAnimateGoalProgress = false
     @State private var goalProgressAnimationResetTask: Task<Void, Never>?
+    @State private var lastSeenHabitVersion: Int?
     @StateObject private var viewModel = HabitDetailViewModel()
     private let onDeleted: (() -> Void)?
 
@@ -174,7 +175,7 @@ struct HabitDetailSheet: View {
         let now = Date()
         let calendar = habitLogService.calendar
         let progressRevision = habitLogService.metricsRevision(for: habit.id)
-        let logsVersion = habitLogService.logsVersion
+        let habitVersion = habitLogService.habitVersion(for: habit.id)
         let streakState = currentStreakState(now: now)
         let premiumHistoryGate = PremiumHistoryGate.Context(
             calendar: calendar,
@@ -316,6 +317,7 @@ struct HabitDetailSheet: View {
         }
         .onAppear {
             viewModel.activate()
+            lastSeenHabitVersion = habitLogService.habitVersion(for: habit.id)
             habitLogService.updateCalendar(calculationCalendar)
             habitLogService.prepare(habit)
             scheduleProgressSnapshotRefresh(now: now)
@@ -367,10 +369,14 @@ struct HabitDetailSheet: View {
             scheduleProgressSnapshotRefresh()
             Task { await refreshCueInsight() }
         }
-        .onChange(of: logsVersion) { _, _ in
+        .onReceive(habitLogService.habitVersionStore.$versions) { _ in
+            let currentVersion = habitLogService.habitVersion(for: habit.id)
+            guard currentVersion != lastSeenHabitVersion else { return }
+            lastSeenHabitVersion = currentVersion
+
             viewModel.refreshHistorySnapshot(logs: habit.logs, calendar: calculationCalendar)
             guard viewModel.isActive, !isHistoryPresented else { return }
-            recordUIReconcileProbe(stage: "logsVersion")
+            recordUIReconcileProbe(stage: "habitVersion")
             scheduleProgressSnapshotRefresh()
         }
         .onChange(of: habitLogService.lastLogUserActionAt) { _, actionDate in
@@ -409,7 +415,7 @@ struct HabitDetailSheet: View {
             await refreshRhythmData()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
-            let liveHistorySnapshot = canonicalHistorySnapshot()
+            let liveHistorySnapshot = viewModel.historySnapshot
             ZStack(alignment: .top) {
                 backgroundColor
                     .ignoresSafeArea()
@@ -420,7 +426,7 @@ struct HabitDetailSheet: View {
 
                 historyTabContent(
                     progressRevision: progressRevision,
-                    logsVersion: logsVersion,
+                    habitVersion: habitVersion,
                     snapshot: liveHistorySnapshot,
                     calendarMonthSummaryText: calendarMonthSummaryText,
                     earliestCalendarDate: earliestCalendarDate,
@@ -682,7 +688,7 @@ struct HabitDetailSheet: View {
     @ViewBuilder
     private func historyTabContent(
         progressRevision: Int,
-        logsVersion: UUID,
+        habitVersion: Int,
         snapshot: HistorySnapshot,
         calendarMonthSummaryText: String?,
         earliestCalendarDate: Date?,
@@ -704,9 +710,9 @@ struct HabitDetailSheet: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
-                VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+                VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                     Text("History")
-                        .font(CadenceTokens.Typography.sectionHeader)
+                        .font(CadenceTokens.Typography.roleTitle.weight(.semibold))
                         .foregroundStyle(CadenceTokens.Color.Text.primary)
 
                     fadingHistorySecondaryText(
@@ -719,8 +725,10 @@ struct HabitDetailSheet: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Your activity over time")
-                        .font(CadenceTokens.Typography.supporting)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        .font(CadenceTokens.Typography.roleLabel.weight(.regular))
+                        .foregroundStyle(
+                            CadenceTokens.Color.Text.secondary.opacity(CadenceTokens.Typography.roleLabelOpacity)
+                        )
                         .padding(.horizontal, CadenceTokens.Space.sm)
                         .padding(.top, CadenceTokens.Space.sm)
 
@@ -730,7 +738,7 @@ struct HabitDetailSheet: View {
                                 habitID: habit.id,
                                 selectedDate: selectedDate,
                                 metricsRevision: progressRevision,
-                                logsVersion: logsVersion,
+                                habitVersion: habitVersion,
                                 earliestVisibleDate: earliestCalendarDate,
                                 historyDailyCounts: snapshot.dailyCounts,
                                 habit: habit,
@@ -776,7 +784,7 @@ struct HabitDetailSheet: View {
                             selectedDate: selectedDate,
                             visibleMonth: selectionState.visibleMonth,
                             metricsRevision: progressRevision,
-                            logsVersion: logsVersion,
+                            habitVersion: habitVersion,
                             monthSummaryText: calendarMonthSummaryText,
                             earliestVisibleDate: earliestCalendarDate,
                             historyDailyCounts: snapshot.dailyCounts,
@@ -836,7 +844,7 @@ struct HabitDetailSheet: View {
         ).compute(
             habit: habit,
             logs: habit.logs,
-            globalLogs: allHabitsSnapshot().flatMap(\.logs),
+            globalLogs: habit.logs,
             now: now
         )
     }
@@ -1172,8 +1180,8 @@ struct HabitDetailSheet: View {
         ZStack {
             Text(text)
                 .id(id)
-                .font(CadenceTokens.Typography.body)
-                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                .font(CadenceTokens.Typography.roleSectionHeader.weight(.medium))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
                 .lineLimit(1)
                 .transition(.opacity)
         }
@@ -1474,7 +1482,7 @@ struct HabitDetailSheet: View {
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: habit,
-            globalLogs: allHabitsSnapshot().flatMap(\.logs),
+            globalLogs: habit.logs,
             isPremium: purchaseService.premiumStatus == .premium,
             now: .now,
             calendar: calculationCalendar
@@ -1608,7 +1616,7 @@ struct HabitDetailSheet: View {
     private func habitStateModel(now: Date = Date()) -> HabitStateModel {
         HabitStateResolver.resolve(
             for: habit,
-            globalLogs: allHabitsSnapshot().flatMap(\.logs),
+            globalLogs: habit.logs,
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference,
             now: now
@@ -2279,7 +2287,7 @@ private struct HeatmapSection: View, Equatable {
     let habitID: UUID
     let selectedDate: Date
     let metricsRevision: Int
-    let logsVersion: UUID
+    let habitVersion: Int
     let earliestVisibleDate: Date?
     let historyDailyCounts: [Date: Int]
     let habit: Habit
@@ -2292,7 +2300,7 @@ private struct HeatmapSection: View, Equatable {
         lhs.habitID == rhs.habitID &&
         lhs.selectedDate == rhs.selectedDate &&
         lhs.metricsRevision == rhs.metricsRevision &&
-        lhs.logsVersion == rhs.logsVersion &&
+        lhs.habitVersion == rhs.habitVersion &&
         lhs.earliestVisibleDate == rhs.earliestVisibleDate &&
         lhs.historyDailyCounts == rhs.historyDailyCounts
     }
@@ -2317,7 +2325,7 @@ private struct CalendarSection: View, Equatable {
     let selectedDate: Date
     let visibleMonth: Date
     let metricsRevision: Int
-    let logsVersion: UUID
+    let habitVersion: Int
     let monthSummaryText: String?
     let earliestVisibleDate: Date?
     let historyDailyCounts: [Date: Int]
@@ -2336,7 +2344,7 @@ private struct CalendarSection: View, Equatable {
         lhs.selectedDate == rhs.selectedDate &&
         lhs.visibleMonth == rhs.visibleMonth &&
         lhs.metricsRevision == rhs.metricsRevision &&
-        lhs.logsVersion == rhs.logsVersion &&
+        lhs.habitVersion == rhs.habitVersion &&
         lhs.monthSummaryText == rhs.monthSummaryText &&
         lhs.earliestVisibleDate == rhs.earliestVisibleDate &&
         lhs.historyDailyCounts == rhs.historyDailyCounts
@@ -2377,22 +2385,16 @@ private struct HistoryInsightSummarySection: View {
     let summary: HistoryInsightSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
             Text("\(summary.monthTitle) Summary")
-                .font(CadenceTokens.Typography.sectionHeader)
-                .foregroundStyle(CadenceTokens.Color.Text.primary)
+                .font(CadenceTokens.Typography.roleLabel.weight(.regular))
+                .foregroundStyle(
+                    CadenceTokens.Color.Text.secondary.opacity(CadenceTokens.Typography.roleLabelOpacity)
+                )
 
-            Text("• \(summary.activeDays) \(summary.activeDays == 1 ? "active day" : "active days")")
-                .font(CadenceTokens.Typography.body)
-                .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-            Text("• \(summary.entries) total \(summary.entries == 1 ? "entry" : "entries")")
-                .font(CadenceTokens.Typography.body)
-                .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-            Text("• Longest run: \(summary.bestStreak) \(summary.bestStreak == 1 ? "day" : "days")")
-                .font(CadenceTokens.Typography.body)
-                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            HistoryInsightMetricRow(value: "\(summary.activeDays)", label: "Active days")
+            HistoryInsightMetricRow(value: "\(summary.entries)", label: "Total entries")
+            HistoryInsightMetricRow(value: "\(summary.bestStreak)", label: "Longest run")
         }
         .padding(.horizontal, CadenceTokens.Space.sm)
         .padding(.bottom, CadenceTokens.Space.md)
@@ -2403,17 +2405,41 @@ private struct SelectedDayContextSection: View {
     let context: SelectedDayContextSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(context.dayLabel)
-                .font(CadenceTokens.Typography.body.weight(.semibold))
+                .font(CadenceTokens.Typography.roleBody.weight(.medium))
                 .foregroundStyle(CadenceTokens.Color.Text.primary)
 
-            Text(context.loggedText)
-                .font(CadenceTokens.Typography.body)
-                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            Text("· \(context.loggedText)")
+                .font(CadenceTokens.Typography.roleCaption.weight(.regular))
+                .foregroundStyle(
+                    CadenceTokens.Color.Text.secondary.opacity(CadenceTokens.Typography.roleCaptionOpacity)
+                )
         }
+        .lineLimit(1)
         .padding(.horizontal, CadenceTokens.Space.sm)
         .padding(.bottom, CadenceTokens.Space.sm)
+    }
+}
+
+private struct HistoryInsightMetricRow: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.sm) {
+            Text(value)
+                .font(CadenceTokens.Typography.roleDataPrimaryCompact.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+                .monospacedDigit()
+                .frame(width: 42, alignment: .leading)
+
+            Text(label)
+                .font(CadenceTokens.Typography.roleDataSecondary.weight(.regular))
+                .foregroundStyle(
+                    CadenceTokens.Color.Text.secondary.opacity(CadenceTokens.Typography.roleDataSecondaryOpacity)
+                )
+        }
     }
 }
 

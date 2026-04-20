@@ -119,11 +119,11 @@ struct RhythmDetailSheet: View {
         .onAppear {
             #if DEBUG
             let enginePeak = resolvedInsight.peakHour
-            print("[TimeInsight CONSISTENCY CHECK]")
-            print("surface: Momentum")
-            print("enginePeak: \(enginePeak)")
-            print("consumerHour: \(insight.peakHour)")
-            print("match: \(insight.peakHour == enginePeak)")
+            TimeInsightTraceLogger.logConsistency(
+                surface: "Momentum",
+                enginePeak: enginePeak,
+                consumerHour: insight.peakHour
+            )
             assert(insight.peakHour == enginePeak, "rhythm detail displayed peak hour must equal engine peak")
             #endif
         }

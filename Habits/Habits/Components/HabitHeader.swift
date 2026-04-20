@@ -45,6 +45,7 @@ enum HabitRowGrid {
 
 struct HabitHeader: View {
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
+    @EnvironmentObject private var habitLogService: HabitLogService
 
     let habit: Habit
     let selectedDate: Date
@@ -133,6 +134,10 @@ struct HabitHeader: View {
     }
 
     private var resolvedStreakState: StreakState {
+        if let cached = habitLogService.computedStateByHabitID[habit.id]?.streakState {
+            return cached
+        }
+
         let today = CurrentDayResolver.currentDay(calendar: calendar)
         let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
         let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)

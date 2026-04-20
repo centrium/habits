@@ -6,8 +6,8 @@ final class GraphRecomputeCoordinator {
 
     private var task: Task<Void, Never>?
     private var isRunning = false
-    private var lastScheduledVersion: UUID?
-    private var lastExecutedVersion: UUID?
+    private var lastScheduledVersionByHabitID: [UUID: Int] = [:]
+    private var lastExecutedVersionByHabitID: [UUID: Int] = [:]
     private var observers: [UUID: @MainActor () -> Void] = [:]
 
     private init() {}
@@ -20,12 +20,12 @@ final class GraphRecomputeCoordinator {
         observers.removeValue(forKey: id)
     }
 
-    func schedule(for version: UUID) {
-        if version == lastScheduledVersion || version == lastExecutedVersion {
+    func schedule(for habitID: UUID, version: Int) {
+        if version == lastScheduledVersionByHabitID[habitID] || version == lastExecutedVersionByHabitID[habitID] {
             return
         }
 
-        lastScheduledVersion = version
+        lastScheduledVersionByHabitID[habitID] = version
 
         task?.cancel()
         print("GRAPH: scheduled at \(Date())")
@@ -33,11 +33,11 @@ final class GraphRecomputeCoordinator {
         task = Task {
             try? await Task.sleep(nanoseconds: 50_000_000)
             guard !Task.isCancelled else { return }
-            await execute(version: version)
+            await execute(habitID: habitID, version: version)
         }
     }
 
-    private func execute(version: UUID) async {
+    private func execute(habitID: UUID, version: Int) async {
         guard !isRunning else { return }
         isRunning = true
         print("GRAPH: executed at \(Date())")
@@ -51,7 +51,7 @@ final class GraphRecomputeCoordinator {
             }
         }
 
-        lastExecutedVersion = version
+        lastExecutedVersionByHabitID[habitID] = version
         print("GRAPH: recompute at \(Date())")
     }
 }

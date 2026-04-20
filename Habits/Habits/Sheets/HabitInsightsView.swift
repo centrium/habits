@@ -5,7 +5,6 @@ struct HabitInsightsView: View {
     @Environment(\.colorScheme) private var colorScheme
     let habit: Habit
     let logAnchorDate: Date?
-    @Query(sort: \Habit.orderIndex) private var allHabits: [Habit]
 
     init(habit: Habit, logAnchorDate: Date? = nil) {
         self.habit = habit
@@ -23,7 +22,7 @@ struct HabitInsightsView: View {
         HabitInsightsEngine.insights(
             for: habit,
             logAnchorDate: logAnchorDate,
-            globalLogs: allHabits.flatMap(\.logs),
+            globalLogs: habit.logs,
             calendar: .current,
             weekStartPreference: userSettings.weekStartPreference,
             greigModeEnabled: userSettings.greigModeEnabled,

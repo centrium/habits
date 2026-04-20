@@ -68,6 +68,7 @@ struct HabitsListView: View {
     @State private var globalInsightsSnapshot: GlobalInsightsSnapshot?
     @State private var coachingInsight: TodayCoachingInsight?
     @State private var isIntroExpanded: Bool = TodayIntroDisclosureState.isExpanded()
+    @State private var pendingGlobalInsightsRefreshTask: Task<Void, Never>?
 
     init() {}
 
@@ -242,9 +243,10 @@ struct HabitsListView: View {
             await prefetchRhythmDataForVisibleHabits()
         }
         .task(id: globalInsightsTaskKey) {
-            refreshGlobalInsightsSummary()
+            scheduleGlobalInsightsSummaryRefresh()
         }
         .onDisappear {
+            pendingGlobalInsightsRefreshTask?.cancel()
             flushPendingReorderPersistence()
         }
         .task {
@@ -464,30 +466,20 @@ struct HabitsListView: View {
 
     private var rhythmPrefetchTaskKey: String {
         let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
-        let keyParts = visibleHabits.map { habit in
-            let metricsRevision = habitLogService.metricsRevision(for: habit.id)
-            return "\(habit.id.uuidString)-\(metricsRevision)"
-        }
+        let keyParts = visibleHabits.map(\.id.uuidString)
         return "\(premiumFlag)|\(keyParts.joined(separator: "|"))"
     }
 
     private var insightSelectionTaskKey: String {
         let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
         let currentHour = calculationCalendar.component(.hour, from: appTime.now)
-
-        let parts = visibleHabits.map { habit in
-            let metricsRevision = habitLogService.metricsRevision(for: habit.id)
-            return "\(habit.id.uuidString)-\(metricsRevision)"
-        }
+        let parts = visibleHabits.map(\.id.uuidString)
         return "\(premiumFlag)-\(currentHour)-\(parts.joined(separator: "|"))"
     }
 
     private var globalInsightsTaskKey: String {
         let currentHour = calculationCalendar.component(.hour, from: appTime.now)
-        let parts = habits.map { habit in
-            let metricsRevision = habitLogService.metricsRevision(for: habit.id)
-            return "\(habit.id.uuidString)-\(metricsRevision)"
-        }
+        let parts = habits.map(\.id.uuidString)
         return "\(currentHour)-\(parts.joined(separator: "|"))"
     }
 
@@ -658,7 +650,7 @@ struct HabitsListView: View {
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: momentumHabit,
-            globalLogs: visibleHabits.flatMap(\.logs),
+            globalLogs: momentumHabit.logs,
             isPremium: purchaseService.premiumStatus == .premium,
             now: .now,
             calendar: calculationCalendar
@@ -678,7 +670,6 @@ struct HabitsListView: View {
         let isPremium = purchaseService.premiumStatus == .premium
         let now = appTime.now
         let today = calculationCalendar.startOfDay(for: now)
-        let globalLogs = visibleHabits.flatMap(\.logs)
         let computationEngine = HabitComputationEngine(
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
@@ -688,7 +679,7 @@ struct HabitsListView: View {
             let computedState = computationEngine.compute(
                 habit: habit,
                 logs: habit.logs,
-                globalLogs: globalLogs,
+                globalLogs: habit.logs,
                 now: now
             )
             return TodayInsightCandidate(
@@ -745,16 +736,26 @@ struct HabitsListView: View {
         logTodayTimingTrace()
     }
 
+    private func scheduleGlobalInsightsSummaryRefresh() {
+        pendingGlobalInsightsRefreshTask?.cancel()
+        pendingGlobalInsightsRefreshTask = Task(priority: .background) {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                refreshGlobalInsightsSummary()
+            }
+        }
+    }
+
     private func prefetchRhythmDataForVisibleHabits() async {
         guard purchaseService.premiumStatus != .unknown else { return }
 
         let isPremium = purchaseService.premiumStatus == .premium
-        let globalLogs = visibleHabits.flatMap(\.logs)
         for habit in visibleHabits {
             guard !Task.isCancelled else { return }
             _ = await TimeOfDayPerformanceService.shared.hourlyValues(
                 for: habit,
-                globalLogs: globalLogs,
+                globalLogs: habit.logs,
                 isPremium: isPremium,
                 now: .now,
                 calendar: calculationCalendar
@@ -936,20 +937,21 @@ struct HabitsListView: View {
 
     private func logTodayTimingTrace() {
         #if DEBUG
+        guard TimeInsightTraceLogger.isEnabled else { return }
         guard let snapshot = globalInsightsSnapshot else { return }
         let enginePeak = snapshot.introSummary.peakHour
         let todayMatch = snapshot.introSummary.typicalLoggingTime == humanTime(for: enginePeak)
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Today")
-        print("enginePeak: \(enginePeak)")
-        print("consumerHour: \(enginePeak)")
-        print("match: \(todayMatch)")
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Today",
+            enginePeak: enginePeak,
+            consumerHour: enginePeak
+        )
         let growthConsumerHour = todayInsight?.habit.id == nil ? -1 : enginePeak
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Growth Plan")
-        print("enginePeak: \(enginePeak)")
-        print("consumerHour: \(growthConsumerHour)")
-        print("match: \(growthConsumerHour == enginePeak)")
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Growth Plan",
+            enginePeak: enginePeak,
+            consumerHour: growthConsumerHour
+        )
         assert(todayMatch, "today screen displayed time must equal global engine peakHour")
         #endif
     }

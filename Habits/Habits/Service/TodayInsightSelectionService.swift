@@ -289,11 +289,11 @@ final class TodayInsightSelectionService {
         let enginePeak = rhythm.timeInsight.peakHour
         let consumerHour = rhythm.peakHour
         let match = consumerHour == enginePeak
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Today")
-        print("enginePeak: \(enginePeak)")
-        print("consumerHour: \(consumerHour)")
-        print("match: \(match)")
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Today",
+            enginePeak: enginePeak,
+            consumerHour: consumerHour
+        )
         assert(match, "today screen consumer hour must equal engine peakHour")
         #endif
     }

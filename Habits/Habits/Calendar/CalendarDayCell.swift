@@ -209,7 +209,7 @@ struct CalendarDayCell: View {
         if let indicatorText {
             Text(indicatorText)
                 .id("value-\(indicatorText)")
-                .font(.caption2.weight(.semibold))
+                .font(.caption2.weight(.regular))
                 .foregroundStyle(indicatorForegroundColor)
                 .lineLimit(1)
                 .allowsTightening(true)
@@ -249,8 +249,8 @@ struct CalendarDayCell: View {
                 )
             } else {
                 Text("\(logCount)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .font(.caption2.weight(.regular))
+                    .foregroundStyle(Color.secondary.opacity(0.72))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(
@@ -264,7 +264,7 @@ struct CalendarDayCell: View {
     }
 
     private var indicatorForegroundColor: Color {
-        Color.primary.opacity(0.7)
+        Color.secondary.opacity(0.72)
     }
 
     private var indicatorPlateFill: Color {

@@ -13,7 +13,7 @@ enum ActivityStripStyle {
 }
 
 struct HabitHeatmap: View {
-    private static let snapshotStableVersion = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+    private static let snapshotStableVersion = 0
 
     @EnvironmentObject private var purchaseService: PurchaseService
     @State private var cache = HeatmapMetricsCache()
@@ -132,9 +132,9 @@ struct HabitHeatmap: View {
             guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.unregister(id: graphObserverID)
         }
-        .onChange(of: service.logsVersion) { _, _ in
+        .onChange(of: service.habitVersion(for: habit.id)) { _, newVersion in
             guard usesGraphRecomputeCoordinator else { return }
-            GraphRecomputeCoordinator.shared.schedule(for: service.logsVersion)
+            GraphRecomputeCoordinator.shared.schedule(for: habit.id, version: newVersion)
         }
     }
 
@@ -159,7 +159,7 @@ struct HabitHeatmap: View {
         let cacheKey = HeatmapMetricsCacheKey(
             habitID: habit.id,
             revision: service.metricsRevision(for: habit.id),
-            logsVersion: dailyCountsOverride == nil ? service.logsVersion : Self.snapshotStableVersion,
+            habitVersion: dailyCountsOverride == nil ? service.habitVersion(for: habit.id) : Self.snapshotStableVersion,
             calendarIdentifier: calendar.identifier,
             timeZoneIdentifier: calendar.timeZone.identifier,
             firstWeekday: calendar.firstWeekday,

@@ -263,16 +263,16 @@ struct RhythmCardView: View {
         let enginePeak = resolvedInsight.peakHour
         let displayedHour = enginePeak
         let chartHighlightedHour = resolvedInsight.peakHour
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Detail")
-        print("enginePeak: \(enginePeak)")
-        print("consumerHour: \(displayedHour)")
-        print("match: \(displayedHour == enginePeak)")
-        print("[TimeInsight CONSISTENCY CHECK]")
-        print("surface: Momentum")
-        print("enginePeak: \(enginePeak)")
-        print("consumerHour: \(chartHighlightedHour)")
-        print("match: \(chartHighlightedHour == enginePeak)")
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Detail",
+            enginePeak: enginePeak,
+            consumerHour: displayedHour
+        )
+        TimeInsightTraceLogger.logConsistency(
+            surface: "Momentum",
+            enginePeak: enginePeak,
+            consumerHour: chartHighlightedHour
+        )
         assert(displayedHour == enginePeak, "displayed peak label hour must equal engine peakHour")
         assert(chartHighlightedHour == enginePeak, "chart marker hour must equal engine peakHour")
         #endif

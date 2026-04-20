@@ -3,7 +3,7 @@ import Foundation
 struct HeatmapMetricsCacheKey: Hashable {
     let habitID: UUID
     let revision: Int
-    let logsVersion: UUID
+    let habitVersion: Int
     let calendarIdentifier: Calendar.Identifier
     let timeZoneIdentifier: String
     let firstWeekday: Int
