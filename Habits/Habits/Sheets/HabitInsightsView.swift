@@ -986,7 +986,9 @@ private struct WeeklyRhythmCardView: View {
 
     private var primaryDayID: Int? {
         guard rawMaxScore > 0 else { return nil }
-        return block.days.first(where: { $0.score == rawMaxScore })?.id
+        let maxDays = block.days.filter { $0.score == rawMaxScore }
+        guard maxDays.count == 1 else { return nil }
+        return maxDays.first?.id
     }
 
     private var secondaryDayIDs: Set<Int> {

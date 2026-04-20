@@ -22,12 +22,31 @@ struct RhythmState: Equatable {
     }
 }
 
+enum Weekday: Int, CaseIterable {
+    case sunday = 1
+    case monday = 2
+    case tuesday = 3
+    case wednesday = 4
+    case thursday = 5
+    case friday = 6
+    case saturday = 7
+}
+
+struct WeeklyPattern: Equatable {
+    let recentTopDay: Weekday?
+    let historicalTopDay: Weekday?
+    let weekdayDistribution: [Weekday: Double]
+    let weekdayActiveDayCounts: [Weekday: Int]
+    let sampleSize: Int
+}
+
 struct HabitComputedState: Equatable {
     let identityState: IdentityState
     let streakState: StreakState
     let rhythmState: RhythmState
     let timingInsight: TimingInsight?
     let completionStats: CompletionStats
+    let weeklyPattern: WeeklyPattern
 }
 
 final class HabitComputationEngine {
@@ -77,6 +96,11 @@ final class HabitComputationEngine {
             timingDiagnostics: timingComputation.diagnostics,
             now: now
         )
+        let weeklyPattern = computeWeeklyPattern(
+            logs: normalizedLogs,
+            goalType: habit.goalType,
+            now: now
+        )
 
         let timingInsight: TimingInsight? = {
             guard completionStats.validTimingSamples >= 5 else { return nil }
@@ -120,7 +144,8 @@ final class HabitComputationEngine {
             streakState: streakState,
             rhythmState: rhythmState,
             timingInsight: timingInsight,
-            completionStats: completionStats
+            completionStats: completionStats,
+            weeklyPattern: weeklyPattern
         )
     }
 }
@@ -241,6 +266,137 @@ private extension HabitComputationEngine {
         )
     }
 
+    func computeWeeklyPattern(
+        logs: [HabitLog],
+        goalType: GoalType,
+        now: Date
+    ) -> WeeklyPattern {
+        let today = calendar.startOfDay(for: now)
+        let recentWindowStart = calendar.date(byAdding: .day, value: -13, to: today) ?? today
+        let recentLogs = logs.filter { log in
+            let day = calendar.startOfDay(for: log.effectiveTimestamp)
+            return day >= recentWindowStart && day <= today
+        }
+        let historicalLogs = logs.filter { log in
+            let day = calendar.startOfDay(for: log.effectiveTimestamp)
+            return day <= today
+        }
+
+        let recentStats = weekdayStats(
+            from: recentLogs,
+            goalType: goalType
+        )
+        let historicalStats = weekdayStats(
+            from: historicalLogs,
+            goalType: goalType
+        )
+        let distribution = blendedWeekdayDistribution(from: recentStats)
+
+        return WeeklyPattern(
+            recentTopDay: mostFrequentDay(from: distribution),
+            historicalTopDay: mostFrequentDay(from: blendedWeekdayDistribution(from: historicalStats)),
+            weekdayDistribution: distribution,
+            weekdayActiveDayCounts: recentStats.activeDayCounts,
+            sampleSize: recentStats.sampleSize
+        )
+    }
+
+    func weekdayStats(
+        from logs: [HabitLog],
+        goalType: GoalType
+    ) -> WeekdayStats {
+        let qualifyingLogs = logs.filter { intensityContribution(for: $0, goalType: goalType) > 0 }
+        let activeDayStarts = Set(qualifyingLogs.map { calendar.startOfDay(for: $0.effectiveTimestamp) })
+        let activeDayCounts = weekdayCounts(for: activeDayStarts)
+        let sampleSize = activeDayStarts.count
+        let intensityTotals = qualifyingLogs.reduce(into: [Weekday: Double]()) { result, log in
+            let weekdayNumber = calendar.component(.weekday, from: log.effectiveTimestamp)
+            guard let weekday = Weekday(rawValue: weekdayNumber) else { return }
+            result[weekday, default: 0] += intensityContribution(for: log, goalType: goalType)
+        }
+        return WeekdayStats(
+            activeDayCounts: activeDayCounts,
+            intensityTotals: intensityTotals,
+            sampleSize: sampleSize
+        )
+    }
+
+    func blendedWeekdayDistribution(
+        from stats: WeekdayStats,
+        consistencyWeight: Double = 0.7,
+        intensityWeight: Double = 0.3
+    ) -> [Weekday: Double] {
+        let maxIntensity = max(stats.intensityTotals.values.max() ?? 0, 0)
+        return Weekday.allCases.reduce(into: [:]) { result, weekday in
+            let activeDayCount = stats.activeDayCounts[weekday, default: 0]
+            let activeDayScore: Double = {
+                guard stats.sampleSize > 0 else { return 0 }
+                return Double(activeDayCount) / Double(stats.sampleSize)
+            }()
+            let intensity = stats.intensityTotals[weekday, default: 0]
+            let normalizedIntensity = maxIntensity > 0 ? intensity / maxIntensity : 0
+            result[weekday] = (consistencyWeight * activeDayScore) + (intensityWeight * normalizedIntensity)
+        }
+    }
+
+    func intensityContribution(
+        for log: HabitLog,
+        goalType: GoalType
+    ) -> Double {
+        switch goalType {
+        case .frequency:
+            return Double(max(0, log.frequencyContribution))
+        case .cumulative:
+            return max(0, log.numericValue)
+        }
+    }
+
+    func weekdayCounts(for dayStarts: Set<Date>) -> [Weekday: Int] {
+        dayStarts.reduce(into: [Weekday: Int]()) { result, day in
+            let weekdayNumber = calendar.component(.weekday, from: day)
+            guard let weekday = Weekday(rawValue: weekdayNumber) else { return }
+            result[weekday, default: 0] += 1
+        }
+    }
+
+    func mostFrequentDay(from scores: [Weekday: Double]) -> Weekday? {
+        guard !scores.isEmpty else { return nil }
+
+        let sorted = scores.sorted { lhs, rhs in
+            if lhs.value == rhs.value {
+                return weekdayTieBreakRank(lhs.key) < weekdayTieBreakRank(rhs.key)
+            }
+            return lhs.value > rhs.value
+        }
+
+        guard let best = sorted.first else { return nil }
+        guard best.value > 0 else { return nil }
+        if sorted.count > 1, abs(sorted[1].value - best.value) < 0.000_001 {
+            // No clear winner in this window.
+            return nil
+        }
+        return best.key
+    }
+
+    func weekdayTieBreakRank(_ weekday: Weekday) -> Int {
+        switch weekday {
+        case .monday:
+            return 0
+        case .tuesday:
+            return 1
+        case .wednesday:
+            return 2
+        case .thursday:
+            return 3
+        case .friday:
+            return 4
+        case .saturday:
+            return 5
+        case .sunday:
+            return 6
+        }
+    }
+
     func rawIdentityState(
         completedDays: Set<Date>,
         now: Date
@@ -335,4 +491,10 @@ private extension HabitComputationEngine {
         let next = scores[(hour + 1) % 24]
         return (previous + current + next) / 3.0
     }
+}
+
+private struct WeekdayStats {
+    let activeDayCounts: [Weekday: Int]
+    let intensityTotals: [Weekday: Double]
+    let sampleSize: Int
 }

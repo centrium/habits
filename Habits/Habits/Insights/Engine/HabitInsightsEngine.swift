@@ -22,9 +22,8 @@ private struct CoachingTemplate {
 
 struct HabitInsightsEngine {
     private enum BehaviourInsightsGuard {
-        static let minimumLogs = 20
-        static let minimumWeeks = 3
-        static let neutralMessage = "We’ll start showing behaviour insights once we have a little more data."
+        static let minimumSampleSize = 7
+        static let formingMessage = "Your weekly pattern is still forming."
     }
 
     static func insights(
@@ -75,12 +74,7 @@ struct HabitInsightsEngine {
             metrics: metrics,
             foundation: foundation
         )
-        let behaviourInsightsReady = behaviourInsightsReadiness(
-            for: habit,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference,
-            now: now
-        )
+        let behaviourInsightsReady = computedState.weeklyPattern.sampleSize >= BehaviourInsightsGuard.minimumSampleSize
         let behaviour = behaviourInsightsReady
             ? analysedBehaviour
             : behaviourWithoutPatternSignals(analysedBehaviour)
@@ -136,7 +130,7 @@ struct HabitInsightsEngine {
         )
         let identityState = computedState.identityState
         let weeklyRhythmBlock = weeklyRhythmBlock(
-            for: habit,
+            weeklyPattern: computedState.weeklyPattern,
             calendar: calendar,
             now: now
         )
@@ -267,6 +261,7 @@ struct HabitInsightsEngine {
                 habit: habit,
                 isOpenEnded: isOpenEnded,
                 from: behaviour,
+                weeklyPattern: computedState.weeklyPattern,
                 calendar: calendar,
                 now: now
             ) {
@@ -280,7 +275,7 @@ struct HabitInsightsEngine {
                     HabitInsightsBehaviourBlock(
                         heading: "Behaviour Insights",
                         observations: [],
-                        suggestion: BehaviourInsightsGuard.neutralMessage
+                        suggestion: BehaviourInsightsGuard.formingMessage
                     )
                 )
             )
@@ -780,17 +775,11 @@ struct HabitInsightsEngine {
     }
 
     private static func weeklyRhythmBlock(
-        for habit: Habit,
+        weeklyPattern: WeeklyPattern,
         calendar: Calendar,
         now: Date
     ) -> HabitInsightsWeeklyRhythmBlock? {
-        let today = calendar.startOfDay(for: now)
-        let windowStart = calendar.date(byAdding: .day, value: -83, to: today) ?? today
-        let logs = habit.logs.filter {
-            $0.frequencyContribution > 0 && $0.day >= windowStart && $0.day <= today
-        }
-        guard !logs.isEmpty else { return nil }
-
+        guard weeklyPattern.sampleSize > 0 else { return nil }
         let weekdayOrder = [2, 3, 4, 5, 6, 7, 1]
         let shortLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         let formatter = DateFormatter()
@@ -798,34 +787,23 @@ struct HabitInsightsEngine {
         formatter.locale = calendar.locale ?? .current
         formatter.timeZone = calendar.timeZone
         formatter.setLocalizedDateFormatFromTemplate("EEEE")
-
-        let rawLogsPerWeekday = logs.reduce(into: [Int: Int]()) { partialResult, log in
-            let weekday = calendar.component(.weekday, from: log.effectiveTimestamp)
-            partialResult[weekday, default: 0] += 1
-        }
-
-        let uniqueDaysPerWeekday = logs.reduce(into: [Int: Set<Date>]()) { partialResult, log in
-            let dayStart = calendar.startOfDay(for: log.effectiveTimestamp)
-            let weekday = calendar.component(.weekday, from: dayStart)
-            partialResult[weekday, default: []].insert(dayStart)
-        }
-
-        let maxPossibleScore = max(1, weeksInRange(start: windowStart, end: today, calendar: calendar))
+        let sampleSize = weeklyPattern.sampleSize
         let weekdayScores = weekdayOrder.map { weekday -> Double in
-            let uniqueDays = uniqueDaysPerWeekday[weekday]?.count ?? 0
-            return min(1.0, Double(uniqueDays) / Double(maxPossibleScore))
+            guard let mappedWeekday = Weekday(rawValue: weekday) else { return 0 }
+            return weeklyPattern.weekdayDistribution[mappedWeekday] ?? 0
         }
 
         let smoothedScores = lightlySmoothedWeekdayScores(weekdayScores)
+        let displayScores = minimumVarianceLift(smoothedScores)
 
         #if DEBUG
         if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
             print("[WeeklyRhythm DEBUG]")
             for (index, weekday) in weekdayOrder.enumerated() {
-                let uniqueDays = uniqueDaysPerWeekday[weekday]?.count ?? 0
-                let logsCount = rawLogsPerWeekday[weekday, default: 0]
+                guard let mappedWeekday = Weekday(rawValue: weekday) else { continue }
+                let uniqueDays = weeklyPattern.weekdayActiveDayCounts[mappedWeekday, default: 0]
                 print(
-                    "\(shortLabels[index]): logs=\(logsCount), uniqueDays=\(uniqueDays), score=\(String(format: "%.4f", smoothedScores[index]))"
+                    "\(shortLabels[index]): uniqueDays=\(uniqueDays), score=\(String(format: "%.4f", displayScores[index]))"
                 )
             }
         }
@@ -834,32 +812,22 @@ struct HabitInsightsEngine {
         let days = weekdayOrder.enumerated().map { index, weekday in
             let referenceDate = referenceDateForWeekday(weekday, calendar: calendar, anchor: now)
             let fullName = formatter.string(from: referenceDate)
-            let uniqueDays = uniqueDaysPerWeekday[weekday]?.count ?? 0
+            let mappedWeekday = Weekday(rawValue: weekday)
+            let uniqueDays = mappedWeekday.flatMap { weeklyPattern.weekdayActiveDayCounts[$0] } ?? 0
             return HabitInsightsWeeklyRhythmDay(
                 index: index,
                 dayLabel: shortLabels[index],
                 fullDayLabel: fullName,
                 entries: uniqueDays,
-                score: smoothedScores[index]
+                score: displayScores[index]
             )
         }
 
         return HabitInsightsWeeklyRhythmBlock(
             heading: "Weekly Rhythm",
             days: days,
-            maxPossibleEntries: maxPossibleScore
+            maxPossibleEntries: sampleSize
         )
-    }
-
-    private static func weeksInRange(
-        start: Date,
-        end: Date,
-        calendar: Calendar
-    ) -> Int {
-        let startDay = calendar.startOfDay(for: start)
-        let endDay = calendar.startOfDay(for: end)
-        let elapsedDays = max(0, (calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0) + 1)
-        return Int(ceil(Double(elapsedDays) / 7.0))
     }
 
     private static func lightlySmoothedWeekdayScores(_ rawScores: [Double]) -> [Double] {
@@ -887,6 +855,26 @@ struct HabitInsightsEngine {
             bestIndex = index
         }
         return bestIndex
+    }
+
+    private static func minimumVarianceLift(
+        _ values: [Double],
+        threshold: Double = 0.05
+    ) -> [Double] {
+        guard !values.isEmpty else { return values }
+        guard let minValue = values.min(), let maxValue = values.max() else { return values }
+        let range = maxValue - minValue
+
+        // Keep truly flat distributions flat.
+        guard range > 0 else { return values }
+        guard range < threshold else { return values }
+
+        let mean = values.reduce(0, +) / Double(values.count)
+        let scale = threshold / range
+        return values.map { value in
+            let lifted = mean + ((value - mean) * scale)
+            return min(1.0, max(0.0, lifted))
+        }
     }
 
     private static func valueContribution(
@@ -978,16 +966,41 @@ struct HabitInsightsEngine {
         habit: Habit,
         isOpenEnded: Bool,
         from behaviour: HabitBehaviourSnapshot,
+        weeklyPattern: WeeklyPattern,
         calendar: Calendar,
         now: Date
     ) -> HabitInsightsBehaviourBlock? {
+        guard weeklyPattern.sampleSize >= BehaviourInsightsGuard.minimumSampleSize else {
+            return HabitInsightsBehaviourBlock(
+                heading: "Behaviour Insights",
+                observations: [],
+                suggestion: BehaviourInsightsGuard.formingMessage
+            )
+        }
+
         var observations: [String] = []
-        if let strongest = behaviour.strongestWeekday, let window = behaviour.commonLogWindow {
-            observations.append("You tend to log most often on \(pluralizedWeekday(strongest)) \(windowPlural(window)).")
-        } else if let strongest = behaviour.strongestWeekday {
-            observations.append("You show up best on \(pluralizedWeekday(strongest)).")
+        if let recentTopDay = weeklyPattern.recentTopDay,
+           let historicalTopDay = weeklyPattern.historicalTopDay {
+            let recentName = weekdayName(for: recentTopDay, calendar: calendar)
+            let historicalName = weekdayName(for: historicalTopDay, calendar: calendar)
+            if recentTopDay == historicalTopDay {
+                observations.append("You tend to log most often on \(recentName)s.")
+            } else {
+                observations.append("Recently, \(recentName)s have been your most active day.")
+                observations.append("Overall, \(historicalName)s are where you log most often.")
+            }
+        } else if let historicalTopDay = weeklyPattern.historicalTopDay {
+            let historicalName = weekdayName(for: historicalTopDay, calendar: calendar)
+            observations.append("Recently, your activity has been spread across the week.")
+            observations.append("Overall, \(historicalName)s are where you log most often.")
+        } else if let recentTopDay = weeklyPattern.recentTopDay {
+            let recentName = weekdayName(for: recentTopDay, calendar: calendar)
+            observations.append("Recently, \(recentName)s have been your most active day.")
+            observations.append("Overall, your activity has been spread across the week.")
         } else if let window = behaviour.commonLogWindow {
             observations.append("\(window) is your most consistent logging window.")
+        } else {
+            observations.append("Your activity has been spread across the week.")
         }
 
         if observations.count < 2, let weakest = behaviour.weakestWeekday {
@@ -1146,19 +1159,13 @@ struct HabitInsightsEngine {
         return nil
     }
 
-    private static func windowPlural(_ window: String) -> String {
-        switch window.lowercased() {
-        case "night":
-            return "nights"
-        case "evening":
-            return "evenings"
-        case "morning":
-            return "mornings"
-        case "afternoon":
-            return "afternoons"
-        default:
-            return "\(window.lowercased())s"
-        }
+    private static func weekdayName(
+        for weekday: Weekday,
+        calendar: Calendar
+    ) -> String {
+        let symbols = calendar.weekdaySymbols
+        let index = max(0, min(symbols.count - 1, weekday.rawValue - 1))
+        return symbols[index]
     }
 
     private static func pluralizedWeekday(_ weekday: String) -> String {
@@ -1179,30 +1186,5 @@ struct HabitInsightsEngine {
             patternItems: [],
             retentionItems: []
         )
-    }
-
-    private static func behaviourInsightsReadiness(
-        for habit: Habit,
-        calendar: Calendar,
-        weekStartPreference: WeekStartPreference,
-        now: Date
-    ) -> Bool {
-        let today = calendar.startOfDay(for: now)
-        let qualifyingLogs = habit.logs.filter {
-            $0.frequencyContribution > 0 && $0.day <= today
-        }
-
-        let weekStarts = Set(
-            qualifyingLogs.map { log in
-                WeekBoundaryCalculator.weekInterval(
-                    containing: log.day,
-                    calendar: calendar,
-                    weekStart: weekStartPreference
-                ).start
-            }
-        )
-
-        return qualifyingLogs.count >= BehaviourInsightsGuard.minimumLogs
-            && weekStarts.count >= BehaviourInsightsGuard.minimumWeeks
     }
 }

@@ -520,11 +520,11 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(achievement.progressRatio, 0, accuracy: 0.0001)
     }
 
-    func testBehaviourInsightsShowNeutralMessageWhenLogCountIsBelowMinimumThreshold() {
+    func testBehaviourInsightsShowFormingMessageWhenWeeklySampleIsBelowThreshold() {
         // Given
         let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
         let habit = TestHabitFactory.openEnded(
-            entries: (0..<19).map { offset in
+            entries: (0..<6).map { offset in
                 .init(
                     timestamp: TestDateFactory.addingDays(-offset, to: now, calendar: calendar),
                     value: 1
@@ -546,22 +546,44 @@ final class InsightEngineTests: XCTestCase {
             return XCTFail("Expected behaviour insights card")
         }
         XCTAssertTrue(behaviour.observations.isEmpty)
-        XCTAssertEqual(behaviour.suggestion, "We’ll start showing behaviour insights once we have a little more data.")
+        XCTAssertEqual(behaviour.suggestion, "Your weekly pattern is still forming.")
     }
 
-    func testBehaviourInsightsShowNeutralMessageWhenCoverageIsBelowMinimumWeeksThreshold() {
+    func testWeeklyRhythmUsesRecentTopDayWhenRecentAndHistoricalDiverge() {
         // Given
         let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
-        let entries = (0..<20).map { offset in
-            // Keep completion dates within two Monday-based weeks.
-            let boundedOffset = offset % 13
-            return TestHabitFactory.Entry(
-                timestamp: TestDateFactory.addingDays(-boundedOffset, to: now, calendar: calendar),
-                value: 1
-            )
-        }
+        let recentThursdays = dates(
+            matchingWeekday: 5,
+            count: 4,
+            endingAt: now,
+            minOffset: 0,
+            maxOffset: 13
+        )
+        let recentTuesdays = dates(
+            matchingWeekday: 3,
+            count: 2,
+            endingAt: now,
+            minOffset: 0,
+            maxOffset: 13
+        )
+        let recentFridays = dates(
+            matchingWeekday: 6,
+            count: 1,
+            endingAt: now,
+            minOffset: 0,
+            maxOffset: 13
+        )
+        let historicalSundays = dates(
+            matchingWeekday: 1,
+            count: 6,
+            endingAt: now,
+            minOffset: 14,
+            maxOffset: 180
+        )
         let habit = TestHabitFactory.openEnded(
-            entries: entries,
+            entries: (recentThursdays + recentTuesdays + recentFridays + historicalSundays).map {
+                .init(timestamp: $0, value: 1)
+            },
             calendar: calendar
         )
 
@@ -577,8 +599,103 @@ final class InsightEngineTests: XCTestCase {
         guard let behaviour = behaviourBlock(from: viewModel) else {
             return XCTFail("Expected behaviour insights card")
         }
-        XCTAssertTrue(behaviour.observations.isEmpty)
-        XCTAssertEqual(behaviour.suggestion, "We’ll start showing behaviour insights once we have a little more data.")
+        XCTAssertEqual(behaviour.observations.count, 2)
+        XCTAssertTrue(behaviour.observations[0].contains("Recently"))
+        XCTAssertTrue(behaviour.observations[0].contains("Thursdays"))
+        XCTAssertTrue(behaviour.observations[1].contains("Overall"))
+        XCTAssertTrue(behaviour.observations[1].contains("Sundays"))
+
+        guard let weeklyRhythm = weeklyRhythmBlock(from: viewModel) else {
+            return XCTFail("Expected weekly rhythm card")
+        }
+        let topDay = weeklyRhythm.days.max { lhs, rhs in lhs.entries < rhs.entries }
+        XCTAssertEqual(topDay?.dayLabel, "Thu")
+    }
+
+    func testBehaviourInsightsUsesSingleStatementWhenRecentAndHistoricalTopDaysAlign() {
+        // Given
+        let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
+        let recentSundays = dates(
+            matchingWeekday: 1,
+            count: 3,
+            endingAt: now,
+            minOffset: 0,
+            maxOffset: 13
+        )
+        let recentTuesdays = dates(
+            matchingWeekday: 3,
+            count: 2,
+            endingAt: now,
+            minOffset: 0,
+            maxOffset: 13
+        )
+        let recentThursdays = dates(
+            matchingWeekday: 5,
+            count: 2,
+            endingAt: now,
+            minOffset: 0,
+            maxOffset: 13
+        )
+        let historicalSundays = dates(
+            matchingWeekday: 1,
+            count: 6,
+            endingAt: now,
+            minOffset: 14,
+            maxOffset: 180
+        )
+        let habit = TestHabitFactory.openEnded(
+            entries: (recentSundays + recentTuesdays + recentThursdays + historicalSundays).map {
+                .init(timestamp: $0, value: 1)
+            },
+            calendar: calendar
+        )
+
+        // When
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        // Then
+        guard let behaviour = behaviourBlock(from: viewModel) else {
+            return XCTFail("Expected behaviour insights card")
+        }
+        XCTAssertEqual(behaviour.observations.count, 1)
+        XCTAssertTrue(behaviour.observations[0].contains("most often on Sundays"))
+    }
+
+    func testBehaviourInsightsExplainsRecentSpreadWhenNoRecentTopDayExists() {
+        let now = TestDateFactory.date(2026, 3, 14, hour: 12, calendar: calendar)
+        let recentWeek = (0..<7).compactMap { offset in
+            calendar.date(byAdding: .day, value: -offset, to: now)
+        }
+        let historicalThursdays = dates(
+            matchingWeekday: 5,
+            count: 6,
+            endingAt: now,
+            minOffset: 14,
+            maxOffset: 180
+        )
+        let habit = TestHabitFactory.openEnded(
+            entries: (recentWeek + historicalThursdays).map { .init(timestamp: $0, value: 1) },
+            calendar: calendar
+        )
+
+        let viewModel = HabitInsightsEngine.insights(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .monday,
+            now: now
+        )
+
+        guard let behaviour = behaviourBlock(from: viewModel) else {
+            return XCTFail("Expected behaviour insights card")
+        }
+        XCTAssertEqual(behaviour.observations.count, 2)
+        XCTAssertTrue(behaviour.observations[0].contains("spread across the week"))
+        XCTAssertTrue(behaviour.observations[1].contains("Overall, Thursdays"))
     }
 
     func testBehaviourInsightsUseCompletionDateWhenLogsAreBackfilled() {
@@ -617,7 +734,7 @@ final class InsightEngineTests: XCTestCase {
         }
         XCTAssertFalse(behaviour.observations.isEmpty)
         XCTAssertTrue(behaviour.observations.joined(separator: " ").contains("Mondays"))
-        XCTAssertNotEqual(behaviour.suggestion, "We’ll start showing behaviour insights once we have a little more data.")
+        XCTAssertNotEqual(behaviour.suggestion, "Your weekly pattern is still forming.")
     }
 
     func testInsightsIncludeOverviewMetricsCard() {
@@ -916,6 +1033,15 @@ final class InsightEngineTests: XCTestCase {
         return nil
     }
 
+    private func weeklyRhythmBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsWeeklyRhythmBlock? {
+        for card in viewModel.cards {
+            if case .weeklyRhythm(let block) = card {
+                return block
+            }
+        }
+        return nil
+    }
+
     private func overviewBlock(from viewModel: HabitInsightsViewModel) -> HabitInsightsOverviewBlock? {
         for card in viewModel.cards {
             if case .overview(let block) = card {
@@ -995,5 +1121,25 @@ final class InsightEngineTests: XCTestCase {
             }
         }
         return values.joined(separator: " ")
+    }
+
+    private func dates(
+        matchingWeekday targetWeekday: Int,
+        count: Int,
+        endingAt now: Date,
+        minOffset: Int,
+        maxOffset: Int
+    ) -> [Date] {
+        var result: [Date] = []
+        for offset in minOffset...maxOffset {
+            let candidate = TestDateFactory.addingDays(-offset, to: now, calendar: calendar)
+            if calendar.component(.weekday, from: candidate) == targetWeekday {
+                result.append(candidate)
+                if result.count == count {
+                    return result
+                }
+            }
+        }
+        return result
     }
 }
