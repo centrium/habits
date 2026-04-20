@@ -16,6 +16,7 @@ struct TodayInsight {
 
 struct TodayInsightCandidate {
     let habit: Habit
+    let computedState: HabitComputedState
     let rhythm: HabitRhythm?
     let isCompletedToday: Bool
     let lastCompletedDate: Date?
@@ -64,11 +65,7 @@ final class TodayInsightSelectionService {
 
         if allCompleted {
             let selected = selectForAllCompleted(candidates)
-            let identityState = HabitIdentityStateResolver.resolve(
-                for: selected.candidate.habit,
-                calendar: calendar,
-                now: now
-            )
+            let identityState = selected.candidate.computedState.identityState
             let message = "All set for today. \(selected.candidate.habit.name) is \(stateDescriptor(for: identityState))."
             previousSelection = SelectionState(habitID: selected.candidate.habit.id, score: selected.score, hour: currentHour)
             return TodayInsight(habit: selected.candidate.habit, type: .reinforcement, message: message)
@@ -224,8 +221,10 @@ final class TodayInsightSelectionService {
         now: Date,
         calendar: Calendar
     ) -> TodayInsightType {
+        _ = now
+        _ = calendar
         guard let rhythm = candidate.rhythm else { return .fallback }
-        guard uniqueCompletedDays(for: candidate.habit, now: now, calendar: calendar) >= 5 else {
+        guard candidate.computedState.completionStats.validTimingSamples >= 5 else {
             return .fallback
         }
         guard hasReliableTimingSignal(rhythm) else { return .fallback }
@@ -244,11 +243,12 @@ final class TodayInsightSelectionService {
         now: Date,
         calendar: Calendar
     ) -> String {
+        _ = now
+        _ = calendar
         guard let rhythm = candidate.rhythm else {
             return "Keep momentum going with \(candidate.habit.name)"
         }
-        let uniqueDays = uniqueCompletedDays(for: candidate.habit, now: now, calendar: calendar)
-        if uniqueDays < 5 {
+        if candidate.computedState.completionStats.validTimingSamples < 5 {
             let output = "Timing is still forming for \(candidate.habit.name). Keep showing up to build a reliable timing signal."
             logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
             return output
@@ -317,25 +317,6 @@ final class TodayInsightSelectionService {
         case .rebuilding:
             return "getting back into it"
         }
-    }
-
-    private func uniqueCompletedDays(
-        for habit: Habit,
-        now: Date,
-        calendar: Calendar
-    ) -> Int {
-        let today = calendar.startOfDay(for: now)
-        let candidateDays = Set(
-            habit.logs.compactMap { log -> Date? in
-                let day = calendar.startOfDay(for: log.effectiveTimestamp)
-                guard day <= today else { return nil }
-                return day
-            }
-        )
-        let streakService = StreakService(calendar: calendar, weekStartPreference: .system)
-        return candidateDays.filter { day in
-            streakService.isDayComplete(goal: habit, on: day)
-        }.count
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {

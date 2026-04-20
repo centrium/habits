@@ -59,6 +59,11 @@ enum IdentityStateEngine {
         let safeUniqueDays = max(uniqueDays, 0)
         let safeActiveDaysLast14 = max(activeDaysLast14, 0)
 
+        // Identity invariants:
+        // Start: < 3 unique completed days
+        // Build: >= 3 unique completed days
+        // Steady: >= 7 unique completed days
+        // Strong: >= 14 unique completed days
         if safeUniqueDays < 3 {
             return .start
         }
@@ -68,7 +73,9 @@ enum IdentityStateEngine {
         if safeUniqueDays < 14 {
             return HabitState.min(rawState, .steady)
         }
-        if safeActiveDaysLast14 < 10 {
+
+        // Recency safeguard prevents stale activity from remaining "strong".
+        if safeActiveDaysLast14 < 3 {
             return HabitState.min(rawState, .steady)
         }
         return rawState
@@ -368,6 +375,15 @@ enum HabitStateResolver {
         weekStartPreference: WeekStartPreference = .system,
         now: Date = .now
     ) -> HabitStateModel {
+        let computedState = HabitComputationEngine(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: globalLogs.isEmpty ? habit.logs : globalLogs,
+            now: now
+        )
         let normalizedLogs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
         let consistency = HabitInsightsService(calendar: calendar).snapshot(
             for: habit,
@@ -385,19 +401,8 @@ enum HabitStateResolver {
             calendar: calendar,
             now: now
         )
-        let streak = StreakStateEngine(
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ).streakState(for: habit, referenceDate: now)
-        let streakState = streakLabel(for: streak)
-        let timingSummary = TimeOfDayPerformanceService.peakTimingSummary(
-            habitLogs: habit.logs,
-            globalLogs: globalLogs.isEmpty ? habit.logs : globalLogs,
-            habitName: habit.name,
-            habitType: habit.goalType,
-            now: now,
-            calendar: calendar
-        )
+        let streakState = streakLabel(for: computedState.streakState)
+        let timingSummary = computedState.timingInsight
         let timingConfidence = timingConfidence(
             from: timingSummary?.confidence ?? 0,
             hasSummary: timingSummary != nil,
@@ -405,24 +410,13 @@ enum HabitStateResolver {
             uniqueActiveDays: timingSummary?.uniqueActiveDays ?? 0
         )
         let strongestTime = timingSummary.map { humanTime(for: $0.peakHour) }
-        let rawState = deriveState(
-            consistency: consistency,
-            habitStrength: habitStrength,
-            risk: risk,
-            streakState: streakState
-        )
         let eligibility = IdentityStateEngine.identityEligibility(
             for: habit,
             calendar: calendar,
             weekStartPreference: weekStartPreference,
             now: now
         )
-        let state = IdentityStateEngine.gatedIdentityState(
-            rawState: rawState,
-            totalLogs: eligibility.totalLogs,
-            uniqueDays: eligibility.uniqueDays,
-            activeDaysLast14: eligibility.activeDaysLast14
-        )
+        let state = computedState.identityState.habitState
 
         return HabitStateModel(
             state: state,
@@ -566,12 +560,14 @@ enum HabitIdentityStateResolver {
         now: Date = .now,
         windowDays: Int = 7
     ) -> HabitIdentityState {
-        _ = windowDays
-        return HabitStateResolver.resolve(
-            for: habit,
-            calendar: calendar,
+        let computedState = HabitComputationEngine(calendar: calendar).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: habit.logs,
             now: now
-        ).state.identityState
+        )
+        _ = windowDays
+        return computedState.identityState
     }
 
     static func recentSnapshot(
@@ -583,13 +579,13 @@ enum HabitIdentityStateResolver {
         let normalizedWindow = max(1, windowDays)
         let today = calendar.startOfDay(for: now)
         let earliest = calendar.date(byAdding: .day, value: -(normalizedWindow - 1), to: today) ?? today
-        let completedDays = IdentityStateEngine.completedDays(
-            for: habit,
-            calendar: calendar,
-            weekStartPreference: .system,
+        let computedState = HabitComputationEngine(calendar: calendar).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: habit.logs,
             now: now
         )
-        let eligibility = IdentityStateEngine.identityEligibility(
+        let completedDays = IdentityStateEngine.completedDays(
             for: habit,
             calendar: calendar,
             weekStartPreference: .system,
@@ -598,21 +594,16 @@ enum HabitIdentityStateResolver {
         let recentCompletedDayCount = completedDays.filter { $0 >= earliest && $0 <= today }.count
         let hasRecentData = recentCompletedDayCount > 0
         let completionRate = Double(recentCompletedDayCount) / Double(normalizedWindow)
-        let resolvedState = HabitStateResolver.resolve(
-            for: habit,
-            calendar: calendar,
-            now: now
-        ).state.identityState
 
         return HabitIdentityStateSnapshot(
-            state: resolvedState,
+            state: computedState.identityState,
             completionRate: completionRate,
             activeDays: recentCompletedDayCount,
             windowDays: normalizedWindow,
             hasRecentData: hasRecentData,
-            totalLogs: eligibility.totalLogs,
-            uniqueDays: eligibility.uniqueDays,
-            activeDaysLast14: eligibility.activeDaysLast14
+            totalLogs: computedState.completionStats.totalLogs,
+            uniqueDays: computedState.completionStats.uniqueCompletedDays,
+            activeDaysLast14: computedState.completionStats.recentActiveDays
         )
     }
 }

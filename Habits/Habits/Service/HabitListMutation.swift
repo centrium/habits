@@ -8,16 +8,21 @@ func mapToWidgetHabits(
     calendar: Calendar = .current,
     weekStartPreference: WeekStartPreference = .system
 ) -> [WidgetHabit] {
-    habits.map { habit in
+    let globalLogs = habits.flatMap(\.logs)
+    let computationEngine = HabitComputationEngine(
+        calendar: calendar,
+        weekStartPreference: weekStartPreference
+    )
+    return habits.map { habit in
+        let computedState = computationEngine.compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: globalLogs,
+            now: referenceDate
+        )
         let widgetGoalType = habit.widgetGoalTypeForWidget
         let hasActivityToday = !habit.logs(on: referenceDate, calendar: calendar).isEmpty
-        let identitySnapshot = HabitIdentityStateResolver.recentSnapshot(
-            for: habit,
-            calendar: calendar,
-            now: referenceDate,
-            windowDays: 7
-        )
-        let resolvedIdentityState = widgetIdentityState(from: identitySnapshot.state)
+        let resolvedIdentityState = widgetIdentityState(from: computedState.identityState)
         let identityOutput = CadenceLanguage.identityOutput(
             for: habit,
             date: referenceDate,
@@ -40,11 +45,7 @@ func mapToWidgetHabits(
                 calendar: calendar,
                 weekStartPreference: weekStartPreference
             ),
-            streak: habit.currentStreak(
-                referenceDate: referenceDate,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            ),
+            streak: computedState.streakState.currentStreak,
             goalType: widgetGoalType,
             progress: mappedProgress,
             hasActivityToday: hasActivityToday,

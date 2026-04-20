@@ -135,10 +135,15 @@ private extension GlobalInsightsService {
         now: Date
     ) -> HabitMetrics {
         let insightsService = HabitInsightsService(calendar: calendar)
-        let streakState = StreakStateEngine(
+        let computedState = HabitComputationEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        ).streakState(for: habit, referenceDate: now)
+        ).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: habit.logs,
+            now: now
+        )
         let progressRatio = habit.progress(
             for: now,
             calendar: calendar,
@@ -148,7 +153,7 @@ private extension GlobalInsightsService {
 
         return HabitMetrics(
             habit: habit,
-            identityState: HabitIdentityStateResolver.resolve(for: habit, calendar: calendar, now: now),
+            identityState: computedState.identityState,
             consistency: insightsService.snapshot(for: habit, now: now).consistency,
             riskScore: PerformanceSignalsCalculator.habitRiskScore(
                 for: habit,
@@ -156,8 +161,8 @@ private extension GlobalInsightsService {
                 now: now
             ),
             progressRatio: progressRatio,
-            currentStreak: streakState.currentStreak,
-            streakStatus: streakState.status,
+            currentStreak: computedState.streakState.currentStreak,
+            streakStatus: computedState.streakState.status,
             completedDays: completedDays
         )
     }

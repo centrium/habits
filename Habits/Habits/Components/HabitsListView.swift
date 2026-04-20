@@ -678,10 +678,22 @@ struct HabitsListView: View {
         let isPremium = purchaseService.premiumStatus == .premium
         let now = appTime.now
         let today = calculationCalendar.startOfDay(for: now)
+        let globalLogs = visibleHabits.flatMap(\.logs)
+        let computationEngine = HabitComputationEngine(
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
 
         let candidates = visibleHabits.map { habit in
-            TodayInsightCandidate(
+            let computedState = computationEngine.compute(
                 habit: habit,
+                logs: habit.logs,
+                globalLogs: globalLogs,
+                now: now
+            )
+            return TodayInsightCandidate(
+                habit: habit,
+                computedState: computedState,
                 rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
                 isCompletedToday: habit.isComplete(
                     for: today,
@@ -692,11 +704,7 @@ struct HabitsListView: View {
                     for: habit,
                     isPremium: isPremium
                 ),
-                streak: habit.displayStreak(
-                    referenceDate: now,
-                    calendar: calculationCalendar,
-                    weekStartPreference: userSettings.weekStartPreference
-                )
+                streak: computedState.streakState.currentStreak
             )
         }
 

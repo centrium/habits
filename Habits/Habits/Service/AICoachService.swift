@@ -122,6 +122,8 @@ final class AICoachService {
         - The strongest time window represents where the habit most reliably occurs and must be treated as a positive anchor, not a weakness
         - Do not contradict the provided signals
         - Do not invent or infer times that are not explicitly provided
+        - Do not infer behaviour beyond provided state
+        - Do not upgrade identity language beyond the provided State
         - Use natural verbs that match real behaviour (e.g. "happens", "shows up", "occurs")
         - Avoid artificial verbs like "test", "execute", "perform"
         - Avoid generic motivational lines

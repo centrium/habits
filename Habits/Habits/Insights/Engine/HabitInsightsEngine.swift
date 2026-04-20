@@ -51,19 +51,21 @@ struct HabitInsightsEngine {
             weekStartPreference: weekStartPreference,
             now: now
         )
-
-        let streakSnapshot = snapshot(
-            for: habit,
-            anchorDate: now,
-            respectCreatedAtBoundary: true,
-            calendar: calendar,
-            weekStartPreference: weekStartPreference,
-            now: now
-        ).streak
-        let streakState = StreakStateEngine(
+        let computedState = HabitComputationEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
-        ).streakState(for: habit, referenceDate: now)
+        ).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: globalLogs.isEmpty ? habit.logs : globalLogs,
+            now: now
+        )
+
+        let streakSnapshot = Snapshot.Streak(
+            current: computedState.streakState.currentStreak,
+            longest: computedState.streakState.longestStreak
+        )
+        let streakState = computedState.streakState
 
         let metrics = MetricsCalculator.calculate(
             foundation: foundation,
@@ -132,13 +134,7 @@ struct HabitInsightsEngine {
             statusText: statusText,
             now: now
         )
-        let identitySnapshot = HabitIdentityStateResolver.recentSnapshot(
-            for: habit,
-            calendar: calendar,
-            now: now,
-            windowDays: 7
-        )
-        let identityState = identitySnapshot.state
+        let identityState = computedState.identityState
         let weeklyRhythmBlock = weeklyRhythmBlock(
             for: habit,
             calendar: calendar,

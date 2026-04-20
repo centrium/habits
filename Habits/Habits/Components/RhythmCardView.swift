@@ -7,6 +7,7 @@ struct RhythmCardView: View {
     let isPremium: Bool
     let data: [HourValue]
     let rhythm: HabitRhythm?
+    let computedState: HabitComputedState?
     let stateModel: HabitStateModel?
     let identitySnapshot: HabitIdentityStateSnapshot?
     let habit: Habit
@@ -15,6 +16,28 @@ struct RhythmCardView: View {
 
     @State private var selectedHour: Int?
     @State private var isTimingStrengthInfoPresented = false
+
+    init(
+        isPremium: Bool,
+        data: [HourValue],
+        rhythm: HabitRhythm?,
+        computedState: HabitComputedState? = nil,
+        stateModel: HabitStateModel?,
+        identitySnapshot: HabitIdentityStateSnapshot?,
+        habit: Habit,
+        onUnlock: (() -> Void)? = nil,
+        onOpen: (() -> Void)? = nil
+    ) {
+        self.isPremium = isPremium
+        self.data = data
+        self.rhythm = rhythm
+        self.computedState = computedState
+        self.stateModel = stateModel
+        self.identitySnapshot = identitySnapshot
+        self.habit = habit
+        self.onUnlock = onUnlock
+        self.onOpen = onOpen
+    }
 
     private var resolvedInsight: TimeInsightResult {
         if let existing = rhythm?.timeInsight {
@@ -130,7 +153,10 @@ struct RhythmCardView: View {
     }
 
     private var lowDataTimingGateEnabled: Bool {
-        (identitySnapshot?.uniqueDays ?? 0) < 5
+        if let computedState {
+            return computedState.completionStats.validTimingSamples < 5
+        }
+        return (identitySnapshot?.uniqueDays ?? 0) < 5
     }
 
     private var lowDataTimingWeight: Bool {

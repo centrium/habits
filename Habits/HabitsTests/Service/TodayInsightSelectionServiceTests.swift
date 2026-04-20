@@ -140,6 +140,15 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
 
         return TodayInsightCandidate(
             habit: habit,
+            computedState: HabitComputationEngine(
+                calendar: TestDateFactory.utcCalendar,
+                weekStartPreference: .system
+            ).compute(
+                habit: habit,
+                logs: habit.logs,
+                globalLogs: habit.logs,
+                now: now
+            ),
             rhythm: rhythm,
             isCompletedToday: false,
             lastCompletedDate: nil,

@@ -458,8 +458,9 @@ struct HabitDetailSheet: View {
     ) -> some View {
         let sectionPadding = CadenceTokens.Space.lg
         let accent = CadenceTokens.Color.accent(for: habit)
+        let computedState = self.computedState()
         let stateModel = frozenStateModel ?? habitStateModel()
-        let identityState = identityStateSummary()
+        let identityState = identityStateSummary(from: computedState)
         let heroStatus = CadenceLanguage.shortLabel(for: stateModel.state)
         let logCount = habit.logs.count
         let isLowDataActivityState = logCount == 0
@@ -612,6 +613,7 @@ struct HabitDetailSheet: View {
                             for: habit,
                             isPremium: purchaseService.premiumStatus == .premium
                         ),
+                        computedState: computedState,
                         stateModel: stateModel,
                         identitySnapshot: identityState,
                         habit: habit,
@@ -809,12 +811,47 @@ struct HabitDetailSheet: View {
         return "Logging for \(shortDate)"
     }
 
-    private func identityStateSummary() -> HabitIdentityStateSnapshot {
-        HabitIdentityStateResolver.recentSnapshot(
-            for: habit,
+    private func computedState(now: Date = Date()) -> HabitComputedState {
+        HabitComputationEngine(
             calendar: calculationCalendar,
-            now: Date(),
-            windowDays: 7
+            weekStartPreference: userSettings.weekStartPreference
+        ).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: allHabitsSnapshot().flatMap(\.logs),
+            now: now
+        )
+    }
+
+    private func identityStateSummary(from computedState: HabitComputedState? = nil) -> HabitIdentityStateSnapshot {
+        let resolvedState = computedState ?? self.computedState()
+        let normalizedWindow = 7
+        let today = calculationCalendar.startOfDay(for: Date())
+        let earliest = calculationCalendar.date(byAdding: .day, value: -(normalizedWindow - 1), to: today) ?? today
+        let candidateDays = Set(
+            habit.logs.compactMap { log -> Date? in
+                let day = calculationCalendar.startOfDay(for: log.effectiveTimestamp)
+                guard day <= today else { return nil }
+                return day
+            }
+        )
+        let streakService = StreakService(
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        )
+        let completedDays = Set(candidateDays.filter { day in
+            streakService.isDayComplete(goal: habit, on: day)
+        })
+        let activeDays = completedDays.filter { $0 >= earliest && $0 <= today }.count
+        return HabitIdentityStateSnapshot(
+            state: resolvedState.identityState,
+            completionRate: Double(activeDays) / Double(normalizedWindow),
+            activeDays: activeDays,
+            windowDays: normalizedWindow,
+            hasRecentData: activeDays > 0,
+            totalLogs: resolvedState.completionStats.totalLogs,
+            uniqueDays: resolvedState.completionStats.uniqueCompletedDays,
+            activeDaysLast14: resolvedState.completionStats.recentActiveDays
         )
     }
 
@@ -1380,19 +1417,47 @@ struct HabitDetailSheet: View {
     }
 
     private func buildAICoachInput() -> AICoachInput {
-        let stateModel = frozenStateModel ?? habitStateModel(now: appTime.now)
+        let resolvedComputedState = computedState(now: appTime.now)
+        let resolvedIdentityState = resolvedComputedState.identityState.habitState
+        let timingConfidence: TimingConfidence = {
+            guard let timing = resolvedComputedState.timingInsight else {
+                return .low
+            }
+            switch timing.confidence {
+            case ..<0.35:
+                return .low
+            case ..<0.75:
+                return .medium
+            default:
+                return .high
+            }
+        }()
+        let strongestTime = resolvedComputedState.timingInsight.map { humanTime(for: $0.peakHour) }
+        let streakLabel: String = {
+            let streak = resolvedComputedState.streakState
+            guard streak.currentStreak > 0 else { return "forming" }
+            switch streak.status {
+            case .safe:
+                return "\(streak.currentStreak)-period streak"
+            case .atRisk:
+                return "\(streak.currentStreak)-period streak at risk"
+            case .broken:
+                return "streak broken"
+            }
+        }()
+
         return AICoachInput(
             habitName: habit.name,
             recentLogs: recentLogsSummary(),
-            state: stateModel.state,
-            timingConfidence: stateModel.timingConfidence,
-            strongestTime: stateModel.strongestTime,
-            weakestTime: weakestTimeWindow(),
-            streakState: stateModel.streakState,
+            state: resolvedIdentityState,
+            timingConfidence: timingConfidence,
+            strongestTime: strongestTime,
+            weakestTime: nil,
+            streakState: streakLabel,
             identity: userDefinedIdentityText,
             stacking: guidancePattern()?.description,
             todayStatus: BehaviourCopyFormatter.dailyStatus(isDoneToday: hasActivityToday()),
-            behaviourSummary: behaviourSummary(for: stateModel.state)
+            behaviourSummary: behaviourSummary(for: resolvedIdentityState)
         )
     }
 

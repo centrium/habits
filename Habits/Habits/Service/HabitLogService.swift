@@ -226,6 +226,7 @@ final class HabitLogService: ObservableObject {
     private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
     private let cueInsightService: CueInsightService
     @Published private(set) var logsVersion: UUID = UUID()
+    @Published private(set) var computedStateByHabitID: [UUID: HabitComputedState] = [:]
     @Published private(set) var lastLogUserActionAt: Date?
 
     init(
@@ -263,6 +264,7 @@ final class HabitLogService: ObservableObject {
     }
 
     private func saveAndPlayHaptic(for habit: Habit, referenceDate: Date, wasComplete: Bool) {
+        publishComputedState(for: habit, referenceDate: referenceDate)
         schedulePersistAndReflectionSync(referenceDate: referenceDate)
 
         let isComplete = habit.isComplete(for: referenceDate, calendar: calendar)
@@ -395,6 +397,21 @@ final class HabitLogService: ObservableObject {
         MainActor.assumeIsolated {
             uiStateStore.clearIfPresent(habitId: habitID, date: day)
         }
+    }
+
+    private func publishComputedState(for habit: Habit, referenceDate: Date) {
+        let allHabits = (try? modelContext.fetch(FetchDescriptor<Habit>())) ?? [habit]
+        let globalLogs = allHabits.flatMap(\.logs)
+        let state = HabitComputationEngine(
+            calendar: calendar,
+            weekStartPreference: .system
+        ).compute(
+            habit: habit,
+            logs: habit.logs,
+            globalLogs: globalLogs,
+            now: referenceDate
+        )
+        computedStateByHabitID[habit.id] = state
     }
 }
 
