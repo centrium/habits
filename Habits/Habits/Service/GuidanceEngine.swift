@@ -545,7 +545,7 @@ enum GuidanceEngine {
 
         case .atRisk:
             return [
-                template("risk-1", "You haven’t completed this today", atRiskNudge(for: input)),
+                template("risk-1", "You haven’t done this today", atRiskNudge(for: input)),
                 template("risk-2", "Today’s nearly gone", "A quick session today keeps your rhythm"),
                 template("risk-3", "You’re running out of time today", "Keep it simple and get it done"),
                 template("risk-4", "Even a small effort counts today", "A short check-in before the day ends keeps this moving")

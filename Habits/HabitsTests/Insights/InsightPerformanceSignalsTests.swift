@@ -20,7 +20,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         )
 
         XCTAssertEqual(state, .strong)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit has a strong rhythm")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is locked in and part of you.")
     }
 
     func testIdentityStateIsRebuildingWhenPatternIsBroken() {
@@ -38,7 +38,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         )
 
         XCTAssertEqual(state, .rebuilding)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is getting back on track")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is getting back into it.")
     }
 
     func testIdentityStateIsSteadyForModerateLongTermConsistency() {
@@ -56,7 +56,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         )
 
         XCTAssertEqual(state, .steady)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is staying consistent")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is consistent and reliable.")
     }
 
     func testHabitRiskIsLowWithRecentLogsAndHighCompletion() {
@@ -230,7 +230,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertLessThan(score, 0.75)
         XCTAssertEqual(
             PerformanceSignalsCalculator.strengthExplanation(for: score),
-            "This habit is becoming a stable part of your routine."
+            "This habit is becoming a reliable part of your routine."
         )
     }
 

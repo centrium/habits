@@ -65,7 +65,7 @@ final class AICoachService {
             streakState: input.streakState.isEmpty ? "forming" : input.streakState,
             identity: input.identity,
             stacking: input.stacking,
-            todayStatus: input.todayStatus.isEmpty ? "not completed yet" : input.todayStatus,
+            todayStatus: input.todayStatus.isEmpty ? "Not yet today" : input.todayStatus,
             behaviourSummary: input.behaviourSummary.isEmpty ? "Routine is still forming." : input.behaviourSummary
         )
     }
@@ -128,9 +128,15 @@ final class AICoachService {
         - Avoid empty praise and filler
         - Use the phrase "strongest window" when mentioning timing
         - Match tone to State:
-          - STRONG = confident, stable, reinforcing
+          - STRONG = confident, reinforcing
           - BUILD/START = exploratory
-        
+        - Never describe the habit as stable, strong, or consistent unless State is STEADY or STRONG
+        - Use state language:
+          - START: "forming" or "early stage"
+          - BUILD: "building" or "taking shape"
+          - STEADY: "consistent"
+          - STRONG: "locked in"
+
         State handling:
         - The State represents the user’s identity and is the primary truth
         - If State is START:
@@ -140,10 +146,10 @@ final class AICoachService {
           - Reinforce repetition and early consistency
           - Keep guidance light and supportive
         - If State is STEADY:
-          - Treat behaviour as forming into a routine
-          - Encourage stabilisation
-        - If State is STRONG:
           - Treat behaviour as consistent and reliable
+          - Encourage reinforcement
+        - If State is STRONG:
+          - Treat behaviour as locked in
           - Use confident, reinforcing language
         - If State is SLIP:
           - Acknowledge drop-off without judgment

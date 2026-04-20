@@ -110,7 +110,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .strong))
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: HabitIdentityState.strong))
         XCTAssertTrue(insight?.body?.contains("7 of the last 8 days") ?? false)
         XCTAssertTrue(insight?.body?.contains("7-day streak") ?? false)
         XCTAssertTrue(insight?.body?.contains("Log today to keep this routine steady.") ?? false)
@@ -139,7 +139,7 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .strong))
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: HabitIdentityState.strong))
         XCTAssertEqual(insight?.confidence, .high)
     }
 

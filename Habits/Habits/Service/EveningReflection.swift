@@ -33,10 +33,10 @@ enum EveningReflection {
     static let defaultMinute = 0
 
     static let previewMessages: [String] = [
-        "You haven't logged any habits today.",
+        "No check-ins yet today.",
         "Nice progress today.",
         "Just one habit left today.",
-        "Everything completed today. Nice work."
+        "Everything done today. Nice work."
     ]
 
     static func isAllowed(hour: Int, minute: Int) -> Bool {
@@ -101,14 +101,14 @@ enum EveningReflection {
         if progress.completedHabitsToday == 0 {
             return EveningReflectionContent(
                 title: title,
-                body: "You haven't logged any habits today.\nTomorrow is another opportunity."
+                body: "No check-ins yet today.\nTomorrow is another opportunity."
             )
         }
 
         if progress.remainingHabits == 0 {
             return EveningReflectionContent(
                 title: title,
-                body: "Everything completed today.\nWell done."
+                body: "Everything done today.\nWell done."
             )
         }
 

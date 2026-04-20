@@ -10,8 +10,14 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
 
     @MainActor
     func testMessageShowsTodayBestTimeWhenPeakIsAhead() {
-        let candidate = makeCandidate(peakHour: 18, confidence: 0.9, uniqueEventCount: 24)
         let now = dateAtHour(15)
+        let candidate = makeCandidate(
+            peakHour: 18,
+            confidence: 0.9,
+            uniqueEventCount: 24,
+            now: now,
+            uniqueCompletedDays: 6
+        )
 
         let insight = TodayInsightSelectionService.shared.selectInsight(
             from: [candidate],
@@ -24,8 +30,14 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
 
     @MainActor
     func testMessageShowsLaterInDayWhenPeakHasPassed() {
-        let candidate = makeCandidate(peakHour: 11, confidence: 0.9, uniqueEventCount: 24)
         let now = dateAtHour(15)
+        let candidate = makeCandidate(
+            peakHour: 11,
+            confidence: 0.9,
+            uniqueEventCount: 24,
+            now: now,
+            uniqueCompletedDays: 6
+        )
 
         let insight = TodayInsightSelectionService.shared.selectInsight(
             from: [candidate],
@@ -38,8 +50,14 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
 
     @MainActor
     func testMessageUsesSoftWindowWhenConfidenceIsLow() {
-        let candidate = makeCandidate(peakHour: 21, confidence: 0.2, uniqueEventCount: 4)
         let now = dateAtHour(10)
+        let candidate = makeCandidate(
+            peakHour: 21,
+            confidence: 0.2,
+            uniqueEventCount: 4,
+            now: now,
+            uniqueCompletedDays: 6
+        )
 
         let insight = TodayInsightSelectionService.shared.selectInsight(
             from: [candidate],
@@ -52,8 +70,14 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
 
     @MainActor
     func testMessageUsesMediumConfidenceLanguage() {
-        let candidate = makeCandidate(peakHour: 21, confidence: 0.6, uniqueEventCount: 8)
         let now = dateAtHour(10)
+        let candidate = makeCandidate(
+            peakHour: 21,
+            confidence: 0.6,
+            uniqueEventCount: 8,
+            now: now,
+            uniqueCompletedDays: 6
+        )
 
         let insight = TodayInsightSelectionService.shared.selectInsight(
             from: [candidate],
@@ -64,8 +88,46 @@ final class TodayInsightSelectionServiceTests: XCTestCase {
         XCTAssertEqual(insight?.message, "Often around 9PM for Reading")
     }
 
-    private func makeCandidate(peakHour: Int, confidence: Double, uniqueEventCount: Int) -> TodayInsightCandidate {
-        let habit = TestHabitFactory.frequency(name: "Reading")
+    @MainActor
+    func testMessageForLowDataForcesTimingStillForming() {
+        let now = dateAtHour(10)
+        let candidate = makeCandidate(
+            peakHour: 21,
+            confidence: 0.9,
+            uniqueEventCount: 24,
+            now: now,
+            uniqueCompletedDays: 2
+        )
+
+        let insight = TodayInsightSelectionService.shared.selectInsight(
+            from: [candidate],
+            now: now,
+            calendar: TestDateFactory.utcCalendar
+        )
+
+        XCTAssertEqual(
+            insight?.message,
+            "Timing is still forming for Reading. Keep showing up to build a reliable timing signal."
+        )
+    }
+
+    private func makeCandidate(
+        peakHour: Int,
+        confidence: Double,
+        uniqueEventCount: Int,
+        now: Date,
+        uniqueCompletedDays: Int
+    ) -> TodayInsightCandidate {
+        let entries: [TestHabitFactory.Entry] = (0..<max(uniqueCompletedDays, 0)).map { offset in
+            TestHabitFactory.entry(
+                on: TestDateFactory.addingDays(-offset, to: now, calendar: TestDateFactory.utcCalendar)
+            )
+        }
+        let habit = TestHabitFactory.frequency(
+            name: "Reading",
+            entries: entries,
+            calendar: TestDateFactory.utcCalendar
+        )
         let rhythm = HabitRhythm(
             peakHour: peakHour,
             dipStart: 14,

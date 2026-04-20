@@ -136,7 +136,7 @@ private extension GreigInsightService {
         guard let projectedTotal = projection.projectedTotal,
               let dailyAverage = projection.dailyAverage else {
             let projectionContext = "Projection needs more data for \(goal.period.relativeLabel)"
-            let body = "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, so there's not enough behaviour to project yet."
+            let body = "\(behaviourWindowLine(completedDays: projection.behaviourCompletedDays, windowDays: projection.behaviourWindowDays)), so there is not enough pattern yet to project."
             return GreigInsight(
                 title: title,
                 body: joinedSentences(projectionContext, body),
@@ -190,7 +190,7 @@ private extension GreigInsightService {
         guard let projectedTotal = projection.projectedTotal,
               let dailyAverage = projection.dailyAverage else {
             let projectionContext = "Projection needs more data for \(goal.period.relativeLabel)"
-            let body = "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, so there's not enough behaviour to project yet."
+            let body = "\(behaviourWindowLine(completedDays: projection.behaviourCompletedDays, windowDays: projection.behaviourWindowDays)), so there is not enough pattern yet to project."
             return GreigInsight(
                 title: title,
                 body: joinedSentences(projectionContext, body),
@@ -238,16 +238,20 @@ private extension GreigInsightService {
         let title = CadenceLanguage.shortLabel(for: state)
 
         let evidence: String = {
+            let behaviourLine = behaviourWindowLine(
+                completedDays: projection.behaviourCompletedDays,
+                windowDays: projection.behaviourWindowDays
+            )
             switch state {
             case .strong:
-                return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, including a \(max(streak, 1))-day streak."
+                return "\(behaviourLine), with a \(max(streak, 1))-day streak."
             case .steady:
-                return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days and kept a steady routine."
+                return "\(behaviourLine), and the routine is steady."
             case .building:
                 if streak > 1 {
-                    return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days, including a \(streak)-day streak."
+                    return "\(behaviourLine), with a \(streak)-day streak."
                 }
-                return "You've completed \(projection.behaviourCompletedDays) of the last \(projection.behaviourWindowDays) days."
+                return behaviourLine
             case .slipping:
                 return "Recent consistency has dropped, but one check-in today can help stabilise this routine."
             case .gettingStarted, .rebuilding:
@@ -367,11 +371,11 @@ private extension GreigInsightService {
 
         switch confidence {
         case .low:
-            evidence = "Based on your recent activity (\(averageText) across \(completedDays) of the last \(windowDays) days), this is an early estimate."
+            evidence = "Based on recent activity (\(averageText), \(behaviourWindowLine(completedDays: completedDays, windowDays: windowDays).lowercased()), this is an early estimate."
         case .medium:
-            evidence = "You've completed \(completedDays) of the last \(windowDays) days (\(averageText)), \(goalLine)."
+            evidence = "\(behaviourWindowLine(completedDays: completedDays, windowDays: windowDays)) (\(averageText)), \(goalLine)."
         case .high:
-            evidence = "You've completed \(completedDays) of the last \(windowDays) days, including a \(streak)-day streak (\(averageText)), \(goalLine)."
+            evidence = "\(behaviourWindowLine(completedDays: completedDays, windowDays: windowDays)), with a \(streak)-day streak (\(averageText)), \(goalLine)."
         }
 
         return joinedSentences(
@@ -431,11 +435,11 @@ private extension GreigInsightService {
 
         switch confidence {
         case .low:
-            evidence = "Based on your recent activity (\(averageText) across \(completedDays) of the last \(windowDays) days), this is an early estimate."
+            evidence = "Based on recent activity (\(averageText), \(behaviourWindowLine(completedDays: completedDays, windowDays: windowDays).lowercased()), this is an early estimate."
         case .medium:
-            evidence = "You've completed \(completedDays) of the last \(windowDays) days (\(averageText)), \(goalLine)."
+            evidence = "\(behaviourWindowLine(completedDays: completedDays, windowDays: windowDays)) (\(averageText)), \(goalLine)."
         case .high:
-            evidence = "You've completed \(completedDays) of the last \(windowDays) days, including a \(streak)-day streak (\(averageText)), \(goalLine)."
+            evidence = "\(behaviourWindowLine(completedDays: completedDays, windowDays: windowDays)), with a \(streak)-day streak (\(averageText)), \(goalLine)."
         }
 
         return joinedSentences(
@@ -486,7 +490,7 @@ private extension GreigInsightService {
 
     func genericNudge(loggedToday: Bool) -> String? {
         guard !loggedToday else { return nil }
-        return "Log today to keep this routine steady."
+        return "A check-in today keeps this routine steady."
     }
 
     func openConsistencyNudge(
@@ -520,5 +524,15 @@ private extension GreigInsightService {
         }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: " ")
+    }
+
+    func behaviourWindowLine(
+        completedDays: Int,
+        windowDays: Int
+    ) -> String {
+        BehaviourCopyFormatter.behaviourSummary(
+            completedDays: completedDays,
+            windowDays: windowDays
+        )
     }
 }

@@ -237,7 +237,7 @@ enum PerformanceSignalsCalculator {
         case ..<0.5:
             return "Your habit is developing and gaining consistency. Continued repetition will strengthen it."
         case ..<0.75:
-            return "This habit is becoming a stable part of your routine."
+            return "This habit is becoming a reliable part of your routine."
         default:
             return "This habit is highly consistent and approaching automatic behaviour."
         }

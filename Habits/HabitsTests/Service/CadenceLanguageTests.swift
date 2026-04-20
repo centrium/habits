@@ -31,13 +31,13 @@ final class CadenceLanguageTests: XCTestCase {
         XCTAssertEqual(CadenceLanguage.identityLine(for: .building), "Building momentum")
         XCTAssertEqual(CadenceLanguage.insightLine(for: .building), "This habit is building momentum")
 
-        XCTAssertEqual(CadenceLanguage.shortLabel(for: .steady), "Staying consistent")
-        XCTAssertEqual(CadenceLanguage.identityLine(for: .steady), "Staying consistent")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .steady), "This habit is staying consistent")
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: HabitIdentityState.steady), "Staying consistent")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: HabitIdentityState.steady), "Staying consistent")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: HabitIdentityState.steady), "This habit is consistent and reliable.")
 
-        XCTAssertEqual(CadenceLanguage.shortLabel(for: .strong), "Strong rhythm")
-        XCTAssertEqual(CadenceLanguage.identityLine(for: .strong), "Strong rhythm")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .strong), "This habit has a strong rhythm")
+        XCTAssertEqual(CadenceLanguage.shortLabel(for: HabitIdentityState.strong), "Strong rhythm")
+        XCTAssertEqual(CadenceLanguage.identityLine(for: HabitIdentityState.strong), "Strong rhythm")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: HabitIdentityState.strong), "This habit is locked in and part of you.")
 
         XCTAssertEqual(CadenceLanguage.shortLabel(for: .slipping), "Losing momentum")
         XCTAssertEqual(CadenceLanguage.identityLine(for: .slipping), "Losing momentum")
@@ -45,7 +45,7 @@ final class CadenceLanguageTests: XCTestCase {
 
         XCTAssertEqual(CadenceLanguage.shortLabel(for: .rebuilding), "Getting back on track")
         XCTAssertEqual(CadenceLanguage.identityLine(for: .rebuilding), "Getting back on track")
-        XCTAssertEqual(CadenceLanguage.insightLine(for: .rebuilding), "This habit is getting back on track")
+        XCTAssertEqual(CadenceLanguage.insightLine(for: .rebuilding), "This habit is getting back into it.")
 
         XCTAssertEqual(CadenceLanguage.stateTitle(.rebuilding), "Getting back on track")
     }

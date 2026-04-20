@@ -175,7 +175,7 @@ private extension GlobalInsightsService {
     ) -> String {
         _ = consistency
         _ = atRiskCount
-        let dominantTitle = CadenceLanguage.stateTitle(dominantState).lowercased()
+        let dominantTitle = CadenceLanguage.maturityDescriptor(for: dominantState)
         return "Most of your habits are \(dominantTitle)."
     }
 

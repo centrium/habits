@@ -29,6 +29,14 @@ struct HabitStateModel: Equatable {
     let risk: Double
     let consistency: Int
     let streakState: String
+    let identityEligibility: IdentityEligibility
+}
+
+struct IdentityEligibility: Equatable {
+    let totalLogs: Int
+    let uniqueDays: Int
+    let activeDaysLast14: Int
+    let maxAllowedState: HabitState
 }
 
 enum HabitIdentityState: Equatable {
@@ -38,6 +46,67 @@ enum HabitIdentityState: Equatable {
     case strong
     case slipping
     case rebuilding
+}
+
+enum IdentityStateEngine {
+    static func gatedIdentityState(
+        rawState: HabitState,
+        totalLogs: Int,
+        uniqueDays: Int,
+        activeDaysLast14: Int
+    ) -> HabitState {
+        _ = totalLogs
+        let safeUniqueDays = max(uniqueDays, 0)
+        let safeActiveDaysLast14 = max(activeDaysLast14, 0)
+
+        if safeUniqueDays < 3 {
+            return .start
+        }
+        if safeUniqueDays < 7 {
+            return HabitState.min(rawState, .build)
+        }
+        if safeUniqueDays < 14 {
+            return HabitState.min(rawState, .steady)
+        }
+        if safeActiveDaysLast14 < 10 {
+            return HabitState.min(rawState, .steady)
+        }
+        return rawState
+    }
+
+    static func identityEligibility(
+        for habit: Habit,
+        calendar: Calendar,
+        weekStartPreference: WeekStartPreference,
+        now: Date
+    ) -> IdentityEligibility {
+        let today = calendar.startOfDay(for: now)
+        let totalLogs = habit.logs.filter {
+            calendar.startOfDay(for: $0.effectiveTimestamp) <= today
+        }.count
+        let completedDays = completedDays(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference,
+            now: now
+        )
+        let uniqueDays = completedDays.count
+        let earliestLast14 = calendar.date(byAdding: .day, value: -13, to: today) ?? today
+        let activeDaysLast14 = completedDays.filter { $0 >= earliestLast14 && $0 <= today }.count
+        let maxAllowedState = gatedIdentityState(
+            rawState: .strong,
+            totalLogs: totalLogs,
+            uniqueDays: uniqueDays,
+            activeDaysLast14: activeDaysLast14
+        )
+
+        return IdentityEligibility(
+            totalLogs: totalLogs,
+            uniqueDays: uniqueDays,
+            activeDaysLast14: activeDaysLast14,
+            maxAllowedState: maxAllowedState
+        )
+    }
 }
 
 struct CadenceLanguage {
@@ -97,6 +166,27 @@ struct CadenceLanguage {
 
     static func insightLine(for state: HabitState) -> String {
         CadenceCopyCatalog.insightLine(for: state.cadenceStateKey)
+    }
+
+    static func maturityDescriptor(for state: HabitIdentityState) -> String {
+        switch state {
+        case .gettingStarted:
+            return "forming"
+        case .building:
+            return "building"
+        case .steady:
+            return "consistent"
+        case .strong:
+            return "locked in"
+        case .slipping:
+            return "off track"
+        case .rebuilding:
+            return "getting back into it"
+        }
+    }
+
+    static func maturityDescriptor(for state: HabitState) -> String {
+        maturityDescriptor(for: state.identityState)
     }
 
     static func riskEarlyStage() -> String {
@@ -174,6 +264,27 @@ private extension HabitState {
         case .rebuild:
             return .rebuild
         }
+    }
+
+    var maturityRank: Int {
+        switch self {
+        case .start:
+            return 0
+        case .build:
+            return 1
+        case .steady:
+            return 2
+        case .strong:
+            return 3
+        case .slip:
+            return 4
+        case .rebuild:
+            return 5
+        }
+    }
+
+    static func min(_ lhs: HabitState, _ rhs: HabitState) -> HabitState {
+        lhs.maturityRank <= rhs.maturityRank ? lhs : rhs
     }
 }
 
@@ -294,11 +405,23 @@ enum HabitStateResolver {
             uniqueActiveDays: timingSummary?.uniqueActiveDays ?? 0
         )
         let strongestTime = timingSummary.map { humanTime(for: $0.peakHour) }
-        let state = deriveState(
+        let rawState = deriveState(
             consistency: consistency,
             habitStrength: habitStrength,
             risk: risk,
             streakState: streakState
+        )
+        let eligibility = IdentityStateEngine.identityEligibility(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: weekStartPreference,
+            now: now
+        )
+        let state = IdentityStateEngine.gatedIdentityState(
+            rawState: rawState,
+            totalLogs: eligibility.totalLogs,
+            uniqueDays: eligibility.uniqueDays,
+            activeDaysLast14: eligibility.activeDaysLast14
         )
 
         return HabitStateModel(
@@ -308,7 +431,8 @@ enum HabitStateResolver {
             habitStrength: habitStrength,
             risk: risk,
             consistency: consistency,
-            streakState: streakState
+            streakState: streakState,
+            identityEligibility: eligibility
         )
     }
 
@@ -358,6 +482,9 @@ struct HabitIdentityStateSnapshot: Equatable {
     let activeDays: Int
     let windowDays: Int
     let hasRecentData: Bool
+    let totalLogs: Int
+    let uniqueDays: Int
+    let activeDaysLast14: Int
 }
 
 enum HabitIdentityStateResolver {
@@ -400,8 +527,14 @@ enum HabitIdentityStateResolver {
             risk: risk,
             streakState: "derived"
         )
+        let gatedState = IdentityStateEngine.gatedIdentityState(
+            rawState: state,
+            totalLogs: safeTotalLogCount,
+            uniqueDays: safeRecentCompletedDays,
+            activeDaysLast14: min(safeRecentCompletedDays, 14)
+        )
 
-        return state.identityState
+        return gatedState.identityState
     }
 
     @available(*, deprecated, message: "Use resolve(recentCompletedDays:windowDays:totalLogCount:lastActivityDay:now:calendar:)")
@@ -412,12 +545,19 @@ enum HabitIdentityStateResolver {
         let normalizedRate = min(max(completionRate ?? 0, 0), 1)
         let consistency = Int((normalizedRate * 100).rounded())
         let risk = hasRecentData ? (normalizedRate <= 0.05 ? 0.75 : 0.45) : 0.2
-        return HabitStateResolver.deriveState(
+        let state = HabitStateResolver.deriveState(
             consistency: consistency,
             habitStrength: normalizedRate,
             risk: risk,
             streakState: "derived"
-        ).identityState
+        )
+        let gatedState = IdentityStateEngine.gatedIdentityState(
+            rawState: state,
+            totalLogs: hasRecentData ? 1 : 0,
+            uniqueDays: hasRecentData ? 1 : 0,
+            activeDaysLast14: hasRecentData ? 1 : 0
+        )
+        return gatedState.identityState
     }
 
     static func resolve(
@@ -443,21 +583,21 @@ enum HabitIdentityStateResolver {
         let normalizedWindow = max(1, windowDays)
         let today = calendar.startOfDay(for: now)
         let earliest = calendar.date(byAdding: .day, value: -(normalizedWindow - 1), to: today) ?? today
-        let qualifyingLogDays = habit.logs.compactMap { log -> Date? in
-            guard log.frequencyContribution > 0 else { return nil }
-            let day = calendar.startOfDay(for: log.effectiveTimestamp)
-            guard day <= today else { return nil }
-            return day
-        }
-        let recentCompletedDayCount = Set(
-            qualifyingLogDays.filter { $0 >= earliest && $0 <= today }
-        ).count
-        let totalLogCount = qualifyingLogDays.count
-        let lastActivityDay = qualifyingLogDays.max()
+        let completedDays = IdentityStateEngine.completedDays(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .system,
+            now: now
+        )
+        let eligibility = IdentityStateEngine.identityEligibility(
+            for: habit,
+            calendar: calendar,
+            weekStartPreference: .system,
+            now: now
+        )
+        let recentCompletedDayCount = completedDays.filter { $0 >= earliest && $0 <= today }.count
         let hasRecentData = recentCompletedDayCount > 0
         let completionRate = Double(recentCompletedDayCount) / Double(normalizedWindow)
-        _ = totalLogCount
-        _ = lastActivityDay
         let resolvedState = HabitStateResolver.resolve(
             for: habit,
             calendar: calendar,
@@ -469,7 +609,37 @@ enum HabitIdentityStateResolver {
             completionRate: completionRate,
             activeDays: recentCompletedDayCount,
             windowDays: normalizedWindow,
-            hasRecentData: hasRecentData
+            hasRecentData: hasRecentData,
+            totalLogs: eligibility.totalLogs,
+            uniqueDays: eligibility.uniqueDays,
+            activeDaysLast14: eligibility.activeDaysLast14
+        )
+    }
+}
+
+private extension IdentityStateEngine {
+    static func completedDays(
+        for habit: Habit,
+        calendar: Calendar,
+        weekStartPreference: WeekStartPreference,
+        now: Date
+    ) -> Set<Date> {
+        let today = calendar.startOfDay(for: now)
+        let candidateDays = Set(
+            habit.logs.compactMap { log -> Date? in
+                let day = calendar.startOfDay(for: log.effectiveTimestamp)
+                guard day <= today else { return nil }
+                return day
+            }
+        )
+        let streakService = StreakService(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        return Set(
+            candidateDays.filter { day in
+                streakService.isDayComplete(goal: habit, on: day)
+            }
         )
     }
 }

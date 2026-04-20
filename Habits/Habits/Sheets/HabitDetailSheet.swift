@@ -457,7 +457,6 @@ struct HabitDetailSheet: View {
         earliestCalendarDate: Date?
     ) -> some View {
         let sectionPadding = CadenceTokens.Space.lg
-        let sectionCornerRadius = CadenceTokens.Surface.cardCornerRadius
         let accent = CadenceTokens.Color.accent(for: habit)
         let stateModel = frozenStateModel ?? habitStateModel()
         let identityState = identityStateSummary()
@@ -466,10 +465,14 @@ struct HabitDetailSheet: View {
         let isLowDataActivityState = logCount == 0
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
-        let heroSupportingText = heroSupportingInsightText(identityState: identityState)
-        let streakMetaText = streakState.currentStreak > 0
-            ? "\(streakState.currentStreak) day streak"
-            : "Build your first streak"
+        let metaLines = MetaDisplayFormatter.format(
+            habit: habit,
+            streakState: streakState,
+            weeklyActiveDays: identityState.activeDays,
+            isGoalMet: isCompleteForSelectedDate
+        )
+        let primaryMetaLine = metaLines.first?.text ?? "Getting started this week"
+        let secondaryMetaLine = metaLines.dropFirst().first?.text
         let identityText = userDefinedIdentityText
         let identityStatText = identityText == nil
             ? nil
@@ -508,17 +511,10 @@ struct HabitDetailSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    if let heroSupportingText {
-                        Text(heroSupportingText)
-                            .font(CadenceTokens.Typography.body)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
                     Button {
                         openHistoryFromDetail(earliestCalendarDate: earliestCalendarDate)
                     } label: {
-                        Text(streakMetaText)
+                        Text(primaryMetaLine)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -527,6 +523,14 @@ struct HabitDetailSheet: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+
+                    if let secondaryMetaLine {
+                        Text(secondaryMetaLine)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.sm)
@@ -538,6 +542,12 @@ struct HabitDetailSheet: View {
                             .foregroundStyle(CadenceTokens.Color.Text.secondary)
                             .lineLimit(1)
                     }
+
+                    Text(goalDescriptorText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     KeyActionsSection(
                         isCumulativeGoal: isCumulativeGoal,
@@ -603,14 +613,14 @@ struct HabitDetailSheet: View {
                             isPremium: purchaseService.premiumStatus == .premium
                         ),
                         stateModel: stateModel,
+                        identitySnapshot: identityState,
                         habit: habit,
                         onUnlock: {
                             showPaywall(feature: .advancedInsights)
                         }
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, guidanceOutput == nil ? CadenceTokens.Space.md + 2 : CadenceTokens.Space.md + 6)
-                    .opacity(guidanceOutput == nil ? 0.96 : 0.9)
+                    .padding(.top, CadenceTokens.Space.md + 2)
                 }
 
                 HabitIdentityCard(
@@ -624,20 +634,14 @@ struct HabitDetailSheet: View {
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md + 2)
-                .opacity(guidanceOutput == nil ? 0.95 : 0.88)
 
                 if showsInsightsSection {
-                    VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
-                        InsightsInlineNudgeRow(
-                            text: insightsInlineNudgeText,
-                            action: openInsightsOrPaywall
-                        )
-                    }
-                    .padding(CadenceTokens.Space.lg)
-                    .frame(minHeight: 48, alignment: .leading)
-                    .cadenceSurface(cornerRadius: sectionCornerRadius)
+                    InsightsInlineNudgeRow(
+                        text: insightsInlineNudgeText,
+                        action: openInsightsOrPaywall
+                    )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, CadenceTokens.Space.md)
+                    .padding(.top, CadenceTokens.Space.lg + 6)
                 }
 
                 Color.clear
@@ -865,16 +869,6 @@ struct HabitDetailSheet: View {
             isCompleteOverride: optimisticComplete,
             hasActivityOverride: hasActivityToday
         )
-    }
-
-    private func heroSupportingInsightText(
-        identityState: HabitIdentityStateSnapshot
-    ) -> String? {
-        if habit.logs.isEmpty {
-            return CadenceLanguage.insightLine(for: .gettingStarted)
-        }
-
-        return "Logged on \(identityState.activeDays) of the last \(identityState.windowDays) days"
     }
 
     private func reinforcement(for guidanceType: GuidanceType?) -> IdentityReinforcement {
@@ -1226,6 +1220,42 @@ struct HabitDetailSheet: View {
         return trimmed
     }
 
+    private var goalDescriptorText: String {
+        guard habit.hasGoal,
+              let targetValue = habit.effectiveTargetValue,
+              targetValue > 0 else {
+            return "Flexible habit"
+        }
+
+        let periodText = "per \(habit.goalPeriod.unit)"
+
+        switch habit.goalType {
+        case .frequency:
+            let targetCount = max(1, Int(targetValue.rounded()))
+            return "\(targetCount)× \(periodText) target"
+        case .cumulative:
+            let targetText = habit.formatProgressValue(targetValue)
+            let unitSuffix: String = {
+                guard MetricKindResolver.resolve(habit) == .genericValue,
+                      let normalizedUnit = normalizedGoalDescriptorUnit else {
+                    return ""
+                }
+                return " \(normalizedUnit)"
+            }()
+            return "\(targetText)\(unitSuffix) \(periodText) target"
+        }
+    }
+
+    private var normalizedGoalDescriptorUnit: String? {
+        guard let unit = habit.trimmedUnit else { return nil }
+        switch unit.lowercased() {
+        case "minute", "minutes", "min", "mins":
+            return "mins"
+        default:
+            return unit
+        }
+    }
+
     private func cueSourceHabitName(for insight: CueInsight) -> String? {
         allHabitsSnapshot().first(where: { $0.id == insight.sourceHabitId })?.name
     }
@@ -1361,7 +1391,7 @@ struct HabitDetailSheet: View {
             streakState: stateModel.streakState,
             identity: userDefinedIdentityText,
             stacking: guidancePattern()?.description,
-            todayStatus: hasActivityToday() ? "completed" : "not completed yet",
+            todayStatus: BehaviourCopyFormatter.dailyStatus(isDoneToday: hasActivityToday()),
             behaviourSummary: behaviourSummary(for: stateModel.state)
         )
     }
@@ -1506,22 +1536,22 @@ private struct InsightsInlineNudgeRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "sparkles")
-                    .font(.caption2.weight(.semibold))
-                    .opacity(0.52)
+            HStack(spacing: CadenceTokens.Space.sm) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 13, weight: .regular))
 
                 Text(text)
-                    .font(CadenceTokens.Typography.microCopy)
+                    .font(CadenceTokens.Typography.body)
                     .lineLimit(1)
-                    .opacity(0.85)
+
+                Spacer(minLength: CadenceTokens.Space.sm)
 
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .opacity(0.46)
+                    .font(.system(size: 12, weight: .semibold))
             }
-            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 36, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1746,22 +1776,12 @@ private struct HabitIdentityCard: View {
                 .fill(accent.primary.opacity(0.72))
                 .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text(CadenceLanguage.identityTitle())
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        isIdentityInfoPresented = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Identity help")
-                }
+            VStack(alignment: .leading, spacing: InsightCardHeader.contentSpacing) {
+                InsightCardHeader(
+                    title: CadenceLanguage.identityTitle(),
+                    onInfoTap: { isIdentityInfoPresented = true },
+                    infoAccessibilityLabel: "Identity help"
+                )
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -1812,7 +1832,9 @@ private struct HabitIdentityCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(CadenceTokens.Space.lg)
+        .padding(.horizontal, CadenceTokens.Space.lg)
+        .padding(.top, InsightCardHeader.topPadding)
+        .padding(.bottom, InsightCardHeader.bottomPadding)
         .background(
             RoundedRectangle(cornerRadius: CadenceTokens.Surface.cardCornerRadius, style: .continuous)
                 .fill(tintColor.opacity(0.06))

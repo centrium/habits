@@ -14,7 +14,7 @@ final class WidgetHabitIdentityStateTests: XCTestCase {
         XCTAssertEqual(summary.state, .strong)
         XCTAssertEqual(summary.shortLabel, "Strong rhythm")
         XCTAssertEqual(summary.recentCompletionText, "5 of last 7 days")
-        XCTAssertEqual(summary.insightLine, "This habit has a strong rhythm")
+        XCTAssertEqual(summary.insightLine, "This habit is locked in and part of you.")
     }
 
     func testIdentitySummaryUsesRebuildingInsightCopy() {
@@ -22,7 +22,7 @@ final class WidgetHabitIdentityStateTests: XCTestCase {
 
         let summary = habit.identityStateSummary
 
-        XCTAssertEqual(summary.insightLine, "This habit is getting back on track")
+        XCTAssertEqual(summary.insightLine, "This habit is getting back into it.")
     }
 
     func testDecodingWithoutIdentityStateDefaultsToStarting() throws {

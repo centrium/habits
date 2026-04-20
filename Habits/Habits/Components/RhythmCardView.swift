@@ -8,6 +8,7 @@ struct RhythmCardView: View {
     let data: [HourValue]
     let rhythm: HabitRhythm?
     let stateModel: HabitStateModel?
+    let identitySnapshot: HabitIdentityStateSnapshot?
     let habit: Habit
     var onUnlock: (() -> Void)? = nil
     var onOpen: (() -> Void)? = nil
@@ -84,6 +85,10 @@ struct RhythmCardView: View {
     }
 
     private var timingConfidence: TimingConfidence {
+        if lowDataTimingGateEnabled {
+            return .low
+        }
+
         if let stateModel {
             return stateModel.timingConfidence
         }
@@ -97,7 +102,8 @@ struct RhythmCardView: View {
             }
         }
 
-        let confidence = rhythm?.confidence ?? resolvedInsight.confidence
+        let baseConfidence = rhythm?.confidence ?? resolvedInsight.confidence
+        let confidence = lowDataTimingWeight ? (baseConfidence * 0.6) : baseConfidence
         switch confidence {
         case ..<0.35:
             return .low
@@ -109,6 +115,10 @@ struct RhythmCardView: View {
     }
 
     private func timingMessage(confidence: TimingConfidence) -> String {
+        if lowDataTimingGateEnabled {
+            return "Timing is still forming"
+        }
+
         switch confidence {
         case .low:
             return "Timing is still forming"
@@ -119,85 +129,85 @@ struct RhythmCardView: View {
         }
     }
 
+    private var lowDataTimingGateEnabled: Bool {
+        (identitySnapshot?.uniqueDays ?? 0) < 5
+    }
+
+    private var lowDataTimingWeight: Bool {
+        lowDataTimingGateEnabled
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: CadenceTokens.Space.sm + 2) {
-            HStack(spacing: CadenceTokens.Space.xs) {
-                Text("Rhythm")
-                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-
-                Button {
-                    isTimingStrengthInfoPresented = true
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.78))
-                        .padding(.vertical, 2)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Timing strength help")
-            }
-
-            if isPremium {
-                Text(primaryInsight)
-                    .font(CadenceTokens.Typography.supporting)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            RhythmLineChart(
-                data: data,
-                accent: accent,
-                selectedHour: $selectedHour,
-                selectionEnabled: isPremium,
-                nowHour: currentHour,
-                peakHour: resolvedInsight.peakHour,
-                showNowMarker: isPremium,
-                showPeakMarker: isPremium,
-                showTrailingIncompletenessFade: !isPremium
+        VStack(alignment: .leading, spacing: InsightCardHeader.contentSpacing) {
+            InsightCardHeader(
+                title: "Rhythm",
+                onInfoTap: { isTimingStrengthInfoPresented = true },
+                infoAccessibilityLabel: "Timing strength help"
             )
 
-            if isPremium {
-                Group {
-                    if let selectedLabel {
-                        Text(selectedLabel)
-                            .font(CadenceTokens.Typography.microCopy)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                    } else {
-                        Text("12PM - 100% timing strength")
-                            .font(CadenceTokens.Typography.microCopy)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                            .opacity(0)
-                            .accessibilityHidden(true)
-                    }
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.sm + 2) {
+                if isPremium {
+                    Text(primaryInsight)
+                        .font(CadenceTokens.Typography.supporting)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
 
-            if isPremium {
-                Text(passiveDetail)
-                    .font(CadenceTokens.Typography.microCopy)
-                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Button {
-                    onUnlock?()
-                } label: {
-                    VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
-                        Text("Your rhythm is still forming")
-                            .font(CadenceTokens.Typography.body)
-                        Text("See your full daily pattern")
-                            .font(CadenceTokens.Typography.microCopy)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                RhythmLineChart(
+                    data: data,
+                    accent: accent,
+                    selectedHour: $selectedHour,
+                    selectionEnabled: isPremium,
+                    nowHour: currentHour,
+                    peakHour: resolvedInsight.peakHour,
+                    showNowMarker: isPremium,
+                    showPeakMarker: isPremium,
+                    showTrailingIncompletenessFade: !isPremium
+                )
+
+                if isPremium {
+                    Group {
+                        if let selectedLabel {
+                            Text(selectedLabel)
+                                .font(CadenceTokens.Typography.microCopy)
+                                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        } else {
+                            Text("12PM - 100% timing strength")
+                                .font(CadenceTokens.Typography.microCopy)
+                                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                                .opacity(0)
+                                .accessibilityHidden(true)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, -4)
+
+                if isPremium {
+                    Text(passiveDetail)
+                        .font(CadenceTokens.Typography.microCopy)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Button {
+                        onUnlock?()
+                    } label: {
+                        VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
+                            Text("Your rhythm is still forming")
+                                .font(CadenceTokens.Typography.body)
+                            Text("See your full daily pattern")
+                                .font(CadenceTokens.Typography.microCopy)
+                                .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, -4)
+                }
             }
         }
         .padding(.horizontal, CadenceTokens.Space.lg)
-        .padding(.vertical, CadenceTokens.Space.lg)
+        .padding(.top, InsightCardHeader.topPadding)
+        .padding(.bottom, InsightCardHeader.bottomPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
         .contentShape(Rectangle())

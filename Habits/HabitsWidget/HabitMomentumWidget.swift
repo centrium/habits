@@ -139,7 +139,9 @@ struct HabitIdentityStateWidgetEntryView: View {
 
     private var trailingValue: String? {
         guard let habit = entry.habit else { return nil }
-        return "\(habit.recentCompletionCount(days: 7))/7"
+        return BehaviourCopyFormatter.weeklySummary(
+            days: habit.recentCompletionCount(days: 7)
+        )
     }
 
     private func shouldShowHabitName(for habit: WidgetHabit) -> Bool {

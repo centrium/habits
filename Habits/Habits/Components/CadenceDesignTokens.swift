@@ -145,3 +145,41 @@ enum CadenceTokens {
         static let heatmapGlow: CGFloat = 1.18
     }
 }
+
+struct InsightCardHeader: View {
+    static let topPadding: CGFloat = CadenceTokens.Space.lg
+    static let bottomPadding: CGFloat = CadenceTokens.Space.lg
+    static let contentSpacing: CGFloat = 7
+    static let iconSize: CGFloat = 13
+
+    let title: String
+    var leadingSymbol: String? = nil
+    var onInfoTap: (() -> Void)? = nil
+    var infoAccessibilityLabel: String = "More information"
+
+    var body: some View {
+        HStack(spacing: CadenceTokens.Space.xs + 2) {
+            if let leadingSymbol {
+                Image(systemName: leadingSymbol)
+                    .font(.system(size: Self.iconSize, weight: .regular))
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
+            }
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
+                .lineLimit(1)
+
+            if let onInfoTap {
+                Button(action: onInfoTap) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: Self.iconSize, weight: .regular))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.86))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(infoAccessibilityLabel)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}

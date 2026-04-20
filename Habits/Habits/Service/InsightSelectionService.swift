@@ -85,7 +85,7 @@ private extension InsightSelectionService {
         let peakTime = snapshot.introSummary.typicalLoggingTime
         let peakHour = snapshot.introSummary.peakHour
         let timingConfidence = snapshot.introSummary.confidence
-        let stateTitle = CadenceLanguage.stateTitle(snapshot.hero.dominantState).lowercased()
+        let stateTitle = CadenceLanguage.maturityDescriptor(for: snapshot.hero.dominantState)
         let bestDay = snapshot.metrics.bestDayOfWeek
         let streak = snapshot.metrics.bestCurrentStreak
         let consistency = snapshot.hero.consistency

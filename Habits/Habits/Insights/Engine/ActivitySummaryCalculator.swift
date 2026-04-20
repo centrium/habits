@@ -33,12 +33,18 @@ enum ActivitySummaryCalculator {
 
         let summaryText: String = {
             if entriesThisWeek > 0 {
-                return "You logged this habit \(entriesThisWeek) \(entriesThisWeek == 1 ? "time" : "times") this week."
+                return BehaviourCopyFormatter.activityCount(
+                    entriesThisWeek,
+                    timeframe: .weekly
+                )
             }
             if entriesThisMonth > 0 {
-                return "You logged \(entriesThisMonth) \(entriesThisMonth == 1 ? "entry" : "entries") this month."
+                return BehaviourCopyFormatter.activityCount(
+                    entriesThisMonth,
+                    timeframe: .monthly
+                )
             }
-            return "You average \(averagePerWeek.formatted(.number.precision(.fractionLength(1)))) entries per week."
+            return "Around \(averagePerWeek.formatted(.number.precision(.fractionLength(1)))) times per week recently."
         }()
 
         return ActivitySummaryInsight(

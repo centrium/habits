@@ -378,6 +378,80 @@ enum CadenceStateKey: Equatable {
     case rebuild
 }
 
+enum BehaviourCopyFormatter {
+    enum Timeframe {
+        case daily
+        case weekly
+        case monthly
+        case yearly
+    }
+
+    static func behaviourSummary(
+        completedDays: Int,
+        windowDays: Int? = nil
+    ) -> String {
+        let safeCompletedDays = max(0, completedDays)
+        let resolvedWindowDays = max(0, windowDays ?? 7)
+
+        if resolvedWindowDays >= 28 {
+            return monthlySummary(days: safeCompletedDays)
+        }
+
+        // Default to weekly language when timeframe is ambiguous.
+        return weeklySummary(days: safeCompletedDays)
+    }
+
+    static func weeklySummary(days: Int) -> String {
+        let safeDays = max(0, days)
+        switch safeDays {
+        case 7...:
+            return "Every day this week"
+        case 5, 6:
+            return "\(safeDays) days this week"
+        case 3, 4:
+            return "\(safeDays) days this week"
+        case 2:
+            return "2 days this week"
+        case 1:
+            return "1 day this week"
+        default:
+            return "Getting started this week"
+        }
+    }
+
+    static func monthlySummary(days: Int) -> String {
+        let safeDays = max(0, days)
+        guard safeDays > 0 else {
+            return "Getting started this month"
+        }
+        return "\(safeDays) \(safeDays == 1 ? "day" : "days") this month"
+    }
+
+    static func dailyStatus(isDoneToday: Bool) -> String {
+        isDoneToday ? "Done today" : "Not yet today"
+    }
+
+    static func activityCount(
+        _ count: Int,
+        timeframe: Timeframe
+    ) -> String {
+        let safeCount = max(0, count)
+        switch timeframe {
+        case .daily:
+            return safeCount > 0 ? "Done today" : "Not yet today"
+        case .weekly:
+            if safeCount == 0 { return "Getting started this week" }
+            return "\(safeCount) \(safeCount == 1 ? "time" : "times") this week"
+        case .monthly:
+            if safeCount == 0 { return "Getting started this month" }
+            return "\(safeCount) \(safeCount == 1 ? "time" : "times") this month"
+        case .yearly:
+            if safeCount == 0 { return "Getting started this year" }
+            return "\(safeCount) \(safeCount == 1 ? "time" : "times") this year"
+        }
+    }
+}
+
 enum CadenceCopyCatalog {
     // Cadence copy rule:
     // Do not add state-label or state-line string literals outside this file.
@@ -398,7 +472,10 @@ enum CadenceCopyCatalog {
     }
 
     static func identityStat(days: Int, window: Int) -> String {
-        "Shown up \(days) of the last \(window) days"
+        BehaviourCopyFormatter.behaviourSummary(
+            completedDays: days,
+            windowDays: window
+        )
     }
 
     static func identityReinforcement() -> String {
@@ -442,17 +519,17 @@ enum CadenceCopyCatalog {
     static func insightLine(for state: CadenceStateKey) -> String {
         switch state {
         case .start:
-            return "You're at the start of this habit journey"
+            return "This habit is still forming."
         case .build:
-            return "This habit is being built through repetition"
+            return "This habit is taking shape."
         case .steady:
-            return "This habit is becoming steady"
+            return "This habit is consistent and reliable."
         case .strong:
-            return "This habit is strong and consistent"
+            return "This habit is locked in and part of you."
         case .slip:
-            return "This habit has slipped recently"
+            return "This habit is off track right now."
         case .rebuild:
-            return "This habit is in rebuild mode"
+            return "This habit is getting back into it."
         }
     }
 
@@ -959,11 +1036,12 @@ private extension WidgetHabit {
 
 extension WidgetHabit {
     var identityStateSummary: WidgetIdentityStateSummary {
-        WidgetIdentityStateSummary(
+        let completionCount = recentCompletionCount(days: 7)
+        return WidgetIdentityStateSummary(
             state: identityState,
             shortLabel: CadenceCopyCatalog.shortLabel(for: identityState.cadenceStateKey),
             insightLine: CadenceCopyCatalog.insightLine(for: identityState.cadenceStateKey),
-            recentCompletionText: "\(recentCompletionCount(days: 7)) of last 7 days"
+            recentCompletionText: BehaviourCopyFormatter.weeklySummary(days: completionCount)
         )
     }
 
@@ -1011,7 +1089,7 @@ extension WidgetFocusState {
         case .noHabits:
             return "Add a habit"
         case .allComplete(_, let completedCount):
-            return "\(completedCount) completed today"
+            return completedCount == 1 ? "1 done today" : "\(completedCount) done today"
         case .needsAttention(let habit):
             return habit.streak == 0 ? "Log today" : "Keep \(habit.streak)-day streak"
         }

@@ -16,11 +16,8 @@ struct GuidanceCard: View {
         let hasCustomGuidance = guidanceText?.isEmpty == false
         let resolvedGuidanceText = hasCustomGuidance ? (guidanceText ?? output.action) : output.action
 
-        VStack(alignment: .leading, spacing: 0) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.62))
-                .padding(.bottom, variant == .pinnedMoment ? 8 : 6)
+        VStack(alignment: .leading, spacing: InsightCardHeader.contentSpacing) {
+            InsightCardHeader(title: label)
 
             HStack(alignment: .top, spacing: 12) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -54,9 +51,9 @@ struct GuidanceCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.top, topPadding)
+        .padding(.top, InsightCardHeader.topPadding)
         .padding(.horizontal, CadenceTokens.Space.lg + 4)
-        .padding(.bottom, CadenceTokens.Space.lg)
+        .padding(.bottom, InsightCardHeader.bottomPadding)
         .background(
             ZStack {
                 if variant == .glow {
@@ -105,10 +102,6 @@ struct GuidanceCard: View {
 
     private var titleSize: CGFloat {
         variant == .pinnedMoment ? 19.5 : 18.5
-    }
-
-    private var topPadding: CGFloat {
-        variant == .pinnedMoment ? CadenceTokens.Space.lg + 2 : CadenceTokens.Space.lg
     }
 
     private var guidanceTextMinHeight: CGFloat {

@@ -581,7 +581,7 @@ struct HabitInsightsEngine {
         if habit.goalType == .cumulative, let unit = habit.trimmedUnit {
             let totalValue = habit.logs.reduce(0.0) { $0 + $1.numericValue }
             if totalValue >= 100, totalValue < 110 {
-                return "🎉 \(Int(totalValue.rounded()))\(unit) completed"
+                return "🎉 \(Int(totalValue.rounded()))\(unit) total"
             }
         }
 
@@ -591,14 +591,20 @@ struct HabitInsightsEngine {
     private static func openEndedActivityPrimaryText(
         _ summary: ActivitySummaryInsight?
     ) -> String {
-        guard let summary else { return "No entries this week yet" }
+        guard let summary else { return "Getting started this week" }
         if summary.entriesThisWeek > 0 {
-            return "\(summary.entriesThisWeek) \(summary.entriesThisWeek == 1 ? "entry" : "entries") this week"
+            return BehaviourCopyFormatter.activityCount(
+                summary.entriesThisWeek,
+                timeframe: .weekly
+            )
         }
         if summary.entriesThisMonth > 0 {
-            return "\(summary.entriesThisMonth) \(summary.entriesThisMonth == 1 ? "entry" : "entries") this month"
+            return BehaviourCopyFormatter.activityCount(
+                summary.entriesThisMonth,
+                timeframe: .monthly
+            )
         }
-        return "No entries this week yet"
+        return "Getting started this week"
     }
 
     private static func shouldUseCompletionRatios(
@@ -1130,10 +1136,16 @@ struct HabitInsightsEngine {
     ) -> String? {
         guard let activity = behaviour.activitySummary else { return nil }
         if activity.entriesThisWeek > 0 {
-            return "You logged this habit \(activity.entriesThisWeek) \(activity.entriesThisWeek == 1 ? "time" : "times") this week."
+            return BehaviourCopyFormatter.activityCount(
+                activity.entriesThisWeek,
+                timeframe: .weekly
+            )
         }
         if activity.entriesThisMonth > 0 {
-            return "You logged \(activity.entriesThisMonth) \(activity.entriesThisMonth == 1 ? "entry" : "entries") this month."
+            return BehaviourCopyFormatter.activityCount(
+                activity.entriesThisMonth,
+                timeframe: .monthly
+            )
         }
         return nil
     }

@@ -64,7 +64,12 @@ final class TodayInsightSelectionService {
 
         if allCompleted {
             let selected = selectForAllCompleted(candidates)
-            let message = "All set for today. \(selected.candidate.habit.name) has strong consistency."
+            let identityState = HabitIdentityStateResolver.resolve(
+                for: selected.candidate.habit,
+                calendar: calendar,
+                now: now
+            )
+            let message = "All set for today. \(selected.candidate.habit.name) is \(stateDescriptor(for: identityState))."
             previousSelection = SelectionState(habitID: selected.candidate.habit.id, score: selected.score, hour: currentHour)
             return TodayInsight(habit: selected.candidate.habit, type: .reinforcement, message: message)
         }
@@ -92,12 +97,19 @@ final class TodayInsightSelectionService {
 
         let message = message(
             for: resolved.candidate,
-            currentHour: currentHour
+            currentHour: currentHour,
+            now: now,
+            calendar: calendar
         )
 
         return TodayInsight(
             habit: resolved.candidate.habit,
-            type: insightType(for: resolved.candidate, currentHour: currentHour),
+            type: insightType(
+                for: resolved.candidate,
+                currentHour: currentHour,
+                now: now,
+                calendar: calendar
+            ),
             message: message
         )
     }
@@ -206,8 +218,16 @@ final class TodayInsightSelectionService {
         return lhs.candidate.habit.orderIndex > rhs.candidate.habit.orderIndex
     }
 
-    private func insightType(for candidate: TodayInsightCandidate, currentHour: Int) -> TodayInsightType {
+    private func insightType(
+        for candidate: TodayInsightCandidate,
+        currentHour: Int,
+        now: Date,
+        calendar: Calendar
+    ) -> TodayInsightType {
         guard let rhythm = candidate.rhythm else { return .fallback }
+        guard uniqueCompletedDays(for: candidate.habit, now: now, calendar: calendar) >= 5 else {
+            return .fallback
+        }
         guard hasReliableTimingSignal(rhythm) else { return .fallback }
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
             return .dipRisk
@@ -218,12 +238,23 @@ final class TodayInsightSelectionService {
         return .strongestWindow
     }
 
-    private func message(for candidate: TodayInsightCandidate, currentHour: Int) -> String {
+    private func message(
+        for candidate: TodayInsightCandidate,
+        currentHour: Int,
+        now: Date,
+        calendar: Calendar
+    ) -> String {
         guard let rhythm = candidate.rhythm else {
             return "Keep momentum going with \(candidate.habit.name)"
         }
+        let uniqueDays = uniqueCompletedDays(for: candidate.habit, now: now, calendar: calendar)
+        if uniqueDays < 5 {
+            let output = "Timing is still forming for \(candidate.habit.name). Keep showing up to build a reliable timing signal."
+            logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
+            return output
+        }
         guard hasReliableTimingSignal(rhythm) else {
-            let output = "Pattern still forming for \(candidate.habit.name). Keep showing up to build a reliable timing signal."
+            let output = "Timing is still forming for \(candidate.habit.name). Keep showing up to build a reliable timing signal."
             logTimingTrace(candidate: candidate, rhythm: rhythm, displayedLabel: output)
             return output
         }
@@ -232,7 +263,7 @@ final class TodayInsightSelectionService {
         if isHour(currentHour, inRange: rhythm.dipStart...rhythm.dipEnd) {
             output = "Momentum drops for \(candidate.habit.name) around \(humanTime(for: rhythm.dipStart))–\(humanTime(for: rhythm.dipEnd))"
         } else if rhythm.confidence < 0.35 {
-            output = "Pattern still forming for \(candidate.habit.name), strongest window around \(humanTime(for: rhythm.peakHour))"
+            output = "Timing is still forming for \(candidate.habit.name), strongest window around \(humanTime(for: rhythm.peakHour))"
         } else if rhythm.confidence < 0.75 {
             output = "Often around \(humanTime(for: rhythm.peakHour)) for \(candidate.habit.name)"
         } else if wrappedHourDistance(currentHour, rhythm.peakHour) <= 2 {
@@ -269,6 +300,42 @@ final class TodayInsightSelectionService {
 
     private func hasReliableTimingSignal(_ rhythm: HabitRhythm) -> Bool {
         rhythm.uniqueEventCount >= 3 && rhythm.uniqueActiveDays >= 2 && rhythm.confidence >= 0.15
+    }
+
+    private func stateDescriptor(for state: HabitIdentityState) -> String {
+        switch state {
+        case .gettingStarted:
+            return "still forming"
+        case .building:
+            return "taking shape"
+        case .steady:
+            return "consistent"
+        case .strong:
+            return "locked in"
+        case .slipping:
+            return "off track"
+        case .rebuilding:
+            return "getting back into it"
+        }
+    }
+
+    private func uniqueCompletedDays(
+        for habit: Habit,
+        now: Date,
+        calendar: Calendar
+    ) -> Int {
+        let today = calendar.startOfDay(for: now)
+        let candidateDays = Set(
+            habit.logs.compactMap { log -> Date? in
+                let day = calendar.startOfDay(for: log.effectiveTimestamp)
+                guard day <= today else { return nil }
+                return day
+            }
+        )
+        let streakService = StreakService(calendar: calendar, weekStartPreference: .system)
+        return candidateDays.filter { day in
+            streakService.isDayComplete(goal: habit, on: day)
+        }.count
     }
 
     private func isHour(_ hour: Int, inRange range: ClosedRange<Int>) -> Bool {
