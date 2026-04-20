@@ -55,18 +55,6 @@ private final class HabitDetailViewModel: ObservableObject {
         isActive = false
     }
 
-    func applyOptimisticHistoryLog(on day: Date, calendar: Calendar) {
-        let normalizedDay = calendar.startOfDay(for: day)
-        var dailyCounts = historySnapshot.dailyCounts
-        dailyCounts[normalizedDay, default: 0] += 1
-        historySnapshot = HistorySnapshot(
-            dailyCounts: dailyCounts,
-            activeDays: dailyCounts.values.filter { $0 > 0 }.count,
-            totalEntries: dailyCounts.values.reduce(0, +),
-            longestRun: historySnapshot.longestRun
-        )
-    }
-
     func refreshHistorySnapshot(logs: [HabitLog], calendar: Calendar) {
         historySnapshotTask?.cancel()
 
@@ -437,6 +425,7 @@ struct HabitDetailSheet: View {
             await refreshRhythmData()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
+            let liveHistorySnapshot = canonicalHistorySnapshot()
             ZStack(alignment: .top) {
                 backgroundColor
                     .ignoresSafeArea()
@@ -448,7 +437,7 @@ struct HabitDetailSheet: View {
                 historyTabContent(
                     progressRevision: progressRevision,
                     logsVersion: logsVersion,
-                    snapshot: viewModel.historySnapshot,
+                    snapshot: liveHistorySnapshot,
                     calendarMonthSummaryText: calendarMonthSummaryText,
                     earliestCalendarDate: earliestCalendarDate,
                     premiumHistoryGate: premiumHistoryGate,
@@ -580,6 +569,36 @@ struct HabitDetailSheet: View {
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
 
+                Button {
+                    if let earliestCalendarDate {
+                        let normalizedEarliest = calculationCalendar.startOfDay(for: earliestCalendarDate)
+                        if selectedDate < normalizedEarliest {
+                            selectedDate = normalizedEarliest
+                            selectionState.select(date: normalizedEarliest)
+                        }
+                    }
+                    isHistoryPresented = true
+                } label: {
+                    HabitHeatmap(
+                        habit: habit,
+                        service: habitLogService,
+                        calendarProvider: heatmapCalendarProvider,
+                        selectedDate: selectedDate,
+                        earliestVisibleDate: earliestCalendarDate,
+                        isInteractive: false,
+                        onSelectDay: { _ in },
+                        onTapLockedDay: { _ in },
+                        isCompact: true,
+                        showsIdentityStateSummary: false
+                    )
+                    .opacity(isLowDataActivityState ? 0.7 : 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.xs)
+
                 if let guidanceOutput {
                     GuidanceCard(
                         output: guidanceOutput,
@@ -591,7 +610,7 @@ struct HabitDetailSheet: View {
                         loadingText: aiCoach.loadingText
                     )
                     .padding(.horizontal, sectionPadding)
-                    .padding(.top, 12)
+                    .padding(.top, CadenceTokens.Space.lg)
                 }
 
                 if let streakCardConfiguration {
@@ -635,61 +654,6 @@ struct HabitDetailSheet: View {
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
                 .opacity(guidanceOutput == nil ? 1 : 0.985)
-
-                Button {
-                    if let earliestCalendarDate {
-                        let normalizedEarliest = calculationCalendar.startOfDay(for: earliestCalendarDate)
-                        if selectedDate < normalizedEarliest {
-                            selectedDate = normalizedEarliest
-                            selectionState.select(date: normalizedEarliest)
-                        }
-                    }
-                    isHistoryPresented = true
-                } label: {
-                    VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
-                        Text("Activity")
-                            .font(CadenceTokens.Typography.sectionHeader)
-                            .foregroundStyle(CadenceTokens.Color.Text.secondary)
-
-                        Text(
-                            isLowDataActivityState
-                                ? "Your entries will appear here"
-                                : "Recent check-ins"
-                        )
-                        .font(CadenceTokens.Typography.supporting)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                        .lineLimit(1)
-
-                        HabitHeatmap(
-                            habit: habit,
-                            service: habitLogService,
-                            calendarProvider: heatmapCalendarProvider,
-                            selectedDate: selectedDate,
-                            earliestVisibleDate: earliestCalendarDate,
-                            isInteractive: false,
-                            onSelectDay: { _ in },
-                            onTapLockedDay: { _ in },
-                            isCompact: true,
-                            showsIdentityStateSummary: false
-                        )
-                        .opacity(isLowDataActivityState ? 0.7 : 1)
-
-                        HStack(spacing: 4) {
-                            Text("See all activity →")
-                                .font(CadenceTokens.Typography.microCopy)
-                                .foregroundStyle(CadenceTokens.Color.Text.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(CadenceTokens.Space.lg)
-                .frame(minHeight: 112, alignment: .topLeading)
-                .cadenceSurface(cornerRadius: sectionCornerRadius)
-                .padding(.horizontal, sectionPadding)
-                .padding(.top, CadenceTokens.Space.md)
-                .opacity(guidanceOutput == nil ? 1 : 0.97)
 
                 if showsInsightsSection {
                     VStack(alignment: .leading, spacing: CadenceTokens.Space.xs) {
@@ -995,9 +959,6 @@ struct HabitDetailSheet: View {
             return
         }
 
-        if isHistoryPresented {
-            viewModel.applyOptimisticHistoryLog(on: resolvedDay, calendar: calculationCalendar)
-        }
         _ = habitLogService.quickLog(for: habit, on: resolvedDay)
     }
 
@@ -1029,6 +990,52 @@ struct HabitDetailSheet: View {
         let year = components.year ?? 0
         let month = components.month ?? 0
         return "\(year)-\(month)"
+    }
+
+    private func canonicalHistorySnapshot() -> HistorySnapshot {
+        var countsByOrdinal: [Int: Int] = [:]
+        var dayByOrdinal: [Int: Date] = [:]
+
+        for log in habit.logs {
+            let day = calculationCalendar.startOfDay(for: log.day)
+            guard let ordinality = calculationCalendar.ordinality(of: .day, in: .era, for: day) else {
+                continue
+            }
+            countsByOrdinal[ordinality, default: 0] += 1
+            dayByOrdinal[ordinality] = day
+        }
+
+        let activeOrdinals = countsByOrdinal
+            .filter { $0.value > 0 }
+            .map(\.key)
+            .sorted()
+
+        var longestRun = 0
+        var currentRun = 0
+        var previousOrdinal: Int?
+
+        for ordinality in activeOrdinals {
+            if let previousOrdinal, ordinality == previousOrdinal + 1 {
+                currentRun += 1
+            } else {
+                currentRun = 1
+            }
+            longestRun = max(longestRun, currentRun)
+            previousOrdinal = ordinality
+        }
+
+        let dailyCounts = Dictionary(
+            uniqueKeysWithValues: dayByOrdinal.map { ordinality, day in
+                (day, countsByOrdinal[ordinality] ?? 0)
+            }
+        )
+
+        return HistorySnapshot(
+            dailyCounts: dailyCounts,
+            activeDays: activeOrdinals.count,
+            totalEntries: dailyCounts.values.reduce(0, +),
+            longestRun: longestRun
+        )
     }
 
     private func historyInsightSummary(
@@ -1836,7 +1843,6 @@ private struct KeyActionsSection: View {
     let accentHex: String
     let onQuickLog: () -> Void
     let onManualEntry: () -> Void
-    @State private var isPrimaryPressed: Bool = false
 
     private var primaryLabelText: String {
         isCompleteToday ? "Add more" : "Log today"
@@ -1853,8 +1859,7 @@ private struct KeyActionsSection: View {
     var body: some View {
         HStack(spacing: CadenceTokens.Space.sm + 2) {
             primaryButton
-            .buttonStyle(.plain)
-            .scaleEffect(isPrimaryPressed ? 0.985 : 1)
+                .buttonStyle(QuickActionPressStyle())
 
             if isCumulativeGoal {
                 secondaryButton
@@ -1866,15 +1871,7 @@ private struct KeyActionsSection: View {
     private var primaryButton: some View {
         Button {
             Haptics.impactLight()
-            withAnimation(.easeOut(duration: 0.08)) {
-                isPrimaryPressed = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                withAnimation(.easeOut(duration: 0.14)) {
-                    isPrimaryPressed = false
-                }
-            }
-            onQuickLog()
+            DispatchQueue.main.async(execute: onQuickLog)
         } label: {
             Label(primaryLabelText, systemImage: "checkmark.circle.fill")
                 .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
@@ -1918,6 +1915,14 @@ private struct KeyActionsSection: View {
                 Capsule()
                     .stroke(CadenceTokens.Color.Text.tertiary.opacity(colorScheme == .dark ? 0.9 : 0.75), lineWidth: CadenceTokens.Surface.strokeLineWidth)
             }
+    }
+}
+
+private struct QuickActionPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

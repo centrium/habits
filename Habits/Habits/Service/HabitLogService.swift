@@ -374,6 +374,28 @@ final class HabitLogService: ObservableObject {
             )
         }
     }
+
+    private func reconcileOptimisticState(
+        habitID: UUID,
+        day: Date,
+        progress: Double,
+        isComplete: Bool
+    ) {
+        MainActor.assumeIsolated {
+            uiStateStore.reconcileProgress(
+                habitId: habitID,
+                date: day,
+                progress: progress,
+                isComplete: isComplete
+            )
+        }
+    }
+
+    private func clearOptimisticStateIfPresent(habitID: UUID, day: Date) {
+        MainActor.assumeIsolated {
+            uiStateStore.clearIfPresent(habitId: habitID, date: day)
+        }
+    }
 }
 
 struct HabitDayMetrics {
@@ -831,13 +853,8 @@ extension HabitLogService {
         guard amount > 0 else { return 0 }
 
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
-        let modelDayValue = habit.value(on: normalizedDay, calendar: calendar)
-        let modelDayCount = habit.count(on: normalizedDay, calendar: calendar)
-        let pendingMetrics = pendingDayMetrics(for: habit.id, day: normalizedDay)
-        let currentDayValue = pendingMetrics?.value ?? modelDayValue
-        let currentDayCount = pendingMetrics?.count ?? modelDayCount
+        let currentDayValue = habit.value(on: normalizedDay, calendar: calendar)
         let newValue = currentDayValue + amount
-        let newCount = currentDayCount + 1
 
         let newProgress = habit.progressFractionAfterAdding(
             value: newValue,
@@ -850,52 +867,27 @@ extension HabitLogService {
             calendar: calendar
         )
 
-        let intensity: Double = {
-            guard habit.hasGoal, let target = habit.effectiveTargetValue, target > 0 else {
-                return newValue > 0 ? 1 : 0
-            }
-
-            switch habit.goalType {
-            case .frequency:
-                return clamp(Double(newCount) / target)
-            case .cumulative:
-                return clamp(newValue / target)
-            }
-        }()
-
-        setPendingDayMetrics(
-            for: habit.id,
-            day: normalizedDay,
-            metrics: PendingDayMetrics(
-                count: newCount,
-                value: newValue,
-                intensity: intensity
-            )
-        )
-
         setOptimisticState(
             habitID: habit.id,
             day: normalizedDay,
             progress: newProgress,
             isComplete: willBeComplete
         )
-        logsVersion = UUID()
-        playHaptic(becameComplete: !wasComplete && willBeComplete)
+        let log = HabitLog(timestamp: entryTimestamp, value: amount, calendar: calendar)
+        // Preserve selected calendar day grouping while keeping real event timestamp.
+        log.day = normalizedDay
+        habit.logs.append(log)
+        clearPendingDayMetrics(for: habit.id, day: normalizedDay)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            let log = HabitLog(timestamp: entryTimestamp, value: amount, calendar: self.calendar)
-            // Preserve selected calendar day grouping while keeping real event timestamp.
-            log.day = normalizedDay
-            habit.logs.append(log)
-            self.invalidateMetricsCache(
-                for: habit.id,
-                bumpRevision: false,
-                publishLogsVersion: false
-            )
-            self.schedulePersistAndReflectionSync(referenceDate: normalizedDay)
-            self.uiStateStore.clear(habitId: habit.id, date: normalizedDay)
-            self.clearPendingDayMetrics(for: habit.id, day: normalizedDay)
-        }
+        invalidateMetricsCache(for: habit.id)
+        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
+        let reconciledProgress = habit.progressFraction(for: normalizedDay, calendar: calendar) ?? newProgress
+        reconcileOptimisticState(
+            habitID: habit.id,
+            day: normalizedDay,
+            progress: reconciledProgress,
+            isComplete: habit.isComplete(for: normalizedDay, calendar: calendar)
+        )
 
         return newValue
     }
@@ -924,6 +916,7 @@ extension HabitLogService {
             habit.logs.append(HabitLog(timestamp: timestamp, value: amount, calendar: calendar))
         }
 
+        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
         invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return habit.value(on: normalizedDay, calendar: calendar)
@@ -939,6 +932,7 @@ extension HabitLogService {
 
         habit.logs.removeAll { $0.id == entry.id }
 
+        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
         invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return habit.value(on: normalizedDay, calendar: calendar)
@@ -952,6 +946,7 @@ extension HabitLogService {
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
         removeLogs(for: habit, on: normalizedDay)
+        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
         invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return 0
@@ -989,6 +984,7 @@ extension HabitLogService {
             return 0
         }
 
+        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
         invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return count(for: habit, on: normalizedDay)
@@ -1011,6 +1007,7 @@ extension HabitLogService {
             }
         }
 
+        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
         invalidateMetricsCache(for: habit.id)
         saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
         return value
