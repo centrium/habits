@@ -36,6 +36,7 @@ struct HabitInsightsEngine {
         timezone: TimeZone? = nil,
         now: Date = .now
     ) -> HabitInsightsViewModel {
+        LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
 
         var calendar = calendar
         if let timezone {

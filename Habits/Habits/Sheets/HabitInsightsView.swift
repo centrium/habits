@@ -3,7 +3,6 @@ import SwiftData
 
 struct HabitInsightsView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     let habit: Habit
     let logAnchorDate: Date?
 
@@ -15,6 +14,10 @@ struct HabitInsightsView: View {
     @EnvironmentObject private var userSettings: UserSettings
     @State private var hasAnimatedIn = false
     @State private var insightsViewModel: HabitInsightsViewModel?
+    @State private var hasLoadedSnapshot = false
+    @State private var isViewActive = false
+    @State private var insightsRequestSequence: UInt64 = 0
+    @State private var insightsRefreshTask: Task<Void, Never>?
 
     private var accent: Color { habit.curatedColorVariants.strong }
 
@@ -48,7 +51,11 @@ struct HabitInsightsView: View {
             }
         }
         .onAppear {
-            refreshInsights()
+            isViewActive = true
+            if !hasLoadedSnapshot {
+                hasLoadedSnapshot = true
+                refreshInsightsSnapshot()
+            }
             hasAnimatedIn = false
             DispatchQueue.main.async {
                 withAnimation(AppMotion.reveal) {
@@ -56,24 +63,138 @@ struct HabitInsightsView: View {
                 }
             }
         }
-        .onChange(of: userSettings.weekStartPreference) { _, _ in
-            refreshInsights()
-        }
-        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
-            refreshInsights()
+        .onDisappear {
+            isViewActive = false
+            hasLoadedSnapshot = false
+            insightsRefreshTask?.cancel()
+            insightsRefreshTask = nil
         }
     }
 
-    private func refreshInsights() {
-        insightsViewModel = HabitInsightsEngine.insights(
-            for: habit,
+    private struct InsightsSnapshotInput {
+        let habit: Habit
+        let logAnchorDate: Date?
+        let globalLogs: [HabitLog]
+        let calendar: Calendar
+        let weekStartPreference: WeekStartPreference
+        let greigModeEnabled: Bool
+        let timezone: TimeZone
+        let now: Date
+    }
+
+    private func refreshInsightsSnapshot() {
+        insightsRefreshTask?.cancel()
+        insightsRequestSequence &+= 1
+        let requestSequence = insightsRequestSequence
+        let snapshotInput = makeSnapshotInput()
+
+        insightsRefreshTask = Task(priority: .userInitiated) {
+            let result = await computeInsightsOffMain(from: snapshotInput)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard isViewActive else { return }
+                guard insightsRequestSequence == requestSequence else { return }
+                guard !Task.isCancelled else { return }
+                withTransaction(Transaction(animation: nil)) {
+                    insightsViewModel = result
+                }
+                insightsRefreshTask = nil
+            }
+        }
+    }
+
+    private func makeSnapshotInput() -> InsightsSnapshotInput {
+        var calendar = Calendar.current
+        let timezone = calendar.timeZone
+        calendar.timeZone = timezone
+
+        return InsightsSnapshotInput(
+            habit: detachedHabitCopy(from: habit, calendar: calendar),
             logAnchorDate: logAnchorDate,
             globalLogs: [],
-            calendar: .current,
+            calendar: calendar,
             weekStartPreference: userSettings.weekStartPreference,
             greigModeEnabled: userSettings.greigModeEnabled,
+            timezone: timezone,
             now: .now
         )
+    }
+
+    private func computeInsightsOffMain(from input: InsightsSnapshotInput) async -> HabitInsightsViewModel {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let model = HabitInsightsEngine.insights(
+                    for: input.habit,
+                    logAnchorDate: input.logAnchorDate,
+                    globalLogs: input.globalLogs,
+                    calendar: input.calendar,
+                    weekStartPreference: input.weekStartPreference,
+                    greigModeEnabled: input.greigModeEnabled,
+                    timezone: input.timezone,
+                    now: input.now
+                )
+                continuation.resume(returning: model)
+            }
+        }
+    }
+
+    private func detachedHabitCopy(from habit: Habit, calendar: Calendar) -> Habit {
+        let detachedHabit = Habit(
+            name: habit.name,
+            colorHex: habit.colorHex,
+            identity: habit.identity,
+            category: habit.category,
+            subtitle: habit.subtitle,
+            iconName: habit.iconName,
+            hasStreakGoal: habit.hasStreakGoal,
+            goalPeriod: habit.goalPeriod,
+            goalType: habit.goalType,
+            streakTarget: habit.streakTarget,
+            targetValue: habit.targetValue,
+            unit: habit.unit,
+            allowsDecimals: habit.allowsDecimals,
+            createdAt: habit.createdAt,
+            orderIndex: habit.orderIndex,
+            triggerHabitID: habit.triggerHabitID,
+            cueText: habit.cueText,
+            cueSourceHabitId: habit.cueSourceHabitId,
+            cueType: habit.cueTypeValue
+        )
+        detachedHabit.id = habit.id
+        detachedHabit.logs = detachedLogsCopy(from: habit.logs, calendar: calendar)
+        return detachedHabit
+    }
+
+    private func detachedLogsCopy(from logs: [HabitLog], calendar: Calendar) -> [HabitLog] {
+        logs.map { log in
+            let copy: HabitLog
+            switch log.kind {
+            case .entry:
+                copy = HabitLog(
+                    timestamp: log.effectiveTimestamp,
+                    value: log.numericValue,
+                    createdAt: log.createdAt,
+                    calendar: calendar
+                )
+            case .legacyDailyTotal:
+                copy = HabitLog(
+                    day: log.day,
+                    count: log.count,
+                    createdAt: log.createdAt,
+                    calendar: calendar
+                )
+            }
+
+            copy.id = log.id
+            copy.day = log.day
+            copy.count = log.count
+            copy.timestamp = log.timestamp
+            copy.value = log.value
+            copy.logKindRaw = log.logKindRaw
+            copy.createdAt = log.createdAt
+            return copy
+        }
     }
 }
 
