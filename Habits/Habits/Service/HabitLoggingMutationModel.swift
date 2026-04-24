@@ -51,11 +51,36 @@ enum HabitLogMutationStatus: String, Codable, Sendable {
     case droppedStale
 }
 
+enum HabitLogMutationOperation: Hashable, Codable, Sendable {
+    case addLog(value: Double, entryTimestamp: Date)
+    case clearDay
+    case setDayCount(Int)
+    case deleteEntry(logID: UUID)
+    case updateEntry(logID: UUID, value: Double)
+}
+
+enum HabitLogMutationIdentity {
+    static func deterministicLogID(baseNonce: UUID, index: Int) -> UUID {
+        var bytes = baseNonce.uuid
+        let encodedIndex = UInt64(max(0, index)).bigEndian
+        withUnsafeMutableBytes(of: &bytes) { buffer in
+            for byteOffset in 0..<8 {
+                let shift = (7 - byteOffset) * 8
+                buffer[8 + byteOffset] = UInt8((encodedIndex >> UInt64(shift)) & 0xFF)
+            }
+        }
+        return UUID(uuid: bytes)
+    }
+}
+
 struct HabitLogPendingMutation: Identifiable, Hashable, Codable, Sendable {
     let id: HabitLogMutationID
     let createdAt: Date
+    let operation: HabitLogMutationOperation
     let valueDelta: Double
     let countDelta: Int
+    let expectedCount: Int?
+    let expectedValue: Double?
     let expectedProgress: Double?
     let expectedCompletion: Bool?
     var status: HabitLogMutationStatus
@@ -73,8 +98,37 @@ struct HabitLogPendingMutation: Identifiable, Hashable, Codable, Sendable {
     ) {
         self.id = id
         self.createdAt = createdAt
+        self.operation = .addLog(value: valueDelta, entryTimestamp: createdAt)
         self.valueDelta = valueDelta
         self.countDelta = countDelta
+        self.expectedCount = nil
+        self.expectedValue = nil
+        self.expectedProgress = expectedProgress
+        self.expectedCompletion = expectedCompletion
+        self.status = status
+        self.lastErrorDescription = lastErrorDescription
+    }
+
+    init(
+        id: HabitLogMutationID,
+        createdAt: Date = .now,
+        operation: HabitLogMutationOperation,
+        valueDelta: Double = 0,
+        countDelta: Int = 0,
+        expectedCount: Int? = nil,
+        expectedValue: Double? = nil,
+        expectedProgress: Double?,
+        expectedCompletion: Bool?,
+        status: HabitLogMutationStatus = .queued,
+        lastErrorDescription: String? = nil
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.operation = operation
+        self.valueDelta = valueDelta
+        self.countDelta = countDelta
+        self.expectedCount = expectedCount
+        self.expectedValue = expectedValue
         self.expectedProgress = expectedProgress
         self.expectedCompletion = expectedCompletion
         self.status = status

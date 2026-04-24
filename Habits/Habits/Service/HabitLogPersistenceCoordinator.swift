@@ -99,15 +99,62 @@ actor HabitLogPersistenceCoordinator {
             return false
         }
 
-        if !habit.logs.contains(where: { $0.id == payload.mutation.id.nonce }) {
-            let log = HabitLog(
-                timestamp: payload.entryTimestamp,
-                value: payload.mutation.valueDelta,
-                createdAt: payload.mutation.createdAt
-            )
-            log.id = payload.mutation.id.nonce
-            log.day = payload.mutation.id.dayStart
-            habit.logs.append(log)
+        switch payload.mutation.operation {
+        case .addLog:
+            if !habit.logs.contains(where: { $0.id == payload.mutation.id.nonce }) {
+                let log = HabitLog(
+                    timestamp: payload.entryTimestamp,
+                    value: payload.mutation.valueDelta,
+                    createdAt: payload.mutation.createdAt
+                )
+                log.id = payload.mutation.id.nonce
+                log.day = payload.mutation.id.dayStart
+                habit.logs.append(log)
+            }
+        case .clearDay:
+            habit.logs.removeAll { $0.day == payload.mutation.id.dayStart }
+        case let .setDayCount(newCount):
+            habit.logs.removeAll { $0.day == payload.mutation.id.dayStart }
+            for offset in 0..<max(0, newCount) {
+                let timestamp = payload.mutation.id.dayStart.addingTimeInterval(TimeInterval(offset))
+                let logID = HabitLogMutationIdentity.deterministicLogID(
+                    baseNonce: payload.mutation.id.nonce,
+                    index: offset
+                )
+                guard !habit.logs.contains(where: { $0.id == logID }) else { continue }
+                let log = HabitLog(
+                    timestamp: timestamp,
+                    value: 1,
+                    createdAt: payload.mutation.createdAt
+                )
+                log.id = logID
+                log.day = payload.mutation.id.dayStart
+                habit.logs.append(log)
+            }
+        case let .deleteEntry(logID):
+            habit.logs.removeAll { $0.id == logID }
+        case let .updateEntry(logID, value):
+            let amount = max(0, value)
+            guard let logIndex = habit.logs.firstIndex(where: { $0.id == logID }) else {
+                break
+            }
+
+            if amount == 0 {
+                habit.logs.remove(at: logIndex)
+            } else if habit.logs[logIndex].kind == .entry {
+                habit.logs[logIndex].value = amount
+                habit.logs[logIndex].createdAt = payload.mutation.createdAt
+            } else {
+                let legacyLog = habit.logs.remove(at: logIndex)
+                let timestamp = legacyLog.effectiveTimestamp
+                habit.logs.append(
+                    HabitLog(
+                        timestamp: timestamp,
+                        value: amount,
+                        createdAt: payload.mutation.createdAt
+                    )
+                )
+            }
         }
 
         try context.save()

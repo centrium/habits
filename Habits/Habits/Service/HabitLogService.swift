@@ -364,6 +364,15 @@ final class HabitLogService: ObservableObject {
         case let .committed(mutation, referenceDate):
             mutationLedger.updateStatus(for: mutation.id, status: .committed)
             mutationLedger.markCommitted(mutation.id)
+            if case .clearDay = mutation.operation {
+                invalidateMetricsCache(for: mutation.id.habitID)
+            } else if case .setDayCount = mutation.operation {
+                invalidateMetricsCache(for: mutation.id.habitID)
+            } else if case .deleteEntry = mutation.operation {
+                invalidateMetricsCache(for: mutation.id.habitID)
+            } else if case .updateEntry = mutation.operation {
+                invalidateMetricsCache(for: mutation.id.habitID)
+            }
             uiStateStore.applyCommittedMutation(mutation)
             clearPendingDayMetrics(for: mutation.id.habitID, day: mutation.id.dayStart)
             LoggingPerformanceMonitor.markPersistCommitted(
@@ -387,6 +396,7 @@ final class HabitLogService: ObservableObject {
                 status: .failed,
                 errorDescription: errorDescription
             )
+            clearPendingDayMetrics(for: mutation.id.habitID, day: mutation.id.dayStart)
         }
     }
 
@@ -701,7 +711,7 @@ extension HabitLogService {
 }
 
 extension HabitLogService {
-    private func ensureProjectedDayState(
+    private func seedProjectedDayStateBySeeding(
         for habit: Habit,
         on date: Date
     ) -> HabitProjectedDayState? {
@@ -747,6 +757,75 @@ extension HabitLogService {
                 calendar: calendar
             )
         }
+    }
+
+    @discardableResult
+    func seedProjectedDayStateIfNeeded(
+        for habit: Habit,
+        on date: Date
+    ) -> HabitProjectedDayState? {
+        normalizeLogsIfNeeded(for: habit)
+        return seedProjectedDayStateBySeeding(for: habit, on: date)
+    }
+
+    func dayStateIfAvailable(
+        for habit: Habit,
+        on date: Date
+    ) -> HabitProjectedDayState? {
+        let normalizedDay = calendar.startOfDay(for: date)
+
+        if let projected = MainActor.assumeIsolated({
+            uiStateStore.projectedDayState(
+                habitID: habit.id,
+                day: normalizedDay,
+                calendar: calendar
+            )
+        }) {
+            return projected
+        }
+
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        return HabitProjectedDayState(
+            count: max(0, habit.count(on: normalizedDay, calendar: calendar)),
+            value: max(0, habit.value(on: normalizedDay, calendar: calendar)),
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: habit.isComplete(for: normalizedDay, calendar: calendar),
+            headSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        )
+    }
+
+    func projectedValueIfAvailable(for habit: Habit, on date: Date) -> Double? {
+        let normalizedDay = calendar.startOfDay(for: date)
+        if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
+            return pending.value
+        }
+        return dayStateIfAvailable(for: habit, on: normalizedDay)?.value
+    }
+
+    func projectedValueIfAvailable(for habit: Habit, in interval: DateInterval) -> Double? {
+        let days = days(in: interval)
+        guard !days.isEmpty else { return 0 }
+        return days.reduce(0) { partialResult, day in
+            partialResult + (projectedValueIfAvailable(for: habit, on: day) ?? 0)
+        }
+    }
+
+    func formattedProjectedValueIfAvailable(for habit: Habit, on date: Date) -> String? {
+        guard let total = projectedValueIfAvailable(for: habit, on: date), total > 0 else {
+            return nil
+        }
+        return formatValue(total, for: habit)
+    }
+
+    func formattedProjectedValueIfAvailable(for habit: Habit, in interval: DateInterval) -> String? {
+        guard let total = projectedValueIfAvailable(for: habit, in: interval), total > 0 else {
+            return nil
+        }
+        return formatValue(total, for: habit)
     }
 
     func projectedHistoryDayStates(for habit: Habit) -> [Date: HabitProjectedDayState] {
@@ -813,53 +892,54 @@ extension HabitLogService {
     }
 
     func count(for habit: Habit, on date: Date) -> Int {
-        normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: date)
         if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
             return pending.count
         }
-        if let projected = ensureProjectedDayState(for: habit, on: normalizedDay) {
-            return projected.count
-        }
-        return 0
+        return dayStateIfAvailable(for: habit, on: normalizedDay)?.count ?? 0
     }
 
     func value(for habit: Habit, on date: Date) -> Double {
-        normalizeLogsIfNeeded(for: habit)
-        let normalizedDay = calendar.startOfDay(for: date)
-        if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
-            return pending.value
-        }
-        if let projected = ensureProjectedDayState(for: habit, on: normalizedDay) {
-            return projected.value
-        }
-        return 0
+        projectedValueIfAvailable(for: habit, on: date) ?? 0
     }
 
     func value(for habit: Habit, in interval: DateInterval) -> Double {
-        normalizeLogsIfNeeded(for: habit)
-        let days = days(in: interval)
-        guard !days.isEmpty else { return 0 }
-        return days.reduce(0) { partialResult, day in
-            partialResult + value(for: habit, on: day)
-        }
+        projectedValueIfAvailable(for: habit, in: interval) ?? 0
     }
 
     func formattedValue(for habit: Habit, on date: Date) -> String? {
-        let total = value(for: habit, on: date)
-        guard total > 0 else { return nil }
-        return formatValue(total, for: habit)
+        formattedProjectedValueIfAvailable(for: habit, on: date)
     }
 
     func formattedValue(for habit: Habit, in interval: DateInterval) -> String? {
-        let total = value(for: habit, in: interval)
-        guard total > 0 else { return nil }
-        return formatValue(total, for: habit)
+        formattedProjectedValueIfAvailable(for: habit, in: interval)
     }
 
     func entries(for habit: Habit, on date: Date) -> [HabitLog] {
-        normalizeLogsIfNeeded(for: habit)
-        return logs(for: habit, on: date)
+        return projectedEntries(for: habit, on: date)
+    }
+
+    func pendingDeleteEntryIDs(for habit: Habit, on date: Date) -> Set<UUID> {
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: date,
+            calendar: calendar
+        )
+        let pending = MainActor.assumeIsolated {
+            uiStateStore.pendingMutations(for: habit.id)
+        }
+        return Set(
+            pending.compactMap { mutation in
+                guard mutation.id.dayKey == dayKey else { return nil }
+                guard mutation.status != .failed,
+                      mutation.status != .droppedStale,
+                      mutation.status != .committed else {
+                    return nil
+                }
+                guard case let .deleteEntry(logID) = mutation.operation else { return nil }
+                return logID
+            }
+        )
     }
 
     func suggestedQuickEntryValue(for habit: Habit) -> Double? {
@@ -1122,6 +1202,7 @@ extension HabitLogService {
         )
         let pendingMutation = HabitLogPendingMutation(
             id: mutationID,
+            operation: .addLog(value: amount, entryTimestamp: entryTimestamp),
             valueDelta: amount,
             countDelta: 1,
             expectedProgress: newProgress,
@@ -1167,26 +1248,77 @@ extension HabitLogService {
         let normalizedDay = calendar.startOfDay(for: day)
         let amount = max(0, value)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
-
-        guard let logIndex = habit.logs.firstIndex(where: { $0.id == entry.id }) else {
-            return habit.value(on: normalizedDay, calendar: calendar)
-        }
-
-        if amount == 0 {
-            habit.logs.remove(at: logIndex)
-        } else if habit.logs[logIndex].kind == .entry {
-            habit.logs[logIndex].value = amount
-            habit.logs[logIndex].createdAt = .now
-        } else {
-            let legacyLog = habit.logs.remove(at: logIndex)
-            let timestamp = legacyLog.effectiveTimestamp
-            habit.logs.append(HabitLog(timestamp: timestamp, value: amount, calendar: calendar))
-        }
-
+        let currentDayCount = habit.count(on: normalizedDay, calendar: calendar)
+        let currentDayValue = habit.value(on: normalizedDay, calendar: calendar)
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        let sequence = mutationSequenceTracker.nextSequence(for: dayKey)
+        let mutationID = HabitLogMutationID(
+            habitID: habit.id,
+            dayStart: dayKey.dayStart,
+            sequence: sequence
+        )
         clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
-        return habit.value(on: normalizedDay, calendar: calendar)
+        let committedState = HabitCommittedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: wasComplete,
+            committedSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        )
+        let currentProjected = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        ) ?? HabitProjectedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: committedState.progress,
+            isComplete: committedState.isComplete,
+            headSequence: committedState.committedSequence
+        )
+        let expected = expectedStateAfterUpdatingEntry(
+            entry: entry,
+            newValue: amount,
+            habit: habit,
+            day: normalizedDay,
+            currentProjected: currentProjected
+        )
+        let pendingMutation = HabitLogPendingMutation(
+            id: mutationID,
+            operation: .updateEntry(logID: entry.id, value: amount),
+            expectedCount: expected.count,
+            expectedValue: expected.value,
+            expectedProgress: expected.progress,
+            expectedCompletion: expected.isComplete
+        )
+        mutationLedger.enqueue(pendingMutation)
+        uiStateStore.seedCommittedAndAppendPending(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar,
+            committedState: committedState,
+            mutation: pendingMutation
+        )
+        setPendingDayMetrics(
+            for: habit.id,
+            day: normalizedDay,
+            metrics: PendingDayMetrics(
+                count: expected.count,
+                value: expected.value,
+                intensity: clamp(expected.progress)
+            )
+        )
+        playHaptic(becameComplete: !wasComplete && expected.isComplete)
+        enqueueMutationPersistence(
+            mutation: pendingMutation,
+            entryTimestamp: normalizedDay,
+            referenceDate: normalizedDay
+        )
+        return expected.value
     }
 
     @discardableResult
@@ -1195,13 +1327,76 @@ extension HabitLogService {
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
-
-        habit.logs.removeAll { $0.id == entry.id }
-
+        let currentDayCount = habit.count(on: normalizedDay, calendar: calendar)
+        let currentDayValue = habit.value(on: normalizedDay, calendar: calendar)
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        let sequence = mutationSequenceTracker.nextSequence(for: dayKey)
+        let mutationID = HabitLogMutationID(
+            habitID: habit.id,
+            dayStart: dayKey.dayStart,
+            sequence: sequence
+        )
         clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
-        return habit.value(on: normalizedDay, calendar: calendar)
+        let committedState = HabitCommittedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: wasComplete,
+            committedSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        )
+        let currentProjected = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        ) ?? HabitProjectedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: committedState.progress,
+            isComplete: committedState.isComplete,
+            headSequence: committedState.committedSequence
+        )
+        let expected = expectedStateAfterDeletingEntry(
+            entry: entry,
+            habit: habit,
+            day: normalizedDay,
+            currentProjected: currentProjected
+        )
+        let pendingMutation = HabitLogPendingMutation(
+            id: mutationID,
+            operation: .deleteEntry(logID: entry.id),
+            expectedCount: expected.count,
+            expectedValue: expected.value,
+            expectedProgress: expected.progress,
+            expectedCompletion: expected.isComplete
+        )
+        mutationLedger.enqueue(pendingMutation)
+        uiStateStore.seedCommittedAndAppendPending(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar,
+            committedState: committedState,
+            mutation: pendingMutation
+        )
+        setPendingDayMetrics(
+            for: habit.id,
+            day: normalizedDay,
+            metrics: PendingDayMetrics(
+                count: expected.count,
+                value: expected.value,
+                intensity: clamp(expected.progress)
+            )
+        )
+        playHaptic(becameComplete: !wasComplete && expected.isComplete)
+        enqueueMutationPersistence(
+            mutation: pendingMutation,
+            entryTimestamp: normalizedDay,
+            referenceDate: normalizedDay
+        )
+        return expected.value
     }
 
     @discardableResult
@@ -1210,10 +1405,56 @@ extension HabitLogService {
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
-        removeLogs(for: habit, on: normalizedDay)
+
+        let currentDayCount = habit.count(on: normalizedDay, calendar: calendar)
+        let currentDayValue = habit.value(on: normalizedDay, calendar: calendar)
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        let sequence = mutationSequenceTracker.nextSequence(for: dayKey)
+        let mutationID = HabitLogMutationID(
+            habitID: habit.id,
+            dayStart: dayKey.dayStart,
+            sequence: sequence
+        )
+
         clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
+        let committedState = HabitCommittedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: wasComplete,
+            committedSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        )
+        let pendingMutation = HabitLogPendingMutation(
+            id: mutationID,
+            operation: .clearDay,
+            expectedCount: 0,
+            expectedValue: 0,
+            expectedProgress: 0,
+            expectedCompletion: false
+        )
+        mutationLedger.enqueue(pendingMutation)
+        uiStateStore.seedCommittedAndAppendPending(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar,
+            committedState: committedState,
+            mutation: pendingMutation
+        )
+        setPendingDayMetrics(
+            for: habit.id,
+            day: normalizedDay,
+            metrics: PendingDayMetrics(count: 0, value: 0, intensity: 0)
+        )
+        playHaptic(becameComplete: false)
+        enqueueMutationPersistence(
+            mutation: pendingMutation,
+            entryTimestamp: normalizedDay,
+            referenceDate: normalizedDay
+        )
         return 0
     }
 
@@ -1230,28 +1471,15 @@ extension HabitLogService {
 
     @discardableResult
     func decrement(for habit: Habit, on day: Date) -> Int {
-        lastLogUserActionAt = Date()
         let normalizedDay = calendar.startOfDay(for: day)
-        let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
-        let dayLogs = logs(for: habit, on: normalizedDay)
-
-        if let entryIndex = dayLogs.firstIndex(where: { $0.kind == .entry }),
-           let logIndex = habit.logs.firstIndex(where: { $0.id == dayLogs[entryIndex].id }) {
-            habit.logs.remove(at: logIndex)
-        } else if let legacyIndex = habit.logs.firstIndex(where: { $0.day == normalizedDay && $0.kind == .legacyDailyTotal }) {
-            let log = habit.logs[legacyIndex]
-            log.count = max(0, log.count - 1)
-            if log.count == 0 {
-                habit.logs.remove(at: legacyIndex)
-            }
-        } else {
-            return 0
-        }
-
-        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
-        return count(for: habit, on: normalizedDay)
+        let projected = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        let currentCount = max(0, projected?.count ?? 0)
+        let nextCount = max(0, currentCount - 1)
+        return setCount(for: habit, on: normalizedDay, to: nextCount)
     }
 
     @discardableResult
@@ -1260,19 +1488,340 @@ extension HabitLogService {
         let normalizedDay = calendar.startOfDay(for: day)
         let value = max(0, newValue)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
+        let currentDayCount = habit.count(on: normalizedDay, calendar: calendar)
+        let currentDayValue = habit.value(on: normalizedDay, calendar: calendar)
 
-        removeLogs(for: habit, on: normalizedDay)
-
-        if value > 0 {
-            for offset in 0..<value {
-                let timestamp = calendar.date(byAdding: .second, value: offset, to: normalizedDay) ?? normalizedDay
-                habit.logs.append(HabitLog(timestamp: timestamp, value: 1, calendar: calendar))
-            }
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        let sequence = mutationSequenceTracker.nextSequence(for: dayKey)
+        let mutationID = HabitLogMutationID(
+            habitID: habit.id,
+            dayStart: dayKey.dayStart,
+            sequence: sequence
+        )
+        let expectedProgress: Double
+        let expectedCompletion: Bool
+        if value == 0 {
+            expectedProgress = 0
+            expectedCompletion = false
+        } else {
+            let state = projectedFrequencyStateAfterSettingCount(
+                habit: habit,
+                day: normalizedDay,
+                replacementCount: value
+            )
+            expectedProgress = state.progress
+            expectedCompletion = state.isComplete
         }
 
         clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
+        let committedState = HabitCommittedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: wasComplete,
+            committedSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        )
+        let pendingMutation = HabitLogPendingMutation(
+            id: mutationID,
+            operation: .setDayCount(value),
+            expectedCount: value,
+            expectedValue: Double(value),
+            expectedProgress: expectedProgress,
+            expectedCompletion: expectedCompletion
+        )
+        mutationLedger.enqueue(pendingMutation)
+        uiStateStore.seedCommittedAndAppendPending(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar,
+            committedState: committedState,
+            mutation: pendingMutation
+        )
+        setPendingDayMetrics(
+            for: habit.id,
+            day: normalizedDay,
+            metrics: PendingDayMetrics(
+                count: value,
+                value: Double(value),
+                intensity: clamp(expectedProgress)
+            )
+        )
+        playHaptic(becameComplete: !wasComplete && expectedCompletion)
+        enqueueMutationPersistence(
+            mutation: pendingMutation,
+            entryTimestamp: normalizedDay,
+            referenceDate: normalizedDay
+        )
         return value
+    }
+}
+
+private extension HabitLogService {
+    func expectedStateAfterUpdatingEntry(
+        entry: HabitLog,
+        newValue: Double,
+        habit: Habit,
+        day: Date,
+        currentProjected: HabitProjectedDayState
+    ) -> (count: Int, value: Double, progress: Double, isComplete: Bool) {
+        let dayKey = HabitLogDayKey.make(habitID: habit.id, day: day, calendar: calendar)
+        let pendingForDay = uiStateStore.pendingMutations(for: habit.id).filter {
+            $0.id.dayKey == dayKey && $0.status != .failed
+        }
+        let hasReplacementPending = pendingForDay.contains { mutation in
+            switch mutation.operation {
+            case .clearDay, .setDayCount:
+                return true
+            case .addLog, .deleteEntry, .updateEntry:
+                return false
+            }
+        }
+        let hasPendingDeleteForEntry = pendingForDay.contains { mutation in
+            guard case let .deleteEntry(logID) = mutation.operation else { return false }
+            return logID == entry.id
+        }
+
+        let nextCount: Int
+        let nextValue: Double
+        if hasReplacementPending || hasPendingDeleteForEntry {
+            nextCount = currentProjected.count
+            nextValue = currentProjected.value
+        } else {
+            let oldCountContribution = max(0, entry.frequencyContribution)
+            let oldValueContribution = max(0, entry.numericValue)
+            let nextCountContribution = newValue > 0 ? 1 : 0
+            nextCount = max(0, currentProjected.count - oldCountContribution + nextCountContribution)
+            nextValue = max(0, currentProjected.value - oldValueContribution + newValue)
+        }
+
+        let replacementState = projectedStateAfterReplacingDayTotals(
+            habit: habit,
+            day: day,
+            currentProjectedCount: currentProjected.count,
+            currentProjectedValue: currentProjected.value,
+            replacementCount: nextCount,
+            replacementValue: nextValue
+        )
+        return (
+            count: nextCount,
+            value: nextValue,
+            progress: replacementState.progress,
+            isComplete: replacementState.isComplete
+        )
+    }
+
+    func expectedStateAfterDeletingEntry(
+        entry: HabitLog,
+        habit: Habit,
+        day: Date,
+        currentProjected: HabitProjectedDayState
+    ) -> (count: Int, value: Double, progress: Double, isComplete: Bool) {
+        let pendingForDay = uiStateStore.pendingMutations(for: habit.id).filter {
+            $0.id.dayKey == HabitLogDayKey.make(habitID: habit.id, day: day, calendar: calendar) && $0.status != .failed
+        }
+        let hasReplacementPending = pendingForDay.contains { mutation in
+            switch mutation.operation {
+            case .clearDay, .setDayCount:
+                return true
+            case .addLog, .deleteEntry, .updateEntry:
+                return false
+            }
+        }
+
+        let nextCount: Int
+        let nextValue: Double
+        if hasReplacementPending {
+            nextCount = currentProjected.count
+            nextValue = currentProjected.value
+        } else {
+            nextCount = max(0, currentProjected.count - max(0, entry.frequencyContribution))
+            nextValue = max(0, currentProjected.value - max(0, entry.numericValue))
+        }
+
+        let replacementState = projectedStateAfterReplacingDayTotals(
+            habit: habit,
+            day: day,
+            currentProjectedCount: currentProjected.count,
+            currentProjectedValue: currentProjected.value,
+            replacementCount: nextCount,
+            replacementValue: nextValue
+        )
+        return (
+            count: nextCount,
+            value: nextValue,
+            progress: replacementState.progress,
+            isComplete: replacementState.isComplete
+        )
+    }
+
+    func projectedFrequencyStateAfterSettingCount(
+        habit: Habit,
+        day: Date,
+        replacementCount: Int
+    ) -> (progress: Double, isComplete: Bool) {
+        projectedStateAfterReplacingDayTotals(
+            habit: habit,
+            day: day,
+            currentProjectedCount: habit.count(on: day, calendar: calendar),
+            currentProjectedValue: habit.value(on: day, calendar: calendar),
+            replacementCount: replacementCount,
+            replacementValue: Double(replacementCount)
+        )
+    }
+
+    func projectedStateAfterReplacingDayTotals(
+        habit: Habit,
+        day: Date,
+        currentProjectedCount: Int,
+        currentProjectedValue: Double,
+        replacementCount: Int,
+        replacementValue: Double
+    ) -> (progress: Double, isComplete: Bool) {
+        guard let target = habit.effectiveTargetValue, target > 0 else {
+            return (0, false)
+        }
+
+        let interval = habit.periodRange(for: day, calendar: calendar)
+        let currentPeriodTotal = habit.progressTotal(in: interval)
+        switch habit.goalType {
+        case .frequency:
+            let committedDayCount = Double(habit.count(on: day, calendar: calendar))
+            let projectedPeriodTotal = max(
+                0,
+                currentPeriodTotal - committedDayCount + Double(currentProjectedCount)
+            )
+            let updatedPeriodTotal = max(
+                0,
+                projectedPeriodTotal - Double(currentProjectedCount) + Double(replacementCount)
+            )
+            let progress = GoalProgress(actual: Int(updatedPeriodTotal), goal: Int(target)).fraction
+            return (progress, progress >= 1)
+        case .cumulative:
+            let committedDayValue = habit.value(on: day, calendar: calendar)
+            let projectedPeriodTotal = max(
+                0,
+                currentPeriodTotal - committedDayValue + currentProjectedValue
+            )
+            let updatedPeriodTotal = max(
+                0,
+                projectedPeriodTotal - currentProjectedValue + replacementValue
+            )
+            let progress = min(max(updatedPeriodTotal / target, 0), 1)
+            return (progress, progress >= 1)
+        }
+    }
+
+    func projectedEntries(for habit: Habit, on date: Date) -> [HabitLog] {
+        let normalizedDay = calendar.startOfDay(for: date)
+        var projected = logs(for: habit, on: normalizedDay).map { detachedEntryCopy(from: $0) }
+        let dayKey = HabitLogDayKey.make(habitID: habit.id, day: normalizedDay, calendar: calendar)
+        let pending = MainActor.assumeIsolated {
+            uiStateStore.pendingMutations(for: habit.id)
+        }
+        let pendingForDay = pending
+            .filter { mutation in
+                mutation.id.dayKey == dayKey &&
+                    mutation.status != .failed &&
+                    mutation.status != .droppedStale &&
+                    mutation.status != .committed
+            }
+            .sorted { lhs, rhs in
+                if lhs.id.sequence == rhs.id.sequence {
+                    return lhs.createdAt < rhs.createdAt
+                }
+                return lhs.id.sequence < rhs.id.sequence
+            }
+
+        guard !pendingForDay.isEmpty else { return projected }
+
+        for mutation in pendingForDay {
+            switch mutation.operation {
+            case let .addLog(value, entryTimestamp):
+                projected.removeAll(where: { $0.id == mutation.id.nonce })
+                let log = HabitLog(
+                    timestamp: entryTimestamp,
+                    value: max(0, value),
+                    createdAt: mutation.createdAt,
+                    calendar: calendar
+                )
+                log.id = mutation.id.nonce
+                log.day = dayKey.dayStart
+                projected.append(log)
+            case let .deleteEntry(logID):
+                projected.removeAll(where: { $0.id == logID })
+            case let .updateEntry(logID, value):
+                guard let index = projected.firstIndex(where: { $0.id == logID }) else {
+                    continue
+                }
+                let amount = max(0, value)
+                if amount == 0 {
+                    projected.remove(at: index)
+                } else {
+                    projected[index].value = amount
+                    projected[index].createdAt = mutation.createdAt
+                }
+            case .clearDay:
+                projected.removeAll()
+            case let .setDayCount(newCount):
+                projected.removeAll()
+                for offset in 0..<max(0, newCount) {
+                    let timestamp = dayKey.dayStart.addingTimeInterval(TimeInterval(offset))
+                    let log = HabitLog(
+                        timestamp: timestamp,
+                        value: 1,
+                        createdAt: mutation.createdAt,
+                        calendar: calendar
+                    )
+                    log.id = HabitLogMutationIdentity.deterministicLogID(
+                        baseNonce: mutation.id.nonce,
+                        index: offset
+                    )
+                    log.day = dayKey.dayStart
+                    projected.append(log)
+                }
+            }
+        }
+
+        return projected.sorted { lhs, rhs in
+            if lhs.effectiveTimestamp == rhs.effectiveTimestamp {
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.id.uuidString < rhs.id.uuidString
+                }
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.effectiveTimestamp < rhs.effectiveTimestamp
+        }
+    }
+
+    func detachedEntryCopy(from log: HabitLog) -> HabitLog {
+        let copy: HabitLog
+        switch log.kind {
+        case .entry:
+            copy = HabitLog(
+                timestamp: log.effectiveTimestamp,
+                value: log.numericValue,
+                createdAt: log.createdAt,
+                calendar: calendar
+            )
+        case .legacyDailyTotal:
+            copy = HabitLog(
+                day: log.day,
+                count: log.count,
+                createdAt: log.createdAt,
+                calendar: calendar
+            )
+        }
+        copy.id = log.id
+        copy.day = log.day
+        copy.count = log.count
+        copy.timestamp = log.timestamp
+        copy.value = log.value
+        copy.logKindRaw = log.logKindRaw
+        copy.createdAt = log.createdAt
+        return copy
     }
 }

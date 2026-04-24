@@ -15,19 +15,23 @@ struct CumulativeDayEntriesSheet: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
 
     @Bindable var habit: Habit
     let date: Date
     let service: HabitLogService
 
     @State private var editorSession: EditorSession?
+    @State private var displayedEntries: [HabitLog] = []
+    @State private var locallyDeletedEntryIDs: Set<UUID> = []
 
-    private var entries: [HabitLog] {
+    private var projectedEntries: [HabitLog] {
         service.entries(for: habit, on: date)
     }
 
     private var dayTotalText: String {
-        service.formattedValue(for: habit, on: date) ?? habit.formatProgressValue(0)
+        service.formattedProjectedValueIfAvailable(for: habit, on: date)
+            ?? habit.formatProgressValue(0)
     }
 
     var body: some View {
@@ -45,14 +49,14 @@ struct CumulativeDayEntriesSheet: View {
                     }
                 }
 
-                if entries.isEmpty {
+                if displayedEntries.isEmpty {
                     Section {
                         Text("No entries for this day.")
                             .foregroundStyle(.secondary)
                     }
                 } else {
                     Section("Entries") {
-                        ForEach(entries) { entry in
+                        ForEach(displayedEntries, id: \.id) { entry in
                             Button {
                                 editorSession = EditorSession(entry: entry, initialValue: entry.numericValue)
                             } label: {
@@ -76,7 +80,7 @@ struct CumulativeDayEntriesSheet: View {
                             .buttonStyle(TactileButtonStyle())
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
-                                    _ = service.deleteEntry(entry, for: habit, on: date)
+                                    deleteEntry(entry)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -90,9 +94,10 @@ struct CumulativeDayEntriesSheet: View {
                         editorSession = EditorSession(entry: nil, initialValue: service.quickLogAmount(for: habit))
                     }
 
-                    if !entries.isEmpty {
+                    if !displayedEntries.isEmpty {
                         Button("Clear Day", role: .destructive) {
                             _ = service.clearEntries(for: habit, on: date)
+                            reconcileDisplayedEntries()
                         }
                     }
                 }
@@ -115,13 +120,31 @@ struct CumulativeDayEntriesSheet: View {
             ) { newValue in
                 if let entry = session.entry {
                     _ = service.updateEntry(entry, for: habit, on: date, value: max(0, newValue))
+                    reconcileDisplayedEntries()
                 } else {
                     _ = service.addLog(for: habit, on: date, value: max(0, newValue))
+                    reconcileDisplayedEntries()
                 }
             }
             .presentationDetents([.fraction(0.36)])
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(24)
+        }
+        .onAppear {
+            reconcileDisplayedEntries()
+        }
+        .onChange(of: date) { _, _ in
+            locallyDeletedEntryIDs.removeAll()
+            reconcileDisplayedEntries()
+        }
+        .onChange(of: habit.id) { _, _ in
+            locallyDeletedEntryIDs.removeAll()
+            reconcileDisplayedEntries()
+        }
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
+            DispatchQueue.main.async {
+                reconcileDisplayedEntries()
+            }
         }
     }
 
@@ -141,5 +164,22 @@ struct CumulativeDayEntriesSheet: View {
 
         let timestamp = entry.effectiveTimestamp == entry.day ? entry.createdAt : entry.effectiveTimestamp
         return formatter.string(from: timestamp)
+    }
+
+    private func deleteEntry(_ entry: HabitLog) {
+        locallyDeletedEntryIDs.insert(entry.id)
+        withTransaction(Transaction(animation: nil)) {
+            displayedEntries.removeAll { $0.id == entry.id }
+        }
+        _ = service.deleteEntry(entry, for: habit, on: date)
+    }
+
+    private func reconcileDisplayedEntries() {
+        let pendingDeleteIDs = service.pendingDeleteEntryIDs(for: habit, on: date)
+        locallyDeletedEntryIDs = locallyDeletedEntryIDs.intersection(pendingDeleteIDs)
+        let filtered = projectedEntries.filter { entry in
+            !(locallyDeletedEntryIDs.contains(entry.id) && pendingDeleteIDs.contains(entry.id))
+        }
+        displayedEntries = filtered
     }
 }

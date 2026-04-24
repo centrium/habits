@@ -8,8 +8,6 @@
 import SwiftUI
 
 struct CalendarMonthView: View {
-    @EnvironmentObject private var uiStateStore: HabitUIStateStore
-
     private struct AdjustingDate: Identifiable {
         let id: Date
         let date: Date
@@ -30,7 +28,6 @@ struct CalendarMonthView: View {
     let onTapLockedDay: (Date) -> Void
 
     @State private var adjustingDate: AdjustingDate? = nil
-    @State private var projectionRevision: UInt64 = 0
 
     private let swipeIntentLock: CGFloat = 20
     private let swipeCommitThreshold: CGFloat = 44
@@ -140,7 +137,6 @@ struct CalendarMonthView: View {
                         }
                     }
                 }
-                .id("\(monthIdentity)-\(projectionRevision)")
             }
             .sheet(item: $adjustingDate) { date in
                 Group {
@@ -167,9 +163,6 @@ struct CalendarMonthView: View {
             .simultaneousGesture(monthSwipeGesture)
         }
         .padding(.horizontal, edgePadding)
-        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { version in
-            projectionRevision = version
-        }
     }
 
     private var header: some View {
@@ -307,7 +300,8 @@ struct CalendarMonthView: View {
     }
 
     private var displayedMonthSummaryText: String {
-        let totalText = service.formattedValue(for: habit, in: displayedMonthInterval) ?? habit.formatProgressValue(0)
+        let totalText = service.formattedProjectedValueIfAvailable(for: habit, in: displayedMonthInterval)
+            ?? habit.formatProgressValue(0)
         let unitSuffix = service.displayUnitSuffix(for: habit)
         return "\(totalText)\(unitSuffix) shown"
     }

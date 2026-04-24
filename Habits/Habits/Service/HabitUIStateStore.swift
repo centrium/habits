@@ -207,13 +207,9 @@ final class HabitUIStateStore: ObservableObject {
     func applyCommittedMutation(_ mutation: HabitLogPendingMutation) {
         let dayKey = mutation.id.dayKey
         let currentCommitted = committedDayStateByKey[dayKey]
-
-        let nextCommitted = HabitCommittedDayState(
-            count: max(0, (currentCommitted?.count ?? 0) + mutation.countDelta),
-            value: max(0, (currentCommitted?.value ?? 0) + mutation.valueDelta),
-            progress: mutation.expectedProgress ?? currentCommitted?.progress ?? 0,
-            isComplete: mutation.expectedCompletion ?? currentCommitted?.isComplete ?? false,
-            committedSequence: max(currentCommitted?.committedSequence ?? 0, mutation.id.sequence)
+        let nextCommitted = committedState(
+            byApplying: mutation,
+            to: currentCommitted
         )
         committedDayStateByKey[dayKey] = nextCommitted
 
@@ -260,10 +256,28 @@ final class HabitUIStateStore: ObservableObject {
         var headSequence = committed?.committedSequence ?? 0
 
         for mutation in pendingForDay where mutation.status != .failed {
-            count = max(0, count + mutation.countDelta)
-            value = max(0, value + mutation.valueDelta)
-            progress = mutation.expectedProgress ?? progress
-            isComplete = mutation.expectedCompletion ?? isComplete
+            switch mutation.operation {
+            case .addLog:
+                count = max(0, count + mutation.countDelta)
+                value = max(0, value + mutation.valueDelta)
+                progress = mutation.expectedProgress ?? progress
+                isComplete = mutation.expectedCompletion ?? isComplete
+            case .clearDay:
+                count = 0
+                value = 0
+                progress = mutation.expectedProgress ?? 0
+                isComplete = mutation.expectedCompletion ?? false
+            case let .setDayCount(newCount):
+                count = max(0, newCount)
+                value = max(0, mutation.expectedValue ?? Double(max(0, newCount)))
+                progress = mutation.expectedProgress ?? progress
+                isComplete = mutation.expectedCompletion ?? isComplete
+            case .deleteEntry, .updateEntry:
+                count = max(0, mutation.expectedCount ?? (count + mutation.countDelta))
+                value = max(0, mutation.expectedValue ?? (value + mutation.valueDelta))
+                progress = mutation.expectedProgress ?? progress
+                isComplete = mutation.expectedCompletion ?? isComplete
+            }
             headSequence = max(headSequence, mutation.id.sequence)
         }
 
@@ -274,6 +288,49 @@ final class HabitUIStateStore: ObservableObject {
             isComplete: isComplete,
             headSequence: headSequence
         )
+    }
+
+    private func committedState(
+        byApplying mutation: HabitLogPendingMutation,
+        to currentCommitted: HabitCommittedDayState?
+    ) -> HabitCommittedDayState {
+        let committedSequence = max(currentCommitted?.committedSequence ?? 0, mutation.id.sequence)
+
+        switch mutation.operation {
+        case .addLog:
+            return HabitCommittedDayState(
+                count: max(0, (currentCommitted?.count ?? 0) + mutation.countDelta),
+                value: max(0, (currentCommitted?.value ?? 0) + mutation.valueDelta),
+                progress: mutation.expectedProgress ?? currentCommitted?.progress ?? 0,
+                isComplete: mutation.expectedCompletion ?? currentCommitted?.isComplete ?? false,
+                committedSequence: committedSequence
+            )
+        case .clearDay:
+            return HabitCommittedDayState(
+                count: 0,
+                value: 0,
+                progress: mutation.expectedProgress ?? 0,
+                isComplete: mutation.expectedCompletion ?? false,
+                committedSequence: committedSequence
+            )
+        case let .setDayCount(newCount):
+            let count = max(0, newCount)
+            return HabitCommittedDayState(
+                count: count,
+                value: max(0, mutation.expectedValue ?? Double(count)),
+                progress: mutation.expectedProgress ?? currentCommitted?.progress ?? 0,
+                isComplete: mutation.expectedCompletion ?? currentCommitted?.isComplete ?? false,
+                committedSequence: committedSequence
+            )
+        case .deleteEntry, .updateEntry:
+            return HabitCommittedDayState(
+                count: max(0, mutation.expectedCount ?? ((currentCommitted?.count ?? 0) + mutation.countDelta)),
+                value: max(0, mutation.expectedValue ?? ((currentCommitted?.value ?? 0) + mutation.valueDelta)),
+                progress: mutation.expectedProgress ?? currentCommitted?.progress ?? 0,
+                isComplete: mutation.expectedCompletion ?? currentCommitted?.isComplete ?? false,
+                committedSequence: committedSequence
+            )
+        }
     }
 
     private func publishProjectionUpdate(for habitID: UUID) {
