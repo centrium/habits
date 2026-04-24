@@ -105,27 +105,21 @@ struct HabitHeader: View {
     }
 
     private var goalProgressFraction: Double {
-        if let optimistic = uiStateStore.progress(habitId: habit.id, date: selectedDate) {
-            return optimistic
-        } else {
-            return habit.progressFraction(
-                for: selectedDate,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            ) ?? 0
-        }
+        let normalizedDay = calendar.startOfDay(for: selectedDate)
+        return uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )?.progress ?? 0
     }
 
     private var isComplete: Bool {
-        if let optimistic = uiStateStore.isComplete(habitId: habit.id, date: selectedDate) {
-            return optimistic
-        } else {
-            return habit.isComplete(
-                for: selectedDate,
-                calendar: calendar,
-                weekStartPreference: weekStartPreference
-            )
-        }
+        let normalizedDay = calendar.startOfDay(for: selectedDate)
+        return uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )?.isComplete ?? false
     }
 
     private var quickLogAccessibilityLabel: String {
@@ -133,30 +127,16 @@ struct HabitHeader: View {
         return "Log \(habit.name) for \(dateText)"
     }
 
-    private var resolvedStreakState: StreakState {
+    private var resolvedStreakState: StreakState? {
         if let cached = habitLogService.computedStateByHabitID[habit.id]?.streakState {
             return cached
         }
-
-        let today = CurrentDayResolver.currentDay(calendar: calendar)
-        let optimisticProgress = uiStateStore.progress(habitId: habit.id, date: today)
-        let optimisticComplete = uiStateStore.isComplete(habitId: habit.id, date: today)
-        let hasActivity = (optimisticProgress ?? 0) > 0 || !habit.logs(on: today, calendar: calendar).isEmpty
-
-        return streakState ?? StreakStateEngine(
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ).streakState(
-            for: habit,
-            referenceDate: today,
-            progressOverride: optimisticProgress,
-            isCompleteOverride: optimisticComplete,
-            hasActivityOverride: hasActivity
-        )
+        return streakState
     }
 
-    private var streakContext: StreakIndicatorPresentation.Context {
-        StreakIndicatorPresentation.context(streakState: resolvedStreakState)
+    private var streakContext: StreakIndicatorPresentation.Context? {
+        guard let resolvedStreakState else { return nil }
+        return StreakIndicatorPresentation.context(streakState: resolvedStreakState)
     }
 
     private var shouldShowQuickLogButton: Bool {
@@ -194,7 +174,7 @@ struct HabitHeader: View {
     }
 
     private var showsStreak: Bool {
-        streakContext.showBadge
+        streakContext?.showBadge == true
     }
 
     private var hasMetadataContent: Bool {
@@ -212,7 +192,7 @@ struct HabitHeader: View {
                 .lineSpacing(0)
         }
 
-        if showsStreak {
+        if showsStreak, let streakContext {
             HabitUnifiedStreakIndicator(
                 context: streakContext,
                 accent: iconAccent

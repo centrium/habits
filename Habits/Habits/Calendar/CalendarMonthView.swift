@@ -19,7 +19,7 @@ struct CalendarMonthView: View {
     let habit: Habit
     let service: HabitLogService
     let calendarProvider: CalendarProvider
-    let dailyCountsByDate: [Date: Int]
+    let projectedDayStatesByDate: [Date: HabitProjectedDayState]
     let selectedDate: Date
     let monthSummaryText: String?
     let premiumHistoryGate: PremiumHistoryGate.Context
@@ -30,6 +30,7 @@ struct CalendarMonthView: View {
     let onTapLockedDay: (Date) -> Void
 
     @State private var adjustingDate: AdjustingDate? = nil
+    @State private var projectionRevision: UInt64 = 0
 
     private let swipeIntentLock: CGFloat = 20
     private let swipeCommitThreshold: CGFloat = 44
@@ -46,7 +47,7 @@ struct CalendarMonthView: View {
         habit: Habit,
         service: HabitLogService,
         calendarProvider: CalendarProvider,
-        dailyCountsByDate: [Date: Int] = [:],
+        projectedDayStatesByDate: [Date: HabitProjectedDayState] = [:],
         selectedDate: Date,
         monthSummaryText: String? = nil,
         premiumHistoryGate: PremiumHistoryGate.Context,
@@ -60,7 +61,7 @@ struct CalendarMonthView: View {
         self.habit = habit
         self.service = service
         self.calendarProvider = calendarProvider
-        self.dailyCountsByDate = dailyCountsByDate
+        self.projectedDayStatesByDate = projectedDayStatesByDate
         self.selectedDate = selectedDate
         self.monthSummaryText = monthSummaryText
         self.premiumHistoryGate = premiumHistoryGate
@@ -72,9 +73,7 @@ struct CalendarMonthView: View {
     }
 
     var body: some View {
-        let _ = uiStateStore.progressByHabitAndDate.count
         let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
-        let dayMetrics = service.dayMetrics(for: habit, on: days)
 
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
@@ -99,14 +98,15 @@ struct CalendarMonthView: View {
                     LazyVGrid(columns: columns, spacing: verticalSpacing) {
                         ForEach(days, id: \.self) { day in
                             let normalizedDay = calendar.startOfDay(for: day)
-                            let metrics = dayMetrics[normalizedDay] ?? .zero
                             let isInDisplayedMonth = isDisplayedMonth(day)
                             let isDisabledDay = isFutureDate(day)
                             let isLockedDay = premiumHistoryGate.isLocked(date: day)
-                            let count = isLockedDay ? 0 : (dailyCountsByDate[normalizedDay] ?? 0)
-                            let indicatorText = isLockedDay || habit.goalType != .cumulative || metrics.value <= 0
+                            let projected = projectedDayStatesByDate[normalizedDay]
+                            let count = isLockedDay ? 0 : max(0, projected?.count ?? 0)
+                            let displayedValue = projected?.value ?? 0
+                            let indicatorText = isLockedDay || habit.goalType != .cumulative || displayedValue <= 0
                                 ? nil
-                                : service.formatValue(metrics.value, for: habit)
+                                : service.formatValue(displayedValue, for: habit)
 
                             CalendarDayCell(
                                 date: day,
@@ -140,7 +140,7 @@ struct CalendarMonthView: View {
                         }
                     }
                 }
-                .id(monthIdentity)
+                .id("\(monthIdentity)-\(projectionRevision)")
             }
             .sheet(item: $adjustingDate) { date in
                 Group {
@@ -167,6 +167,9 @@ struct CalendarMonthView: View {
             .simultaneousGesture(monthSwipeGesture)
         }
         .padding(.horizontal, edgePadding)
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { version in
+            projectionRevision = version
+        }
     }
 
     private var header: some View {

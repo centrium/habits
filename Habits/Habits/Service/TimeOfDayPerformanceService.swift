@@ -189,8 +189,11 @@ nonisolated private func lowestSustainedRange(from hourlyScores: [Double]) -> (I
     return (bestStart, end)
 }
 
-@MainActor
 final class TimeOfDayPerformanceService {
+    private struct DetachedLogsBatch: @unchecked Sendable {
+        let logs: [HabitLog]
+    }
+
     static let shared = TimeOfDayPerformanceService()
 
     private struct CacheKey: Hashable {
@@ -209,6 +212,8 @@ final class TimeOfDayPerformanceService {
     }
 
     private var cache: [CacheKey: CacheEntry] = [:]
+    private var requestSequenceByKey: [CacheKey: UInt64] = [:]
+    private let lock = NSLock()
 
     private init() {}
 
@@ -239,7 +244,7 @@ final class TimeOfDayPerformanceService {
 
     func cachedLastCompletedDate(for habit: Habit, isPremium: Bool) -> Date? {
         let key = CacheKey(habitID: habit.id, days: isPremium ? 21 : 3)
-        return cache[key]?.newestTimestamp
+        return withLock { cache[key]?.newestTimestamp }
     }
 
     func hourlyValues(
@@ -256,7 +261,7 @@ final class TimeOfDayPerformanceService {
         let globalLogCount = globalLogs.count
         let newestGlobalTimestamp = globalLogs.map(\.effectiveTimestamp).max()
 
-        if let cached = cache[key],
+        if let cached = withLock({ cache[key] }),
            cached.logCount == logCount,
            cached.newestTimestamp == newestTimestamp,
            cached.globalLogCount == globalLogCount,
@@ -267,33 +272,27 @@ final class TimeOfDayPerformanceService {
         let rawHabitLogs = rawTimestampLogs(from: habit.logs)
         let rawGlobalLogs = rawTimestampLogs(from: globalLogs)
         let resolvedGlobalLogs = rawGlobalLogs.isEmpty ? rawHabitLogs : rawGlobalLogs
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
-            print("[TimeInsight ROUTING]")
-            print("habitType: \(Self.habitTypeLabel(for: habit))")
-            print("inputCount: \(rawHabitLogs.count)")
-            print("engineUsed: true")
+        let detachedHabitLogs = detachedLogsCopy(from: rawHabitLogs, calendar: calendar)
+        let detachedGlobalLogs = detachedLogsCopy(from: resolvedGlobalLogs, calendar: calendar)
+        let requestSequence = withLock { () -> UInt64 in
+            let next = (requestSequenceByKey[key] ?? 0) + 1
+            requestSequenceByKey[key] = next
+            return next
         }
-        #endif
-
-        let computation = TimeInsightEngine.computeDetails(
-            logs: rawHabitLogs,
-            globalLogs: resolvedGlobalLogs,
-            allowGlobalBlending: false,
-            debugLabel: "\(habit.name) | id=\(habit.id.uuidString) | goalType=\(habit.goalType.rawValue)",
+        let debugLabel = "\(habit.name) | id=\(habit.id.uuidString) | goalType=\(habit.goalType.rawValue)"
+        let computation = await computeTimingOffMain(
+            habitTypeLabel: Self.habitTypeLabel(for: habit),
+            habitLogCount: detachedHabitLogs.count,
+            debugLabel: debugLabel,
+            habitLogs: detachedHabitLogs,
+            globalLogs: detachedGlobalLogs,
             now: now,
             calendar: calendar
         )
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
-            let consumerHour = computation.result.peakHour
-            print("[TimeInsight CONSISTENCY CHECK]")
-            print("surface: Momentum")
-            print("enginePeak: \(computation.result.peakHour)")
-            print("consumerHour: \(consumerHour)")
-            print("match: \(consumerHour == computation.result.peakHour)")
+        guard !Task.isCancelled else {
+            return withLock({ cache[key]?.values ?? [] })
         }
-        #endif
+
         let values = hourlyValues(from: computation.result)
         let rhythm = Self.buildRhythm(
             from: computation.result,
@@ -301,26 +300,37 @@ final class TimeOfDayPerformanceService {
             lastUpdated: now
         )
 
-        cache[key] = CacheEntry(
-            logCount: logCount,
-            newestTimestamp: newestTimestamp,
-            globalLogCount: globalLogCount,
-            newestGlobalTimestamp: newestGlobalTimestamp,
-            values: values,
-            rhythm: rhythm,
-            timeInsight: computation.result
-        )
+        return withLock {
+            guard requestSequenceByKey[key] == requestSequence else {
+                return cache[key]?.values ?? values
+            }
 
-        return values
+            cache[key] = CacheEntry(
+                logCount: logCount,
+                newestTimestamp: newestTimestamp,
+                globalLogCount: globalLogCount,
+                newestGlobalTimestamp: newestGlobalTimestamp,
+                values: values,
+                rhythm: rhythm,
+                timeInsight: computation.result
+            )
+            return values
+        }
     }
 
     func clearCache(for habitID: UUID? = nil) {
         guard let habitID else {
-            cache.removeAll()
+            withLock {
+                cache.removeAll()
+                requestSequenceByKey.removeAll()
+            }
             return
         }
 
-        cache = cache.filter { $0.key.habitID != habitID }
+        withLock {
+            cache = cache.filter { $0.key.habitID != habitID }
+            requestSequenceByKey = requestSequenceByKey.filter { $0.key.habitID != habitID }
+        }
     }
 
     static func peakTimingSummary(
@@ -375,12 +385,12 @@ final class TimeOfDayPerformanceService {
 
     private func cachedRhythm(for habitID: UUID, days: Int) -> HabitRhythm? {
         let key = CacheKey(habitID: habitID, days: max(1, days))
-        return cache[key]?.rhythm
+        return withLock { cache[key]?.rhythm }
     }
 
     private func cachedTimeInsight(for habitID: UUID, days: Int) -> TimeInsightResult? {
         let key = CacheKey(habitID: habitID, days: max(1, days))
-        return cache[key]?.timeInsight
+        return withLock { cache[key]?.timeInsight }
     }
 
     private static func rawTimestampLogs(from logs: [HabitLog]) -> [HabitLog] {
@@ -449,5 +459,89 @@ final class TimeOfDayPerformanceService {
         return (0..<24).map { hour in
             HourValue(hour: hour, value: insight.hourlyScores[hour])
         }
+    }
+
+    private func computeTimingOffMain(
+        habitTypeLabel: String,
+        habitLogCount: Int,
+        debugLabel: String,
+        habitLogs: [HabitLog],
+        globalLogs: [HabitLog],
+        now: Date,
+        calendar: Calendar
+    ) async -> TimeInsightComputation {
+        let detachedHabitLogs = DetachedLogsBatch(logs: habitLogs)
+        let detachedGlobalLogs = DetachedLogsBatch(logs: globalLogs)
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+                    print("[TimeInsight ROUTING]")
+                    print("habitType: \(habitTypeLabel)")
+                    print("inputCount: \(habitLogCount)")
+                    print("engineUsed: true")
+                }
+                #endif
+
+                let computation = TimeInsightEngine.computeDetails(
+                    logs: detachedHabitLogs.logs,
+                    globalLogs: detachedGlobalLogs.logs,
+                    allowGlobalBlending: false,
+                    debugLabel: debugLabel,
+                    now: now,
+                    calendar: calendar
+                )
+
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["TIME_INSIGHT_DEBUG"]?.lowercased() == "1" {
+                    let consumerHour = computation.result.peakHour
+                    print("[TimeInsight CONSISTENCY CHECK]")
+                    print("surface: Momentum")
+                    print("enginePeak: \(computation.result.peakHour)")
+                    print("consumerHour: \(consumerHour)")
+                    print("match: \(consumerHour == computation.result.peakHour)")
+                }
+                #endif
+                continuation.resume(returning: computation)
+            }
+        }
+    }
+
+    private func detachedLogsCopy(from logs: [HabitLog], calendar: Calendar) -> [HabitLog] {
+        logs.map { log in
+            let copy: HabitLog
+            switch log.kind {
+            case .entry:
+                copy = HabitLog(
+                    timestamp: log.effectiveTimestamp,
+                    value: log.numericValue,
+                    createdAt: log.createdAt,
+                    calendar: calendar
+                )
+            case .legacyDailyTotal:
+                copy = HabitLog(
+                    day: log.day,
+                    count: log.count,
+                    createdAt: log.createdAt,
+                    calendar: calendar
+                )
+            }
+
+            copy.id = log.id
+            copy.day = log.day
+            copy.count = log.count
+            copy.timestamp = log.timestamp
+            copy.value = log.value
+            copy.logKindRaw = log.logKindRaw
+            copy.createdAt = log.createdAt
+            return copy
+        }
+    }
+
+    private func withLock<T>(_ operation: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return operation()
     }
 }

@@ -169,8 +169,19 @@ private extension Habit {
 }
 
 enum WidgetDataSync {
+    static func syncAsync(in modelContainer: ModelContainer) async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let context = ModelContext(modelContainer)
+                let didWrite = sync(in: context)
+                continuation.resume(returning: didWrite)
+            }
+        }
+    }
+
     @discardableResult
     static func sync(in modelContext: ModelContext) -> Bool {
+        LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
         let descriptor = FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.orderIndex)])
         let habits = (try? modelContext.fetch(descriptor)) ?? []
         let widgetHabits = mapToWidgetHabits(habits)
@@ -184,8 +195,10 @@ enum WidgetDataSync {
                 WidgetDataStore.consistencyWidgetKind,
             ]
 
-            for kind in widgetKinds {
-                WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            DispatchQueue.main.async {
+                for kind in widgetKinds {
+                    WidgetCenter.shared.reloadTimelines(ofKind: kind)
+                }
             }
         } else {
             WidgetHabitLogger.logStorageFailure(
@@ -203,18 +216,18 @@ private final class WidgetSyncScheduler {
     static let shared = WidgetSyncScheduler()
 
     private var pendingTask: Task<Void, Never>?
-    private var latestModelContext: ModelContext?
+    private var latestModelContainer: ModelContainer?
 
     private init() {}
 
     func schedule(in modelContext: ModelContext, delayNanoseconds: UInt64 = 1_500_000_000) {
-        latestModelContext = modelContext
+        latestModelContainer = modelContext.container
         pendingTask?.cancel()
 
         pendingTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: delayNanoseconds)
-            guard !Task.isCancelled, let context = latestModelContext else { return }
-            _ = WidgetDataSync.sync(in: context)
+            guard !Task.isCancelled, let container = latestModelContainer else { return }
+            _ = await WidgetDataSync.syncAsync(in: container)
         }
     }
 }

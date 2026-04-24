@@ -13,12 +13,15 @@ enum ActivityStripStyle {
 }
 
 struct HabitHeatmap: View {
-    private static let snapshotStableVersion = 0
-
     @EnvironmentObject private var purchaseService: PurchaseService
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @State private var cache = HeatmapMetricsCache()
     @State private var graphRefreshID = UUID()
     @State private var graphObserverID = UUID()
+    @State private var identityRenderSnapshot: HeatmapIdentityRenderSnapshot = .noData
+    @State private var identitySnapshotTask: Task<Void, Never>?
+    @State private var identitySnapshotRequestSequence: UInt64 = 0
+    @State private var identitySnapshotRequestKey: HeatmapIdentitySnapshotRequestKey?
 
     let habit: Habit
     let service: HabitLogService
@@ -66,12 +69,44 @@ struct HabitHeatmap: View {
         habit.curatedColorVariants.accent
     }
 
+    private var projectionVersion: Int {
+        Int(uiStateStore.projectionVersionByHabitID[habit.id] ?? 0)
+    }
+
+    private var effectiveProjectionVersion: Int {
+        guard let dailyCountsOverride else { return projectionVersion }
+        var hasher = Hasher()
+        hasher.combine(dailyCountsOverride.count)
+        for (day, count) in dailyCountsOverride.sorted(by: { $0.key < $1.key }) {
+            hasher.combine(day.timeIntervalSince1970)
+            hasher.combine(count)
+        }
+        return hasher.finalize()
+    }
+
     private enum MomentumSemanticTone {
         case noData
         case strong
         case building
         case slipping
         case atRisk
+    }
+
+    private struct HeatmapIdentityRenderSnapshot {
+        let identityState: HabitIdentityState?
+        let tone: MomentumSemanticTone
+        let label: String
+
+        static let noData = HeatmapIdentityRenderSnapshot(
+            identityState: nil,
+            tone: .noData,
+            label: "No activity yet"
+        )
+    }
+
+    private struct HeatmapIdentitySnapshotRequestKey: Equatable {
+        let habitID: UUID
+        let projectionVersion: Int
     }
 
     private enum MomentumRowMetrics {
@@ -124,15 +159,33 @@ struct HabitHeatmap: View {
         .id(graphRefreshID)
         .onAppear {
             guard usesGraphRecomputeCoordinator else { return }
-            GraphRecomputeCoordinator.shared.register(id: graphObserverID) {
+            GraphRecomputeCoordinator.shared.register(
+                id: graphObserverID,
+                habitID: habit.id
+            ) {
                 self.recomputeGraph()
             }
+        }
+        .onAppear {
+            scheduleIdentitySnapshotRefresh()
+            seedProjectionFromCommittedIfNeeded()
         }
         .onDisappear {
             guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.unregister(id: graphObserverID)
         }
-        .onChange(of: service.habitVersion(for: habit.id)) { _, newVersion in
+        .onDisappear {
+            identitySnapshotTask?.cancel()
+            identitySnapshotTask = nil
+        }
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { newVersion in
+            guard usesGraphRecomputeCoordinator else { return }
+            GraphRecomputeCoordinator.shared.schedule(for: habit.id, version: Int(newVersion))
+        }
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
+            scheduleIdentitySnapshotRefresh()
+        }
+        .onChange(of: service.metricsRevision(for: habit.id)) { _, newVersion in
             guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.schedule(for: habit.id, version: newVersion)
         }
@@ -159,7 +212,7 @@ struct HabitHeatmap: View {
         let cacheKey = HeatmapMetricsCacheKey(
             habitID: habit.id,
             revision: service.metricsRevision(for: habit.id),
-            habitVersion: dailyCountsOverride == nil ? service.habitVersion(for: habit.id) : Self.snapshotStableVersion,
+            habitVersion: effectiveProjectionVersion,
             calendarIdentifier: calendar.identifier,
             timeZoneIdentifier: calendar.timeZone.identifier,
             firstWeekday: calendar.firstWeekday,
@@ -168,10 +221,8 @@ struct HabitHeatmap: View {
 
         let entry = cache.entry(key: cacheKey) {
             let dayMetrics = service.dayMetrics(for: habit, on: fullGridDays)
-            let logsByDay = dailyCountsOverride == nil
-                ? Dictionary(grouping: habit.logs) { log in
-                    calendar.startOfDay(for: log.day)
-                }
+            let projectedCounts = dailyCountsOverride == nil
+                ? projectedCountMap(for: fullGridDays, calendar: calendar)
                 : [:]
             let logCountMap = Dictionary(uniqueKeysWithValues: fullGridDays.map { day in
                 if lockGate.isLocked(date: day) {
@@ -182,7 +233,7 @@ struct HabitHeatmap: View {
                     return (day, dailyCountsOverride[day] ?? 0)
                 }
 
-                return (day, logsByDay[day]?.count ?? 0)
+                return (day, projectedCounts[day] ?? 0)
             })
 
             return HeatmapMetricsCache.Entry(
@@ -225,6 +276,7 @@ struct HabitHeatmap: View {
 
     private func recomputeGraph() {
         cache.invalidateAll()
+        LoggingPerformanceMonitor.markGraphUpdated(habitID: habit.id)
         graphRefreshID = UUID()
     }
     
@@ -250,7 +302,7 @@ struct HabitHeatmap: View {
             if let dailyCountsOverride {
                 count = dailyCountsOverride[day] ?? 0
             } else {
-                count = habit.logs(on: day, calendar: calendar).count
+                count = projectedCount(for: day, calendar: calendar)
             }
             return (day, count)
         })
@@ -327,41 +379,23 @@ struct HabitHeatmap: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 MomentumStatusRow(
-                    text: momentumLabelText,
-                    dotColor: momentumDotColor,
+                    text: identityRenderSnapshot.label,
+                    dotColor: momentumDotColor(for: identityRenderSnapshot.tone),
                     rowSpacing: MomentumRowMetrics.rowSpacing,
                     dotBaselineOpticalCorrection: MomentumRowMetrics.dotBaselineOpticalCorrection,
                     staticDotOpacity: MomentumRowMetrics.staticDotOpacity,
                     breathingLowOpacity: MomentumRowMetrics.breathingLowOpacity,
                     breathingHighOpacity: MomentumRowMetrics.breathingHighOpacity,
                     breathingDuration: MomentumRowMetrics.breathingDuration,
-                    isBreathingEnabled: momentumSemanticTone != .noData
+                    isBreathingEnabled: identityRenderSnapshot.tone != .noData
                 )
                 Spacer()
             }
         }
     }
 
-    private var identityStateSummary: HabitIdentityStateSnapshot {
-        HabitIdentityStateResolver.recentSnapshot(
-            for: habit,
-            calendar: calendarProvider.calendar,
-            now: Date(),
-            windowDays: 7
-        )
-    }
-
-    private var momentumLabelText: String {
-        switch momentumSemanticTone {
-        case .noData:
-            return "No activity yet"
-        case .strong, .building, .slipping, .atRisk:
-            return CadenceLanguage.shortLabel(for: identityStateSummary.state)
-        }
-    }
-
-    private var momentumDotColor: Color {
-        switch momentumSemanticTone {
+    private func momentumDotColor(for tone: MomentumSemanticTone) -> Color {
+        switch tone {
         case .noData:
             return Color(uiColor: .systemGray3)
         case .strong:
@@ -375,11 +409,101 @@ struct HabitHeatmap: View {
         }
     }
 
-    private var momentumSemanticTone: MomentumSemanticTone {
-        if habit.logs.isEmpty {
-            return .noData
+    private func scheduleIdentitySnapshotRefresh() {
+        guard isCompact, showsIdentityStateSummary else { return }
+        identitySnapshotTask?.cancel()
+
+        let requestKey = HeatmapIdentitySnapshotRequestKey(
+            habitID: habit.id,
+            projectionVersion: projectionVersion
+        )
+        identitySnapshotRequestKey = requestKey
+        let requestSequence = identitySnapshotRequestSequence + 1
+        identitySnapshotRequestSequence = requestSequence
+
+        let calendar = calendarProvider.calendar
+
+        identitySnapshotTask = Task { @MainActor in
+            let snapshot = computeIdentitySnapshot(calendar: calendar)
+            guard !Task.isCancelled else { return }
+            guard identitySnapshotRequestSequence == requestSequence else { return }
+            guard identitySnapshotRequestKey == requestKey else { return }
+            identityRenderSnapshot = snapshot
         }
-        switch identityStateSummary.state {
+    }
+
+    private func computeIdentitySnapshot(
+        calendar: Calendar
+    ) -> HeatmapIdentityRenderSnapshot {
+        let summary = projectionIdentitySnapshot(calendar: calendar)
+        let tone = momentumSemanticTone(
+            hasActivity: summary.activeDays > 0,
+            state: summary.state
+        )
+        let label: String
+        switch tone {
+        case .noData:
+            label = "No activity yet"
+        case .strong, .building, .slipping, .atRisk:
+            label = CadenceLanguage.shortLabel(for: summary.state)
+        }
+
+        return HeatmapIdentityRenderSnapshot(
+            identityState: summary.state,
+            tone: tone,
+            label: label
+        )
+    }
+
+    private func projectionIdentitySnapshot(calendar: Calendar) -> HabitIdentityStateSnapshot {
+        let today = calendar.startOfDay(for: Date())
+        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+
+        var activeDays = 0
+        var totalLogs = 0
+        var uniqueDays = 0
+        var activeDaysLast14 = 0
+
+        let projected = uiStateStore.projectedDayStates(for: habit.id)
+        for (day, state) in projected {
+            let normalizedDay = calendar.startOfDay(for: day)
+            guard normalizedDay <= today else { continue }
+
+            let dayIsActive = state.count > 0 || state.value > 0
+            if dayIsActive {
+                uniqueDays += 1
+                totalLogs += max(0, state.count)
+            }
+            if normalizedDay >= start && normalizedDay <= today && dayIsActive {
+                activeDays += 1
+            }
+            if let last14Start = calendar.date(byAdding: .day, value: -13, to: today),
+               normalizedDay >= last14Start && normalizedDay <= today && dayIsActive {
+                activeDaysLast14 += 1
+            }
+        }
+
+        let completionRate = Double(activeDays) / 7.0
+        let resolvedState = resolvedIdentityState(completionRate: completionRate, hasRecentData: activeDays > 0)
+
+        return HabitIdentityStateSnapshot(
+            state: resolvedState,
+            completionRate: completionRate,
+            activeDays: activeDays,
+            windowDays: 7,
+            hasRecentData: activeDays > 0,
+            totalLogs: totalLogs,
+            uniqueDays: uniqueDays,
+            activeDaysLast14: activeDaysLast14
+        )
+    }
+
+    private func momentumSemanticTone(
+        hasActivity: Bool,
+        state: HabitIdentityState
+    ) -> MomentumSemanticTone {
+        guard hasActivity else { return .noData }
+        switch state {
         case .strong:
             return .strong
         case .building, .steady, .gettingStarted:
@@ -388,6 +512,44 @@ struct HabitHeatmap: View {
             return .slipping
         case .rebuilding:
             return .atRisk
+        }
+    }
+
+    private func projectedCountMap(for days: [Date], calendar: Calendar) -> [Date: Int] {
+        let projected = uiStateStore.projectedDayStates(for: habit.id)
+        return Dictionary(uniqueKeysWithValues: days.map { day in
+            let normalizedDay = calendar.startOfDay(for: day)
+            let count = max(0, projected[normalizedDay]?.count ?? 0)
+            return (normalizedDay, count)
+        })
+    }
+
+    private func seedProjectionFromCommittedIfNeeded() {
+        guard uiStateStore.projectedDayStates(for: habit.id).isEmpty else { return }
+        _ = service.projectedHistoryDayStates(for: habit)
+    }
+
+    private func projectedCount(for day: Date, calendar: Calendar) -> Int {
+        let normalizedDay = calendar.startOfDay(for: day)
+        let projected = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        return max(0, projected?.count ?? 0)
+    }
+
+    private func resolvedIdentityState(completionRate: Double, hasRecentData: Bool) -> HabitIdentityState {
+        guard hasRecentData else { return .gettingStarted }
+        switch completionRate {
+        case ..<0.2:
+            return .rebuilding
+        case ..<0.5:
+            return .building
+        case ..<0.75:
+            return .steady
+        default:
+            return .strong
         }
     }
 }

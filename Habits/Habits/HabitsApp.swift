@@ -87,9 +87,10 @@ struct RootView: View {
         Task(priority: .utility) {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
             guard !Task.isCancelled else { return }
+            let modelContainer = await MainActor.run { modelContext.container }
+            _ = await WidgetDataSync.syncAsync(in: modelContainer)
 
             await MainActor.run {
-                _ = WidgetDataSync.sync(in: modelContext)
                 if marksInitialSync {
                     hasCompletedInitialWidgetSync = true
                 }

@@ -222,9 +222,25 @@ final class HabitLogService: ObservableObject {
     private var pendingSyncReferenceDate: Date?
     private var pendingChangedHabitIDs: Set<UUID> = []
     private let saveCoalescingDelay: TimeInterval = 1.2
+    private var pendingComputedStateRefreshTasks: [UUID: Task<Void, Never>] = [:]
+    private var computedStateRequestSequenceByHabitID: [UUID: UInt64] = [:]
+    private let computedStateRefreshDelayNanoseconds: UInt64 = 120_000_000
     private var metricsRevisions: [UUID: Int] = [:]
     private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
     private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
+    private var mutationSequenceTracker = HabitLogSequenceTracker()
+    private var mutationLedger = HabitLogMutationLedger()
+    private lazy var sideEffectCoordinator = HabitLogSideEffectCoordinator(
+        modelContainer: modelContext.container
+    )
+    private lazy var persistenceCoordinator: HabitLogPersistenceCoordinator = HabitLogPersistenceCoordinator(
+        modelContainer: modelContext.container
+    ) { [weak self] event in
+        guard let self else { return }
+        await MainActor.run {
+            self.handlePersistenceEvent(event)
+        }
+    }
     private let cueInsightService: CueInsightService
     let habitVersionStore: HabitVersionStore
     @Published private(set) var computedStateByHabitID: [UUID: HabitComputedState] = [:]
@@ -266,14 +282,24 @@ final class HabitLogService: ObservableObject {
         }
     }
 
-    private func saveAndPlayHaptic(for habit: Habit, referenceDate: Date, wasComplete: Bool) {
-        scheduleHabitComputedStateRefresh(for: habit, referenceDate: referenceDate)
-        schedulePersistAndReflectionSync(referenceDate: referenceDate, habitID: habit.id)
+    private func saveAndPlayHaptic(
+        for habit: Habit,
+        referenceDate: Date,
+        wasComplete: Bool,
+        becameCompleteOverride: Bool? = nil
+    ) {
+        let becameComplete = becameCompleteOverride ?? (!wasComplete && habit.isComplete(for: referenceDate, calendar: calendar))
 
-        let isComplete = habit.isComplete(for: referenceDate, calendar: calendar)
-        DispatchQueue.main.async {
-            self.playHaptic(becameComplete: !wasComplete && isComplete)
+        if Thread.isMainThread {
+            playHaptic(becameComplete: becameComplete)
+        } else {
+            DispatchQueue.main.async { [becameComplete] in
+                self.playHaptic(becameComplete: becameComplete)
+            }
         }
+
+        scheduleHabitComputedStateRefresh(for: habit.id, referenceDate: referenceDate)
+        schedulePersistAndReflectionSync(referenceDate: referenceDate, habitID: habit.id)
     }
 
     private func schedulePersistAndReflectionSync(referenceDate: Date, habitID: UUID) {
@@ -289,7 +315,10 @@ final class HabitLogService: ObservableObject {
 
             guard changedHabitIDs.contains(habitID) else { return }
             Task { @MainActor in
-                _ = modelContext.saveAndSyncWidgetData()
+                let didSave = modelContext.saveAndSyncWidgetData()
+                if didSave {
+                    LoggingPerformanceMonitor.markPersistCommitted(habitID: habitID, referenceDate: syncReferenceDate)
+                }
                 await NotificationService.shared.syncEveningReflectionFromStoredSettings(
                     referenceDate: syncReferenceDate
                 )
@@ -305,6 +334,60 @@ final class HabitLogService: ObservableObject {
 
     private func logs(for habit: Habit, on date: Date) -> [HabitLog] {
         habit.logs(on: date, calendar: calendar)
+    }
+
+    private func enqueueMutationPersistence(
+        mutation: HabitLogPendingMutation,
+        entryTimestamp: Date,
+        referenceDate: Date
+    ) {
+        Task {
+            await persistenceCoordinator.enqueue(
+                HabitLogWritePayload(
+                    mutation: mutation,
+                    entryTimestamp: entryTimestamp,
+                    referenceDate: referenceDate
+                )
+            )
+        }
+    }
+
+    @MainActor
+    private func handlePersistenceEvent(_ event: HabitLogPersistenceEvent) {
+        switch event {
+        case let .writing(mutation):
+            mutationLedger.updateStatus(for: mutation.id, status: .writing)
+            uiStateStore.updatePendingMutationStatus(
+                mutationID: mutation.id,
+                status: .writing
+            )
+        case let .committed(mutation, referenceDate):
+            mutationLedger.updateStatus(for: mutation.id, status: .committed)
+            mutationLedger.markCommitted(mutation.id)
+            uiStateStore.applyCommittedMutation(mutation)
+            clearPendingDayMetrics(for: mutation.id.habitID, day: mutation.id.dayStart)
+            LoggingPerformanceMonitor.markPersistCommitted(
+                habitID: mutation.id.habitID,
+                referenceDate: referenceDate
+            )
+            Task {
+                await sideEffectCoordinator.enqueue(
+                    habitID: mutation.id.habitID,
+                    referenceDate: referenceDate
+                )
+            }
+        case let .failed(mutation, errorDescription):
+            mutationLedger.updateStatus(
+                for: mutation.id,
+                status: .failed,
+                errorDescription: errorDescription
+            )
+            uiStateStore.updatePendingMutationStatus(
+                mutationID: mutation.id,
+                status: .failed,
+                errorDescription: errorDescription
+            )
+        }
     }
 
     private func removeLogs(for habit: Habit, on date: Date) {
@@ -327,7 +410,8 @@ final class HabitLogService: ObservableObject {
         }
         dayMetricsCache.removeValue(forKey: habitID)
         cueInsightService.resetCache()
-        habitVersionStore.bump(for: habitID)
+        // Drop stale cached computed state so UI falls back to optimistic/live state immediately.
+        computedStateByHabitID.removeValue(forKey: habitID)
         pendingChangedHabitIDs.insert(habitID)
     }
 
@@ -353,69 +437,75 @@ final class HabitLogService: ObservableObject {
 
     private func optimisticProgress(habitID: UUID, day: Date) -> Double? {
         return MainActor.assumeIsolated {
-            uiStateStore.progress(habitId: habitID, date: day)
+            uiStateStore.progress(habitId: habitID, date: day, calendar: calendar)
         }
     }
 
     private func optimisticCompletion(habitID: UUID, day: Date) -> Bool? {
         return MainActor.assumeIsolated {
-            uiStateStore.isComplete(habitId: habitID, date: day)
-        }
-    }
-
-    private func setOptimisticState(
-        habitID: UUID,
-        day: Date,
-        progress: Double,
-        isComplete: Bool
-    ) {
-        MainActor.assumeIsolated {
-            uiStateStore.setProgress(
-                habitId: habitID,
-                date: day,
-                progress: progress,
-                isComplete: isComplete
-            )
-        }
-    }
-
-    private func reconcileOptimisticState(
-        habitID: UUID,
-        day: Date,
-        progress: Double,
-        isComplete: Bool
-    ) {
-        MainActor.assumeIsolated {
-            uiStateStore.reconcileProgress(
-                habitId: habitID,
-                date: day,
-                progress: progress,
-                isComplete: isComplete
-            )
+            uiStateStore.isComplete(habitId: habitID, date: day, calendar: calendar)
         }
     }
 
     private func clearOptimisticStateIfPresent(habitID: UUID, day: Date) {
         MainActor.assumeIsolated {
-            uiStateStore.clearIfPresent(habitId: habitID, date: day)
+            uiStateStore.clearIfPresent(habitId: habitID, date: day, calendar: calendar)
         }
     }
 
-    private func scheduleHabitComputedStateRefresh(for habit: Habit, referenceDate: Date) {
-        let startedAt = CACurrentMediaTime()
-        Task { @MainActor in
-            let state = HabitComputationEngine(
-                calendar: calendar,
-                weekStartPreference: .system
-            ).compute(
-                habit: habit,
-                logs: habit.logs,
-                globalLogs: habit.logs,
-                now: referenceDate
+    private func scheduleHabitComputedStateRefresh(for habitID: UUID, referenceDate: Date) {
+        pendingComputedStateRefreshTasks[habitID]?.cancel()
+        let sequence = (computedStateRequestSequenceByHabitID[habitID] ?? 0) + 1
+        computedStateRequestSequenceByHabitID[habitID] = sequence
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: computedStateRefreshDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+
+            let state = await self.computeComputedStateOffMain(
+                habitID: habitID,
+                referenceDate: referenceDate
             )
-            computedStateByHabitID[habit.id] = state
-            let elapsedMs = (CACurrentMediaTime() - startedAt) * 1_000
-            print(String(format: "PERF: habit recompute in %.1fms", elapsedMs))
+            guard !Task.isCancelled, let state else { return }
+
+            await MainActor.run {
+                guard self.computedStateRequestSequenceByHabitID[habitID] == sequence else { return }
+                self.computedStateByHabitID[habitID] = state
+                self.pendingComputedStateRefreshTasks.removeValue(forKey: habitID)
+            }
+        }
+
+        pendingComputedStateRefreshTasks[habitID] = task
+    }
+
+    private func computeComputedStateOffMain(
+        habitID: UUID,
+        referenceDate: Date
+    ) async -> HabitComputedState? {
+        await withCheckedContinuation { continuation in
+            let modelContainer = modelContext.container
+            let calendar = self.calendar
+            DispatchQueue.global(qos: .utility).async {
+                let context = ModelContext(modelContainer)
+                let descriptor = FetchDescriptor<Habit>()
+                guard let habit = try? context.fetch(descriptor).first(where: { $0.id == habitID }) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let logs = habit.logs
+                let computed = HabitComputationEngine(
+                    calendar: calendar,
+                    weekStartPreference: .system
+                ).compute(
+                    habit: habit,
+                    logs: logs,
+                    globalLogs: logs,
+                    now: referenceDate
+                )
+                continuation.resume(returning: computed)
+            }
         }
     }
 }
@@ -611,6 +701,111 @@ extension HabitLogService {
 }
 
 extension HabitLogService {
+    private func ensureProjectedDayState(
+        for habit: Habit,
+        on date: Date
+    ) -> HabitProjectedDayState? {
+        let normalizedDay = calendar.startOfDay(for: date)
+
+        if let projected = MainActor.assumeIsolated({
+            uiStateStore.projectedDayState(
+                habitID: habit.id,
+                day: normalizedDay,
+                calendar: calendar
+            )
+        }) {
+            return projected
+        }
+
+        let dayKey = HabitLogDayKey.make(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        let committedSequence = mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        let committedState = HabitCommittedDayState(
+            count: max(0, habit.count(on: normalizedDay, calendar: calendar)),
+            value: max(0, habit.value(on: normalizedDay, calendar: calendar)),
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: habit.isComplete(for: normalizedDay, calendar: calendar),
+            committedSequence: committedSequence
+        )
+
+        MainActor.assumeIsolated {
+            uiStateStore.setCommittedDayState(
+                habitID: habit.id,
+                day: normalizedDay,
+                calendar: calendar,
+                state: committedState
+            )
+        }
+
+        return MainActor.assumeIsolated {
+            uiStateStore.projectedDayState(
+                habitID: habit.id,
+                day: normalizedDay,
+                calendar: calendar
+            )
+        }
+    }
+
+    func projectedHistoryDayStates(for habit: Habit) -> [Date: HabitProjectedDayState] {
+        normalizeLogsIfNeeded(for: habit)
+
+        var countsByDay: [Date: Int] = [:]
+        var valuesByDay: [Date: Double] = [:]
+
+        for log in habit.logs {
+            let day = calendar.startOfDay(for: log.day)
+            countsByDay[day, default: 0] += max(0, log.frequencyContribution)
+            valuesByDay[day, default: 0] += max(0, log.numericValue)
+        }
+
+        let pendingMutations = MainActor.assumeIsolated {
+            uiStateStore.pendingMutations(for: habit.id)
+        }
+        let pendingDays = pendingMutations.map { calendar.startOfDay(for: $0.id.dayStart) }
+
+        var allDays = Set(countsByDay.keys)
+        allDays.formUnion(valuesByDay.keys)
+        allDays.formUnion(pendingDays)
+
+        guard !allDays.isEmpty else { return [:] }
+
+        let committedStatesByDay: [Date: HabitCommittedDayState] = allDays.reduce(into: [:]) { result, day in
+            let dayKey = HabitLogDayKey.make(habitID: habit.id, day: day, calendar: calendar)
+            let committedState = HabitCommittedDayState(
+                count: max(0, countsByDay[day, default: 0]),
+                value: max(0, valuesByDay[day, default: 0]),
+                progress: habit.progressFraction(for: day, calendar: calendar) ?? 0,
+                isComplete: habit.isComplete(for: day, calendar: calendar),
+                committedSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+            )
+            result[day] = committedState
+        }
+
+        MainActor.assumeIsolated {
+            uiStateStore.setCommittedDayStates(
+                habitID: habit.id,
+                calendar: calendar,
+                statesByDay: committedStatesByDay
+            )
+        }
+
+        return MainActor.assumeIsolated {
+            allDays.reduce(into: [Date: HabitProjectedDayState]()) { result, day in
+                guard let projected = uiStateStore.projectedDayState(
+                    habitID: habit.id,
+                    day: day,
+                    calendar: calendar
+                ) else {
+                    return
+                }
+                result[day] = projected
+            }
+        }
+    }
+
     private func recentEntryLogs(for habit: Habit) -> [HabitLog] {
         habit.logs
             .filter { $0.kind == .entry }
@@ -623,7 +818,10 @@ extension HabitLogService {
         if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
             return pending.count
         }
-        return habit.count(on: date, calendar: calendar)
+        if let projected = ensureProjectedDayState(for: habit, on: normalizedDay) {
+            return projected.count
+        }
+        return 0
     }
 
     func value(for habit: Habit, on date: Date) -> Double {
@@ -632,12 +830,19 @@ extension HabitLogService {
         if let pending = pendingDayMetrics(for: habit.id, day: normalizedDay) {
             return pending.value
         }
-        return habit.value(on: date, calendar: calendar)
+        if let projected = ensureProjectedDayState(for: habit, on: normalizedDay) {
+            return projected.value
+        }
+        return 0
     }
 
     func value(for habit: Habit, in interval: DateInterval) -> Double {
         normalizeLogsIfNeeded(for: habit)
-        return habit.totalValue(in: interval)
+        let days = days(in: interval)
+        guard !days.isEmpty else { return 0 }
+        return days.reduce(0) { partialResult, day in
+            partialResult + value(for: habit, on: day)
+        }
     }
 
     func formattedValue(for habit: Habit, on date: Date) -> String? {
@@ -871,14 +1076,16 @@ extension HabitLogService {
 
     @discardableResult
     func addLog(for habit: Habit, on day: Date, value: Double) -> Double {
+        let traceID = UUID()
+        LoggingPerformanceMonitor.markTapStart(traceID: traceID, habitID: habit.id)
         lastLogUserActionAt = Date()
-        print("LOG: user action at \(Date())")
         let normalizedDay = calendar.startOfDay(for: day)
         let entryTimestamp = resolvedEntryTimestamp(for: day)
         let amount = max(0, value)
         guard amount > 0 else { return 0 }
 
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
+        let currentDayCount = habit.count(on: normalizedDay, calendar: calendar)
         let currentDayValue = habit.value(on: normalizedDay, calendar: calendar)
         let newValue = currentDayValue + amount
 
@@ -893,26 +1100,61 @@ extension HabitLogService {
             calendar: calendar
         )
 
-        setOptimisticState(
+        let dayKey = HabitLogDayKey.make(
             habitID: habit.id,
             day: normalizedDay,
-            progress: newProgress,
-            isComplete: willBeComplete
+            calendar: calendar
         )
-        let log = HabitLog(timestamp: entryTimestamp, value: amount, calendar: calendar)
-        // Preserve selected calendar day grouping while keeping real event timestamp.
-        log.day = normalizedDay
-        habit.logs.append(log)
-        clearPendingDayMetrics(for: habit.id, day: normalizedDay)
+        let sequence = mutationSequenceTracker.nextSequence(for: dayKey)
+        let mutationID = HabitLogMutationID(
+            habitID: habit.id,
+            dayStart: dayKey.dayStart,
+            sequence: sequence
+        )
 
-        invalidateMetricsCache(for: habit.id)
-        saveAndPlayHaptic(for: habit, referenceDate: normalizedDay, wasComplete: wasComplete)
-        let reconciledProgress = habit.progressFraction(for: normalizedDay, calendar: calendar) ?? newProgress
-        reconcileOptimisticState(
+        clearOptimisticStateIfPresent(habitID: habit.id, day: normalizedDay)
+        let committedState = HabitCommittedDayState(
+            count: currentDayCount,
+            value: currentDayValue,
+            progress: habit.progressFraction(for: normalizedDay, calendar: calendar) ?? 0,
+            isComplete: wasComplete,
+            committedSequence: mutationLedger.latestCommittedSequenceByDayKey[dayKey] ?? 0
+        )
+        let pendingMutation = HabitLogPendingMutation(
+            id: mutationID,
+            valueDelta: amount,
+            countDelta: 1,
+            expectedProgress: newProgress,
+            expectedCompletion: willBeComplete
+        )
+        mutationLedger.enqueue(pendingMutation)
+        uiStateStore.seedCommittedAndAppendPending(
             habitID: habit.id,
             day: normalizedDay,
-            progress: reconciledProgress,
-            isComplete: habit.isComplete(for: normalizedDay, calendar: calendar)
+            calendar: calendar,
+            committedState: committedState,
+            mutation: pendingMutation
+        )
+        let projected = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: normalizedDay,
+            calendar: calendar
+        )
+        setPendingDayMetrics(
+            for: habit.id,
+            day: normalizedDay,
+            metrics: PendingDayMetrics(
+                count: projected?.count ?? (currentDayCount + 1),
+                value: projected?.value ?? newValue,
+                intensity: clamp(projected?.progress ?? newProgress)
+            )
+        )
+        LoggingPerformanceMonitor.markOptimisticApplied(traceID: traceID, habitID: habit.id)
+        playHaptic(becameComplete: !wasComplete && willBeComplete)
+        enqueueMutationPersistence(
+            mutation: pendingMutation,
+            entryTimestamp: entryTimestamp,
+            referenceDate: normalizedDay
         )
 
         return newValue
@@ -921,7 +1163,6 @@ extension HabitLogService {
     @discardableResult
     func updateEntry(_ entry: HabitLog, for habit: Habit, on day: Date, value: Double) -> Double {
         lastLogUserActionAt = Date()
-        print("LOG: user action at \(Date())")
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let amount = max(0, value)
@@ -951,7 +1192,6 @@ extension HabitLogService {
     @discardableResult
     func deleteEntry(_ entry: HabitLog, for habit: Habit, on day: Date) -> Double {
         lastLogUserActionAt = Date()
-        print("LOG: user action at \(Date())")
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
@@ -967,7 +1207,6 @@ extension HabitLogService {
     @discardableResult
     func clearEntries(for habit: Habit, on day: Date) -> Double {
         lastLogUserActionAt = Date()
-        print("LOG: user action at \(Date())")
         normalizeLogsIfNeeded(for: habit)
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
@@ -992,7 +1231,6 @@ extension HabitLogService {
     @discardableResult
     func decrement(for habit: Habit, on day: Date) -> Int {
         lastLogUserActionAt = Date()
-        print("LOG: user action at \(Date())")
         let normalizedDay = calendar.startOfDay(for: day)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)
         let dayLogs = logs(for: habit, on: normalizedDay)
@@ -1019,7 +1257,6 @@ extension HabitLogService {
     @discardableResult
     func setCount(for habit: Habit, on day: Date, to newValue: Int) -> Int {
         lastLogUserActionAt = Date()
-        print("LOG: user action at \(Date())")
         let normalizedDay = calendar.startOfDay(for: day)
         let value = max(0, newValue)
         let wasComplete = habit.isComplete(for: normalizedDay, calendar: calendar)

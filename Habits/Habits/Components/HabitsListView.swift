@@ -45,6 +45,7 @@ struct HabitsListView: View {
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var habitLogService: HabitLogService
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
     @ObservedObject private var appTime = AppTime.shared
 
@@ -69,6 +70,8 @@ struct HabitsListView: View {
     @State private var coachingInsight: TodayCoachingInsight?
     @State private var isIntroExpanded: Bool = TodayIntroDisclosureState.isExpanded()
     @State private var pendingGlobalInsightsRefreshTask: Task<Void, Never>?
+    @State private var todayInsightRequestSequence: UInt64 = 0
+    @State private var globalInsightsRequestSequence: UInt64 = 0
 
     init() {}
 
@@ -459,9 +462,9 @@ struct HabitsListView: View {
     private var rhythmTaskKey: String {
         guard let momentumHabit else { return "no-momentum-habit" }
 
-        let metricsRevision = habitLogService.metricsRevision(for: momentumHabit.id)
+        let projectionVersion = uiStateStore.projectionVersionByHabitID[momentumHabit.id] ?? 0
         let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
-        return "\(momentumHabit.id.uuidString)-\(metricsRevision)-\(premiumFlag)"
+        return "\(momentumHabit.id.uuidString)-\(projectionVersion)-\(premiumFlag)"
     }
 
     private var rhythmPrefetchTaskKey: String {
@@ -473,8 +476,12 @@ struct HabitsListView: View {
     private var insightSelectionTaskKey: String {
         let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
         let currentHour = calculationCalendar.component(.hour, from: appTime.now)
+        let momentumProjectionVersion: UInt64 = {
+            guard let momentumHabit else { return 0 }
+            return uiStateStore.projectionVersionByHabitID[momentumHabit.id] ?? 0
+        }()
         let parts = visibleHabits.map(\.id.uuidString)
-        return "\(premiumFlag)-\(currentHour)-\(parts.joined(separator: "|"))"
+        return "\(premiumFlag)-\(currentHour)-\(momentumProjectionVersion)-\(parts.joined(separator: "|"))"
     }
 
     private var globalInsightsTaskKey: String {
@@ -650,7 +657,7 @@ struct HabitsListView: View {
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: momentumHabit,
-            globalLogs: momentumHabit.logs,
+            globalLogs: [],
             isPremium: purchaseService.premiumStatus == .premium,
             now: .now,
             calendar: calculationCalendar
@@ -669,59 +676,48 @@ struct HabitsListView: View {
 
         let isPremium = purchaseService.premiumStatus == .premium
         let now = appTime.now
-        let today = calculationCalendar.startOfDay(for: now)
-        let computationEngine = HabitComputationEngine(
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        )
+        let requestSequence = todayInsightRequestSequence + 1
+        todayInsightRequestSequence = requestSequence
 
-        let candidates = visibleHabits.map { habit in
-            let computedState = computationEngine.compute(
-                habit: habit,
-                logs: habit.logs,
-                globalLogs: habit.logs,
-                now: now
-            )
-            return TodayInsightCandidate(
-                habit: habit,
-                computedState: computedState,
-                rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
-                isCompletedToday: habit.isComplete(
-                    for: today,
-                    calendar: calculationCalendar,
-                    weekStartPreference: userSettings.weekStartPreference
-                ),
-                lastCompletedDate: TimeOfDayPerformanceService.shared.cachedLastCompletedDate(
-                    for: habit,
-                    isPremium: isPremium
-                ),
-                streak: computedState.streakState.currentStreak
-            )
-        }
-
-        let insight = TodayInsightSelectionService.shared.selectInsight(
-            from: candidates,
+        let insight = await computeTodayInsightSelection(
+            habits: visibleHabits,
+            isPremium: isPremium,
             now: now,
             calendar: calculationCalendar
         )
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, todayInsightRequestSequence == requestSequence else { return }
         todayInsight = insight
         selectedInsightHabitID = insight?.habit.id
         logTodayTimingTrace()
     }
 
-    private func refreshGlobalInsightsSummary() {
+    private func refreshGlobalInsightsSummary() async {
         guard !habits.isEmpty else {
             globalInsightsSnapshot = nil
             coachingInsight = nil
             return
         }
 
-        let snapshot = GlobalInsightsService(
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        ).snapshot(for: habits, now: appTime.now)
+        let requestSequence = globalInsightsRequestSequence + 1
+        globalInsightsRequestSequence = requestSequence
+        let now = appTime.now
+
+        let snapshot = await withCheckedContinuation { continuation in
+            let calendar = calculationCalendar
+            let weekStartPreference = userSettings.weekStartPreference
+            let habitsSnapshot = habits
+            DispatchQueue.global(qos: .utility).async {
+                LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
+                let output = GlobalInsightsService(
+                    calendar: calendar,
+                    weekStartPreference: weekStartPreference
+                ).snapshot(for: habitsSnapshot, now: now)
+                continuation.resume(returning: output)
+            }
+        }
+
+        guard !Task.isCancelled, globalInsightsRequestSequence == requestSequence else { return }
         globalInsightsSnapshot = snapshot
 
         if let snapshot {
@@ -741,10 +737,126 @@ struct HabitsListView: View {
         pendingGlobalInsightsRefreshTask = Task(priority: .background) {
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                refreshGlobalInsightsSummary()
+            await refreshGlobalInsightsSummary()
+        }
+    }
+
+    private func computeTodayInsightSelection(
+        habits: [Habit],
+        isPremium: Bool,
+        now: Date,
+        calendar: Calendar
+    ) async -> TodayInsight? {
+        let today = calendar.startOfDay(for: now)
+        let candidates = habits.map { habit in
+            let computedState = habitLogService.computedStateByHabitID[habit.id]
+                ?? syntheticComputedState(for: habit, now: now, calendar: calendar)
+            let projectedToday = uiStateStore.projectedDayState(
+                habitID: habit.id,
+                day: today,
+                calendar: calendar
+            )
+
+            return TodayInsightCandidate(
+                habit: habit,
+                computedState: computedState,
+                rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
+                isCompletedToday: projectedToday?.isComplete ?? false,
+                lastCompletedDate: TimeOfDayPerformanceService.shared.cachedLastCompletedDate(
+                    for: habit,
+                    isPremium: isPremium
+                ),
+                streak: computedState.streakState.currentStreak
+            )
+        }
+
+        return TodayInsightSelectionService.shared.selectInsight(
+            from: candidates,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    private func syntheticComputedState(
+        for habit: Habit,
+        now: Date,
+        calendar: Calendar
+    ) -> HabitComputedState {
+        let projected: [Date: HabitProjectedDayState] = {
+            let cached = uiStateStore.projectedDayStates(for: habit.id)
+            if !cached.isEmpty { return cached }
+            _ = habitLogService.projectedHistoryDayStates(for: habit)
+            return uiStateStore.projectedDayStates(for: habit.id)
+        }()
+        let today = calendar.startOfDay(for: now)
+        let last14Start = calendar.date(byAdding: .day, value: -13, to: today) ?? today
+
+        var uniqueCompletedDays = 0
+        var recentActiveDays = 0
+        var totalLogs = 0
+
+        for (day, state) in projected {
+            let normalizedDay = calendar.startOfDay(for: day)
+            guard normalizedDay <= today else { continue }
+            let isActive = state.count > 0 || state.value > 0
+            guard isActive else { continue }
+
+            uniqueCompletedDays += 1
+            totalLogs += max(0, state.count)
+            if normalizedDay >= last14Start {
+                recentActiveDays += 1
             }
         }
+
+        let identityState: HabitIdentityState = {
+            let completionRate = uniqueCompletedDays == 0 ? 0 : Double(recentActiveDays) / 14.0
+            switch completionRate {
+            case ..<0.2:
+                return uniqueCompletedDays == 0 ? .gettingStarted : .rebuilding
+            case ..<0.5:
+                return .building
+            case ..<0.75:
+                return .steady
+            default:
+                return .strong
+            }
+        }()
+
+        return HabitComputedState(
+            identityState: identityState,
+            streakState: StreakState(
+                currentStreak: 0,
+                longestStreak: 0,
+                hasMetRequirementToday: uiStateStore.projectedDayState(
+                    habitID: habit.id,
+                    day: today,
+                    calendar: calendar
+                )?.isComplete ?? false,
+                isRequiredToday: true,
+                isAtRisk: false,
+                isBroken: false,
+                status: .safe
+            ),
+            rhythmState: RhythmState(
+                rhythm: nil,
+                isForming: true,
+                visualConfidence: 0
+            ),
+            timingInsight: nil,
+            completionStats: CompletionStats(
+                totalLogs: totalLogs,
+                uniqueCompletedDays: uniqueCompletedDays,
+                recentActiveDays: recentActiveDays,
+                validTimingSamples: 0
+            ),
+            weeklyPattern: WeeklyPattern(
+                recentTopDay: nil,
+                historicalTopDay: nil,
+                weekdayDistribution: [:],
+                weekdayActiveDayCounts: [:],
+                sampleSize: 0
+            )
+        )
     }
 
     private func prefetchRhythmDataForVisibleHabits() async {
@@ -755,7 +867,7 @@ struct HabitsListView: View {
             guard !Task.isCancelled else { return }
             _ = await TimeOfDayPerformanceService.shared.hourlyValues(
                 for: habit,
-                globalLogs: habit.logs,
+                globalLogs: [],
                 isPremium: isPremium,
                 now: .now,
                 calendar: calculationCalendar

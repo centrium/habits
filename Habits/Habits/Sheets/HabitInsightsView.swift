@@ -3,6 +3,7 @@ import SwiftData
 
 struct HabitInsightsView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     let habit: Habit
     let logAnchorDate: Date?
 
@@ -13,40 +14,33 @@ struct HabitInsightsView: View {
 
     @EnvironmentObject private var userSettings: UserSettings
     @State private var hasAnimatedIn = false
+    @State private var insightsViewModel: HabitInsightsViewModel?
 
-    private var accent: Color {
-        habit.curatedColorVariants.strong
-    }
-
-    private var insights: HabitInsightsViewModel {
-        HabitInsightsEngine.insights(
-            for: habit,
-            logAnchorDate: logAnchorDate,
-            globalLogs: habit.logs,
-            calendar: .current,
-            weekStartPreference: userSettings.weekStartPreference,
-            greigModeEnabled: userSettings.greigModeEnabled,
-            now: .now
-        )
-    }
+    private var accent: Color { habit.curatedColorVariants.strong }
 
     var body: some View {
+        let title = insightsViewModel?.title ?? "Insights"
         ScrollView {
-            HabitInsightsCardsRenderer(
-                viewModel: insights,
-                accent: accent,
-                hasAnimatedIn: hasAnimatedIn
-            )
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 40)
+            if let insightsViewModel {
+                HabitInsightsCardsRenderer(
+                    viewModel: insightsViewModel,
+                    accent: accent,
+                    hasAnimatedIn: hasAnimatedIn
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 26)
+                .padding(.bottom, 40)
+            } else {
+                ProgressView()
+                    .padding(.top, 40)
+            }
         }
         .cadenceSurface(
             accent: Color.systemAccent,
             accentKey: "habit-insights-brand-ambient"
         )
         .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
-        .navigationTitle(insights.title)
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -54,6 +48,7 @@ struct HabitInsightsView: View {
             }
         }
         .onAppear {
+            refreshInsights()
             hasAnimatedIn = false
             DispatchQueue.main.async {
                 withAnimation(AppMotion.reveal) {
@@ -61,6 +56,24 @@ struct HabitInsightsView: View {
                 }
             }
         }
+        .onChange(of: userSettings.weekStartPreference) { _, _ in
+            refreshInsights()
+        }
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
+            refreshInsights()
+        }
+    }
+
+    private func refreshInsights() {
+        insightsViewModel = HabitInsightsEngine.insights(
+            for: habit,
+            logAnchorDate: logAnchorDate,
+            globalLogs: [],
+            calendar: .current,
+            weekStartPreference: userSettings.weekStartPreference,
+            greigModeEnabled: userSettings.greigModeEnabled,
+            now: .now
+        )
     }
 }
 

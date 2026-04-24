@@ -67,6 +67,7 @@ final class HabitComputationEngine {
         globalLogs: [HabitLog] = [],
         now: Date = .now
     ) -> HabitComputedState {
+        LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
         // 1) Normalise logs
         let normalizedLogs = normalized(logs: logs, now: now)
 

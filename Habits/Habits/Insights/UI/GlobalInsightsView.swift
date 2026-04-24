@@ -10,14 +10,9 @@ private enum GlobalInsightsSpacing {
 struct GlobalInsightsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @Query(sort: \Habit.orderIndex) private var habits: [Habit]
-
-    private var snapshot: GlobalInsightsSnapshot? {
-        GlobalInsightsService(
-            calendar: calculationCalendar,
-            weekStartPreference: userSettings.weekStartPreference
-        ).snapshot(for: habits, now: .now)
-    }
+    @State private var snapshot: GlobalInsightsSnapshot?
 
     var body: some View {
         ScrollView {
@@ -45,10 +40,29 @@ struct GlobalInsightsView: View {
         .background(colorScheme == .light ? CadenceTokens.Color.Background.primary : Color.appGroupedBackground)
         .navigationTitle("Global Insights")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            refreshSnapshot()
+        }
+        .onChange(of: userSettings.weekStartPreference) { _, _ in
+            refreshSnapshot()
+        }
+        .onChange(of: habits.map(\.id)) { _, _ in
+            refreshSnapshot()
+        }
+        .onChange(of: uiStateStore.projectionVersionByHabitID) { _, _ in
+            refreshSnapshot()
+        }
     }
 
     private var calculationCalendar: Calendar {
         userSettings.weekLayoutStrategy().calendarForCalculations()
+    }
+
+    private func refreshSnapshot() {
+        snapshot = GlobalInsightsService(
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        ).snapshot(for: habits, now: .now)
     }
 }
 
