@@ -22,6 +22,7 @@ private enum ActiveSheet: Identifiable {
     case edit
     case insights
     case valueEntry
+    case aiCoachDetail
     case paywall(PremiumFeature)
 
     var id: String {
@@ -32,6 +33,8 @@ private enum ActiveSheet: Identifiable {
             return "insights"
         case .valueEntry:
             return "valueEntry"
+        case .aiCoachDetail:
+            return "aiCoachDetail"
         case .paywall(let feature):
             return "paywall-\(String(describing: feature))"
         }
@@ -332,6 +335,17 @@ struct HabitDetailSheet: View {
                     manualLogValue = nil
                 }
                 .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+
+            case .aiCoachDetail:
+                AICoachDetailSheet(
+                    message: aiCoachDetailMessage,
+                    isLoading: isAICoachThinking,
+                    loadingText: aiCoach.loadingText
+                )
+                .presentationDetents([.medium, .large])
+                .presentationBackground(CadenceTokens.Color.Background.primary)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)
 
@@ -696,6 +710,12 @@ struct HabitDetailSheet: View {
                             isLoading: false
                         )
                     }
+                }
+                .contentShape(Rectangle())
+                .allowsHitTesting(!isAICoachThinking)
+                .onTapGesture {
+                    guard !isAICoachThinking else { return }
+                    activeSheet = .aiCoachDetail
                 }
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: aiCoachSectionPhase)
@@ -1751,6 +1771,7 @@ struct HabitDetailSheet: View {
     private func regenerateAICoach(requestKey: String) {
         guard viewModel.isActive else { return }
         let input = buildAICoachInput()
+        aiCoachText = ""
         aiCoachIsLoading = true
         aiCoach.generate(input: input, requestKey: requestKey) { finalText in
             self.aiCoachText = finalText
@@ -1785,6 +1806,7 @@ struct HabitDetailSheet: View {
 
     private func freezeDetailState() {
         cueInsight = nil
+        aiCoachText = ""
         aiCoachIsLoading = false
         aiCoachSectionState = .loading
         metadataSectionState = .loading
@@ -1913,6 +1935,21 @@ struct HabitDetailSheet: View {
             return "Your recent timing has become less steady, but your strongest window still gives you a reliable place to restart. Keep today’s step small and concrete so consistency can rebuild naturally."
         case .identity:
             return "Your check-ins are settling into a recognizable strongest window that supports this habit day to day. Show up once today with a light, repeatable action so this identity keeps strengthening."
+        }
+    }
+
+    private var isAICoachThinking: Bool {
+        aiCoachSectionState.isLoading || (aiCoachIsLoading && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var aiCoachDetailMessage: String {
+        switch aiCoachSectionState {
+        case .loaded(let output):
+            return resolvedAICoachMessage(for: output)
+        case .loading:
+            return "Your guidance is being prepared."
+        case .empty:
+            return "Insights are building as your check-ins accumulate."
         }
     }
 
@@ -2316,6 +2353,30 @@ private struct IdentityExplainerSheet: View {
                 Text(paragraphTwo)
                     .font(CadenceTokens.Typography.supporting)
                     .foregroundStyle(CadenceTokens.Color.Text.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(CadenceTokens.Space.lg)
+        }
+        .presentationBackground(CadenceTokens.Color.Background.primary)
+    }
+}
+
+private struct AICoachDetailSheet: View {
+    let message: String
+    let isLoading: Bool
+    let loadingText: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
+                Text("AI Coach")
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+
+                Text(isLoading ? loadingText : message)
+                    .font(CadenceTokens.Typography.supporting)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(CadenceTokens.Space.lg)
