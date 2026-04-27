@@ -89,4 +89,201 @@ final class AICoachServiceTests: XCTestCase {
         XCTAssertNil(cached)
     }
 
+    func testCachedTextReturnsMissWhenFingerprintDiffers() {
+        let now = Date(timeIntervalSinceReferenceDate: 100_000)
+        let habitID = UUID()
+
+        service.updateCacheForTesting(
+            habitID: habitID,
+            text: "Fingerprint scoped guidance",
+            fingerprint: "fingerprint-a",
+            depth: .basic,
+            generatedAt: now.addingTimeInterval(-300)
+        )
+
+        let cached = service.cachedTextIfFresh(
+            habitID: habitID,
+            fingerprint: "fingerprint-b",
+            depth: .basic,
+            now: now
+        )
+
+        XCTAssertNil(cached)
+    }
+
+    func testCachedTextReturnsMissWhenDepthDiffers() {
+        let now = Date(timeIntervalSinceReferenceDate: 100_000)
+        let habitID = UUID()
+
+        service.updateCacheForTesting(
+            habitID: habitID,
+            text: "Premium guidance",
+            fingerprint: "fingerprint-a",
+            depth: .premium,
+            generatedAt: now.addingTimeInterval(-300)
+        )
+
+        let cached = service.cachedTextIfFresh(
+            habitID: habitID,
+            fingerprint: "fingerprint-a",
+            depth: .basic,
+            now: now
+        )
+
+        XCTAssertNil(cached)
+    }
+
+    func testCachedTextReturnsHitWhenFingerprintAndDepthMatch() {
+        let now = Date(timeIntervalSinceReferenceDate: 100_000)
+        let habitID = UUID()
+
+        service.updateCacheForTesting(
+            habitID: habitID,
+            text: "Matching cache",
+            fingerprint: "fingerprint-a",
+            depth: .premium,
+            generatedAt: now.addingTimeInterval(-300)
+        )
+
+        let cached = service.cachedTextIfFresh(
+            habitID: habitID,
+            fingerprint: "fingerprint-a",
+            depth: .premium,
+            now: now
+        )
+
+        XCTAssertEqual(cached, "Matching cache")
+    }
+
+    func testCoachingFingerprintChangesWhenVersionChanges() {
+        let inputV1 = CoachingInput(
+            version: 1,
+            identityState: .build,
+            streakState: "forming",
+            consistency: 30,
+            timeOfDayInsights: CoachingTimeOfDayInsights(strongestWindow: "7 PM", confidence: .medium),
+            recentBehaviourSummary: "Routine is taking shape.",
+            todayStatus: "Not yet today",
+            windowDays: 7,
+            dayBucket: 1000,
+            dayOrdinal: 100
+        )
+        let inputV2 = CoachingInput(
+            version: 2,
+            identityState: .build,
+            streakState: "forming",
+            consistency: 30,
+            timeOfDayInsights: CoachingTimeOfDayInsights(strongestWindow: "7 PM", confidence: .medium),
+            recentBehaviourSummary: "Routine is taking shape.",
+            todayStatus: "Not yet today",
+            windowDays: 7,
+            dayBucket: 1000,
+            dayOrdinal: 100
+        )
+        let selected = SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: .consistency)
+
+        let v1Fingerprint = inputV1.aiFingerprint(depth: .premium, selectedSignals: selected)
+        let v2Fingerprint = inputV2.aiFingerprint(depth: .premium, selectedSignals: selected)
+
+        XCTAssertNotEqual(v1Fingerprint, v2Fingerprint)
+    }
+
+    func testAIFingerprintIgnoresDayBucketWhenMeaningUnchanged() {
+        let selected = SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: .consistency)
+        let dayOne = CoachingInput(
+            version: 1,
+            identityState: .steady,
+            streakState: "3-period streak",
+            consistency: 62,
+            timeOfDayInsights: CoachingTimeOfDayInsights(strongestWindow: "8 PM", confidence: .high),
+            recentBehaviourSummary: "Recent behaviour is settling into a routine.",
+            todayStatus: "Not yet today",
+            windowDays: 14,
+            dayBucket: 1_000,
+            dayOrdinal: 100
+        )
+        let dayTwo = CoachingInput(
+            version: 1,
+            identityState: .steady,
+            streakState: "3-period streak",
+            consistency: 62,
+            timeOfDayInsights: CoachingTimeOfDayInsights(strongestWindow: "8 PM", confidence: .high),
+            recentBehaviourSummary: "Recent behaviour is settling into a routine.",
+            todayStatus: "Not yet today",
+            windowDays: 14,
+            dayBucket: 2_000,
+            dayOrdinal: 101
+        )
+
+        XCTAssertEqual(
+            dayOne.aiFingerprint(depth: .premium, selectedSignals: selected),
+            dayTwo.aiFingerprint(depth: .premium, selectedSignals: selected)
+        )
+        XCTAssertNotEqual(
+            dayOne.guidanceVariationKey(selectedSignals: selected),
+            dayTwo.guidanceVariationKey(selectedSignals: selected)
+        )
+    }
+
+    func testSignalFamilyValidationAcceptsNaturalStreakAndConsistencyPhrasing() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .streakState, secondary: .consistency)
+        )
+
+        let output = "You have been consistent recently and kept it going in a row. Try to use the same window today."
+
+        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationAcceptsExplicitTimeExpressionForTimeOfDay() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        let output = "You tend to follow through around 18:00. Focus on that window again today."
+
+        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationRejectsGenericOutput() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: .consistency)
+        )
+
+        let output = "Keep going, you are doing great. Stay consistent and do your best."
+
+        XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    private func makeAICoachInput(selectedSignals: SelectedCoachingSignals) -> AICoachInput {
+        let coachingInput = CoachingInput(
+            version: 1,
+            identityState: .build,
+            streakState: "4-period streak",
+            consistency: 62,
+            timeOfDayInsights: CoachingTimeOfDayInsights(strongestWindow: "evening", confidence: .high),
+            recentBehaviourSummary: "You usually follow through after dinner.",
+            todayStatus: "Not yet today",
+            windowDays: 14,
+            dayBucket: 2_000,
+            dayOrdinal: 120
+        )
+        return AICoachInput(
+            coachingInput: coachingInput,
+            depth: .premium,
+            selectedSignals: selectedSignals,
+            habitName: "Walk",
+            recentLogs: "Mon 19:00, Tue 18:30",
+            state: .build,
+            timingConfidence: .high,
+            strongestTime: "evening",
+            weakestTime: "morning",
+            streakState: coachingInput.streakState,
+            identity: "builder",
+            stacking: nil,
+            todayStatus: coachingInput.todayStatus,
+            behaviourSummary: coachingInput.recentBehaviourSummary
+        )
+    }
+
 }

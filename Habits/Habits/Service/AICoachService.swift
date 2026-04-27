@@ -4,6 +4,9 @@ import FoundationModels
 #endif
 
 struct AICoachInput: Sendable {
+    let coachingInput: CoachingInput
+    let depth: CoachingDepth
+    let selectedSignals: SelectedCoachingSignals
     let habitName: String
     let recentLogs: String
     let state: HabitState
@@ -21,12 +24,13 @@ final class AICoachService {
     struct AICoachCache {
         let text: String
         let generatedAt: Date
+        let fingerprint: String?
+        let depth: CoachingDepth?
     }
 
     static let shared = AICoachService()
 
     let loadingText = "Thinking…"
-    private let fallbackGuidance = "Your timing signal is becoming clearer as you keep showing up. Keep today’s check-in light and specific so this routine stays easy to repeat."
     private let cacheTTL: TimeInterval = 60 * 60
     private var generationTask: Task<Void, Never>?
     private var requestSequence: UInt64 = 0
@@ -37,6 +41,7 @@ final class AICoachService {
     func generate(
         habitID: UUID,
         input: AICoachInput,
+        fingerprint: String,
         requestKey: String,
         onComplete: @escaping @MainActor (String) -> Void
     ) {
@@ -44,7 +49,11 @@ final class AICoachService {
         lastRequestKey = requestKey
 
         let clean = sanitized(input)
-        if let cached = cachedText(habitID: habitID) {
+        if let cached = cachedText(
+            habitID: habitID,
+            fingerprint: fingerprint,
+            depth: input.depth
+        ) {
             onComplete(cached)
             return
         }
@@ -63,6 +72,8 @@ final class AICoachService {
                 self.updateCache(
                     habitID: habitID,
                     text: result,
+                    fingerprint: fingerprint,
+                    depth: input.depth,
                     generatedAt: .now
                 )
                 print("AI: publish end at \(Date())")
@@ -74,11 +85,19 @@ final class AICoachService {
     @MainActor
     private func cachedText(
         habitID: UUID,
+        fingerprint: String? = nil,
+        depth: CoachingDepth? = nil,
         now: Date = .now
     ) -> String? {
         guard let entry = cacheByHabitID[habitID] else { return nil }
         if now.timeIntervalSince(entry.generatedAt) >= cacheTTL {
             cacheByHabitID.removeValue(forKey: habitID)
+            return nil
+        }
+        if let fingerprint, entry.fingerprint != fingerprint {
+            return nil
+        }
+        if let depth, entry.depth != depth {
             return nil
         }
         return entry.text
@@ -88,20 +107,31 @@ final class AICoachService {
     private func updateCache(
         habitID: UUID,
         text: String,
+        fingerprint: String? = nil,
+        depth: CoachingDepth? = nil,
         generatedAt: Date = .now
     ) {
         cacheByHabitID[habitID] = AICoachCache(
             text: text,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            fingerprint: fingerprint,
+            depth: depth
         )
     }
 
     @MainActor
     func cachedTextIfFresh(
         habitID: UUID,
+        fingerprint: String? = nil,
+        depth: CoachingDepth? = nil,
         now: Date = .now
     ) -> String? {
-        cachedText(habitID: habitID, now: now)
+        cachedText(
+            habitID: habitID,
+            fingerprint: fingerprint,
+            depth: depth,
+            now: now
+        )
     }
 
     @MainActor
@@ -126,19 +156,34 @@ final class AICoachService {
     func updateCacheForTesting(
         habitID: UUID,
         text: String,
+        fingerprint: String? = nil,
+        depth: CoachingDepth? = nil,
         generatedAt: Date = .now
     ) {
-        updateCache(habitID: habitID, text: text, generatedAt: generatedAt)
+        updateCache(
+            habitID: habitID,
+            text: text,
+            fingerprint: fingerprint,
+            depth: depth,
+            generatedAt: generatedAt
+        )
     }
 
     @MainActor
     func resetCacheForTesting() {
         resetCache()
     }
+
+    func outputReferencesSelectedSignalsForTesting(_ output: String, input: AICoachInput) -> Bool {
+        outputReferencesSelectedSignals(output, input: input)
+    }
 #endif
 
     func sanitized(_ input: AICoachInput) -> AICoachInput {
         AICoachInput(
+            coachingInput: input.coachingInput,
+            depth: input.depth,
+            selectedSignals: input.selectedSignals,
             habitName: input.habitName.isEmpty ? "This habit" : input.habitName,
             recentLogs: input.recentLogs.isEmpty ? "Recent activity is limited." : input.recentLogs,
             state: input.state,
@@ -153,124 +198,74 @@ final class AICoachService {
         )
     }
 
-    nonisolated private static func buildPrompt(from input: AICoachInput) -> String {
-        let strongest = input.strongestTime ?? "none"
-        let weakest = input.weakestTime ?? "none"
-        let stacking = input.stacking ?? "none"
-        let identity = input.identity ?? "none"
+    private static func buildPrompt(from input: AICoachInput) -> String {
+        let strongest = input.coachingInput.timeOfDayInsights.strongestWindow ?? "none"
+        let signalHints = input.selectedSignals.all
+            .map(\.rawValue)
+            .sorted()
+            .joined(separator: ", ")
+        let depthInstruction: String = {
+            switch input.depth {
+            case .basic:
+                return """
+                If basic:
+                - Use ONE selected signal only
+                - Write 1-2 sentences (max 30 words)
+                - Focus on immediate action
+                - Structure: observation + action
+                """
+            case .premium:
+                return """
+                If premium:
+                - Use 2 selected signals if available
+                - Write 2-3 sentences (max 45 words)
+                - Structure: observation + pattern/implication + action
+                - Include horizon language like "over the past \(max(1, input.coachingInput.windowDays)) days"
+                """
+            }
+        }()
 
         return """
-        You are an AI habit coach inside a premium app.
-
-        You interpret behaviour and express it simply. You never explain metrics.
+        You are generating coaching for a habit tracking app.
 
         Habit: \(input.habitName)
+        Selected signals: \(signalHints)
+        Data:
+        - Identity state: \(input.coachingInput.identityState.rawValue)
+        - Streak state: \(input.coachingInput.streakState)
+        - Consistency: \(input.coachingInput.consistency)%
+        - Strongest window: \(strongest)
+        - Timing confidence: \(input.coachingInput.timeOfDayInsights.confidence.rawValue)
+        - Recent behaviour: \(input.coachingInput.recentBehaviourSummary)
+        - Today status: \(input.coachingInput.todayStatus)
 
-        Recent activity:
-        \(input.recentLogs)
+        You MUST:
+        - Use ONLY the provided CoachingInput and selected signals
+        - Explicitly reference the selected signal(s) in the output
+        - Clearly mention each selected signal in concrete terms; if one is missing, the output is invalid
+        - Match the tone of a calm, observant coach
+        - Be concise, natural, specific, and non-generic
+        - Never invent data or generalize beyond provided signals
 
-        Patterns:
-        - State: \(input.state.rawValue.uppercased())
-        - Timing Confidence: \(input.timingConfidence.rawValue.uppercased())
-        - Strongest time: \(strongest)
-        - Weakest time: \(weakest)
-        - Streak: \(input.streakState)
+        \(depthInstruction)
 
-        Identity:
-        \(identity)
+        Style:
+        - Observational, not motivational
+        - Calm, not energetic
+        - Slightly understated
+        - Specific, not vague
+        - Avoid robotic transitions like "that suggests" or "this indicates"
 
-        Stacking:
-        \(stacking)
+        Bad examples:
+        - "Keep going, you're doing great"
+        - "Stay consistent and you will succeed"
+        - "That suggests your routine is improving"
 
-        Context:
-        - Today: \(input.todayStatus)
-        - Behaviour: \(input.behaviourSummary)
+        Good examples:
+        - "You're most consistent in the evening. Stick with that window again today."
+        - "Over the past \(max(1, input.coachingInput.windowDays)) days, you usually show up in the evening. This is starting to hold with less effort, so use that window again today."
 
-        ---
-
-        Write exactly 2 sentences.
-
-        Rules:
-        - Target 28-45 words total
-        - Minimum 2 full sentences
-        - Do NOT mention scores, percentages, or metrics
-        - Convert everything into natural behaviour language
-        - Only mention time if it is not "none"
-        - Only mention stacking if it is not "none"
-        - Use the habit name naturally
-        - Focus on the single strongest signal only
-        - Do NOT mention dips or weak windows
-        - Use direct, confident phrasing
-        - Be concise but substantial enough to feel complete
-        - The strongest time window represents where the habit most reliably occurs and must be treated as a positive anchor, not a weakness
-        - Do not contradict the provided signals
-        - Do not invent or infer times that are not explicitly provided
-        - Do not infer behaviour beyond provided state
-        - Do not upgrade identity language beyond the provided State
-        - Use natural verbs that match real behaviour (e.g. "happens", "shows up", "occurs")
-        - Avoid artificial verbs like "test", "execute", "perform"
-        - Avoid generic motivational lines
-        - Avoid empty praise and filler
-        - Use the phrase "strongest window" when mentioning timing
-        - Match tone to State:
-          - STRONG = confident, reinforcing
-          - BUILD/START = exploratory
-        - Never describe the habit as stable, strong, or consistent unless State is STEADY or STRONG
-        - Use state language:
-          - START: "forming" or "early stage"
-          - BUILD: "building" or "taking shape"
-          - STEADY: "consistent"
-          - STRONG: "locked in"
-
-        State handling:
-        - The State represents the user’s identity and is the primary truth
-        - If State is START:
-          - Treat behaviour as just beginning
-          - Keep guidance simple and easy to act on
-        - If State is BUILD:
-          - Reinforce repetition and early consistency
-          - Keep guidance light and supportive
-        - If State is STEADY:
-          - Treat behaviour as consistent and reliable
-          - Encourage reinforcement
-        - If State is STRONG:
-          - Treat behaviour as locked in
-          - Use confident, reinforcing language
-        - If State is SLIP:
-          - Acknowledge drop-off without judgment
-          - Focus on re-engagement
-        - If State is REBUILD:
-          - Focus on regaining rhythm
-          - Keep guidance simple and achievable
-
-        Timing handling:
-        - Timing Confidence defines how reliable the time pattern is
-        - If timing is LOW:
-          - Treat time as emerging
-          - Do not give precise optimisation
-        - If timing is HIGH:
-          - Use strongest time as a clear anchor
-
-        Rules:
-        - Never contradict the State
-        - Never downgrade a strong state due to weak timing
-
-        Structure:
-        - Sentence 1: state the concrete behaviour pattern, grounded in timing/logging behaviour.
-        - Sentence 2: give a calm, specific nudge for today that reinforces consistency or identity.
-
-        Tone:
-        - Calm, sharp, observational
-        - No filler, no hype, no coaching clichés
-
-        Avoid:
-        - "consider"
-        - "you should"
-        - "keep going"
-        - "momentum indicates"
-        - any generic phrasing
-
-        Return only the 2 sentences.
+        Return only coaching text.
         """
     }
 
@@ -280,21 +275,35 @@ final class AICoachService {
 
         print("AI: start at \(Date())")
 
-        let prompt = await Task.detached(priority: .background) {
-            Self.buildPrompt(from: input)
-        }.value
+        let prompt = Self.buildPrompt(from: input)
 
         do {
             let result = try await generateFromAppleIntelligence(prompt: prompt)
             guard !Task.isCancelled, await isCurrent(sequence: sequence) else { return nil }
-            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            var trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            if input.depth == .premium, trimmed.wordCount > 40 {
+                trimmed = tightenPremiumPhrasing(trimmed)
+            }
+            guard outputReferencesSelectedSignals(trimmed, input: input) else {
+                print("AI: discarded result lacking selected-signal adherence")
+                return nil
+            }
             print("AI: end at \(Date())")
-            return trimmed.isEmpty ? fallbackGuidance : trimmed
+            return trimmed.isEmpty ? nil : trimmed
         } catch {
             guard !Task.isCancelled, await isCurrent(sequence: sequence) else { return nil }
             print("AI: end at \(Date())")
-            return fallbackGuidance
+            return nil
         }
+    }
+
+    func isAppleIntelligenceAvailable() -> Bool {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+            return SystemLanguageModel.default.isAvailable
+        }
+#endif
+        return false
     }
 
     private func isCurrent(sequence: UInt64) async -> Bool {
@@ -319,6 +328,128 @@ final class AICoachService {
         }
 #endif
         throw AICoachError.unavailable
+    }
+
+    private func outputReferencesSelectedSignals(_ output: String, input: AICoachInput) -> Bool {
+        let normalized = normalizedText(output)
+        let lowercased = output.lowercased()
+        return input.selectedSignals.all.allSatisfy { signal in
+            signalFamilyMatch(
+                signal: signal,
+                normalizedOutput: normalized,
+                rawLowercasedOutput: lowercased,
+                input: input
+            )
+        }
+    }
+
+    private func signalFamilyMatch(
+        signal: CoachingSignalID,
+        normalizedOutput: String,
+        rawLowercasedOutput: String,
+        input: AICoachInput
+    ) -> Bool {
+        let terms = signalFamilyTerms(for: signal, input: input)
+        if terms.contains(where: { containsSignalTerm($0, in: normalizedOutput) }) {
+            return true
+        }
+        if signal == .timeOfDayInsights, containsExplicitTimeExpression(in: rawLowercasedOutput) {
+            return true
+        }
+        return false
+    }
+
+    private func signalFamilyTerms(for signal: CoachingSignalID, input: AICoachInput) -> [String] {
+        switch signal {
+        case .identityState:
+            switch input.coachingInput.identityState {
+            case .start:
+                return ["forming", "early stage", "starting"]
+            case .build:
+                return ["building", "taking shape", "developing"]
+            case .steady:
+                return ["consistent", "reliable", "steady"]
+            case .strong:
+                return ["locked in", "strong", "stable"]
+            case .slip:
+                return ["slip", "dropped", "re-engage", "recover"]
+            case .rebuild:
+                return ["rebuild", "regain", "restore"]
+            }
+        case .streakState:
+            let numericTokens = input.coachingInput.streakState.split(whereSeparator: { !$0.isNumber }).map(String.init)
+            return ["streak", "in a row", "consecutive"] + numericTokens
+        case .consistency:
+            return ["consistent", "consistency", "regularly", "pattern", "\(input.coachingInput.consistency)%"]
+        case .timeOfDayInsights:
+            var anchors = ["morning", "afternoon", "evening", "night", "window", "time"]
+            if let strongest = input.coachingInput.timeOfDayInsights.strongestWindow?.lowercased(),
+               !strongest.isEmpty {
+                anchors.append(strongest)
+            }
+            return anchors
+        case .recentBehaviourSummary:
+            let summaryTerms = input.coachingInput.recentBehaviourSummary.lowercased()
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count > 4 }
+                .prefix(3)
+            return ["often", "usually", "tend to", "recently"] + Array(summaryTerms)
+        case .todayStatus:
+            return ["today"] + input.coachingInput.todayStatus.lowercased()
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count > 3 }
+        }
+    }
+
+    private func normalizedText(_ text: String) -> String {
+        let collapsed = text.lowercased().replacingOccurrences(
+            of: "[^a-z0-9%:]+",
+            with: " ",
+            options: .regularExpression
+        )
+        return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func containsSignalTerm(_ term: String, in normalizedOutput: String) -> Bool {
+        let cleanedTerm = normalizedText(term)
+        guard !cleanedTerm.isEmpty else { return false }
+        if cleanedTerm.contains(" ") {
+            return normalizedOutput.contains(cleanedTerm)
+        }
+        let tokens = Set(normalizedOutput.split(whereSeparator: \.isWhitespace).map(String.init))
+        return tokens.contains(cleanedTerm)
+    }
+
+    private func containsExplicitTimeExpression(in lowercasedOutput: String) -> Bool {
+        let pattern = #"(\b([1-9]|1[0-2])\s?(am|pm)\b)|(\b([01]?\d|2[0-3]):[0-5]\d\b)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return false
+        }
+        let range = NSRange(lowercasedOutput.startIndex..<lowercasedOutput.endIndex, in: lowercasedOutput)
+        return regex.firstMatch(in: lowercasedOutput, options: [], range: range) != nil
+    }
+
+    private func tightenPremiumPhrasing(_ text: String) -> String {
+        var compressed = text
+            .replacingOccurrences(of: "at the moment", with: "")
+            .replacingOccurrences(of: "right now", with: "")
+            .replacingOccurrences(of: "you can", with: "")
+            .replacingOccurrences(of: "very", with: "")
+            .replacingOccurrences(of: "really", with: "")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if compressed.wordCount > 45 {
+            compressed = compressed.split(whereSeparator: \.isWhitespace).prefix(45).joined(separator: " ")
+        }
+        return compressed
+    }
+}
+
+private extension String {
+    var wordCount: Int {
+        split(whereSeparator: \.isWhitespace).count
     }
 }
 

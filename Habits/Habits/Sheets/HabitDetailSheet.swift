@@ -93,6 +93,20 @@ private struct DetailScrollOffsetPreferenceKey: PreferenceKey {
     }
 }
 
+private struct CoachingContext {
+    let input: CoachingInput
+    let depth: CoachingDepth
+    let selectedSignals: SelectedCoachingSignals
+    let coreMeaningFingerprint: String
+    let aiFingerprint: String
+}
+
+private struct PendingAICandidate {
+    let text: String
+    let usedSignals: Set<CoachingSignalID>
+    let aiFingerprint: String
+}
+
 @MainActor
 private final class HabitDetailViewModel: ObservableObject {
     @Published private(set) var isActive = false
@@ -176,6 +190,7 @@ struct HabitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
@@ -195,9 +210,16 @@ struct HabitDetailSheet: View {
     @State private var aiCoachSectionState: SectionLoadState<GuidanceOutput> = .loading
     @State private var metadataSectionState: SectionLoadState<Void> = .loading
     @State private var prefersIdentityFocusOnEdit = false
-    private let aiCoachTitle: String = "AI Coach"
     @State private var aiCoachText: String = ""
     @State private var aiCoachIsLoading = false
+    @State private var coachPresentationMode: CoachPresentationMode = .guidanceFallback
+    @State private var coachingContext: CoachingContext?
+    @State private var guidanceCoachText: String = SafeMinimalCoaching.line
+    @State private var guidanceUsedSignals: Set<CoachingSignalID> = []
+    @State private var aiUsedSignals: Set<CoachingSignalID> = []
+    @State private var coachRenderLockedUntil: Date = .distantPast
+    @State private var pendingAICandidate: PendingAICandidate?
+    @State private var coachRenderUnlockTask: Task<Void, Never>?
     @State private var frozenGuidanceOutput: GuidanceOutput?
     @State private var frozenStateModel: HabitStateModel?
     @State private var lastReconcileProbeKey: String?
@@ -381,6 +403,7 @@ struct HabitDetailSheet: View {
 
             case .aiCoachDetail:
                 AICoachDetailSheet(
+                    title: coachCardLabel,
                     message: aiCoachDetailMessage,
                     isLoading: isAICoachThinking,
                     loadingText: aiCoach.loadingText
@@ -454,6 +477,13 @@ struct HabitDetailSheet: View {
             requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
             requestProgressSnapshotRefresh(now: newValue)
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            guard viewModel.isActive, !isHistoryPresented else { return }
+            requestAICoachRegeneration(
+                requestKey: "scene-active-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
+            )
+        }
         .onChange(of: progressRevision) { _, _ in
             requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
             guard viewModel.isActive, !isHistoryPresented else { return }
@@ -485,8 +515,10 @@ struct HabitDetailSheet: View {
             aiCoachSectionState = .loading
             freezeGuidanceOutputOnAppear(now: Date())
             aiCoachSectionState = {
-                guard let output = frozenGuidanceOutput else { return .empty }
-                return .loaded(output)
+                if let output = frozenGuidanceOutput {
+                    return .loaded(output)
+                }
+                return .empty
             }()
             requestAICoachRegeneration(
                 requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
@@ -719,7 +751,7 @@ struct HabitDetailSheet: View {
                             output: placeholderGuidanceOutput,
                             accent: accent,
                             variant: .focus,
-                            label: aiCoachTitle,
+                            label: coachCardLabel,
                             guidanceText: nil,
                             isLoading: true,
                             loadingText: "Finding your strongest window.\nBuilding your next cue.\nKeeping today simple."
@@ -729,9 +761,11 @@ struct HabitDetailSheet: View {
                             output: output,
                             accent: accent,
                             variant: GuidanceEngine.visualVariant(for: output),
-                            label: aiCoachTitle,
-                            guidanceText: resolvedAICoachMessage(for: output),
-                            isLoading: aiCoachIsLoading && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            label: coachCardLabel,
+                            guidanceText: resolvedCoachMessage(for: output),
+                            isLoading: coachPresentationMode == .aiCoach &&
+                                aiCoachIsLoading &&
+                                aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                             loadingText: aiCoach.loadingText
                         )
                     case .empty:
@@ -739,8 +773,8 @@ struct HabitDetailSheet: View {
                             output: placeholderGuidanceOutput,
                             accent: accent,
                             variant: .focus,
-                            label: aiCoachTitle,
-                            guidanceText: "Insights are building as your check-ins accumulate.",
+                            label: coachCardLabel,
+                            guidanceText: SafeMinimalCoaching.line,
                             isLoading: false
                         )
                     }
@@ -1023,12 +1057,8 @@ struct HabitDetailSheet: View {
     private func guidanceOutput(
         streakState: StreakState,
         identityState: HabitIdentityStateSnapshot
-    ) -> GuidanceOutput? {
-        guard purchaseService.hasAccess(to: .guidanceLayer) else {
-            return nil
-        }
-
-        return GuidanceEngine.build(
+    ) -> GuidanceOutput {
+        GuidanceEngine.build(
             input: GuidanceInput(
                 habit: habit,
                 now: Date(),
@@ -1830,8 +1860,10 @@ struct HabitDetailSheet: View {
         freezeStateModelOnAppear()
         freezeGuidanceOutputOnAppear(now: now)
         aiCoachSectionState = {
-            guard let output = frozenGuidanceOutput else { return .empty }
-            return .loaded(output)
+            if let output = frozenGuidanceOutput {
+                return .loaded(output)
+            }
+            return .empty
         }()
         detailPerfLog("ai-section-ready")
         regenerateAICoachOnAppear()
@@ -1940,18 +1972,53 @@ struct HabitDetailSheet: View {
 
     private func regenerateAICoach(requestKey: String) {
         guard viewModel.isActive else { return }
-        if let cached = aiCoach.cachedTextIfFresh(habitID: habit.id) {
-            aiCoachText = cached
+        refreshCoachingContextAndGuidance(now: appTime.now)
+        guard let context = coachingContext else { return }
+
+        let expectedSignals = expectedUsedSignals(
+            depth: context.depth,
+            selectedSignals: context.selectedSignals
+        )
+
+        if let cached = aiCoach.cachedTextIfFresh(
+            habitID: habit.id,
+            fingerprint: context.aiFingerprint,
+            depth: context.depth
+        ) {
+            applyAICandidate(
+                PendingAICandidate(
+                    text: cached,
+                    usedSignals: expectedSignals,
+                    aiFingerprint: context.aiFingerprint
+                )
+            )
+            return
+        }
+
+        guard aiCoach.isAppleIntelligenceAvailable() else {
             aiCoachIsLoading = false
             return
         }
 
-        let input = buildAICoachInput()
-        aiCoachText = ""
-        aiCoachIsLoading = true
-        aiCoach.generate(habitID: habit.id, input: input, requestKey: requestKey) { finalText in
-            self.aiCoachText = finalText
-            self.aiCoachIsLoading = false
+        let input = buildAICoachInput(context: context)
+        if coachPresentationMode == .aiCoach && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            aiCoachIsLoading = true
+        } else {
+            aiCoachIsLoading = false
+        }
+        aiCoach.generate(
+            habitID: habit.id,
+            input: input,
+            fingerprint: context.aiFingerprint,
+            requestKey: requestKey
+        ) { finalText in
+            self.applyAICandidate(
+                PendingAICandidate(
+                    text: finalText,
+                    usedSignals: expectedSignals,
+                    aiFingerprint: context.aiFingerprint
+                )
+            )
         }
     }
 
@@ -1970,14 +2037,9 @@ struct HabitDetailSheet: View {
     private func freezeGuidanceOutputOnAppear(now: Date) {
         guard viewModel.isActive else { return }
         guard frozenGuidanceOutput == nil else { return }
-
-        let streakState = currentStreakState(now: now)
-
-        let identityState = identityStateSummary()
-        frozenGuidanceOutput = guidanceOutput(
-            streakState: streakState,
-            identityState: identityState
-        )
+        refreshCoachingContextAndGuidance(now: now)
+        coachPresentationMode = .guidanceFallback
+        lockCoachRenderWindow()
     }
 
     private func freezeDetailState(resetCueInsight: Bool = true) {
@@ -1986,6 +2048,14 @@ struct HabitDetailSheet: View {
         }
         aiCoachText = ""
         aiCoachIsLoading = false
+        coachPresentationMode = .guidanceFallback
+        coachingContext = nil
+        guidanceCoachText = SafeMinimalCoaching.line
+        guidanceUsedSignals = []
+        aiUsedSignals = []
+        pendingAICandidate = nil
+        coachRenderUnlockTask?.cancel()
+        coachRenderLockedUntil = .distantPast
         aiCoachSectionState = .loading
         metadataSectionState = .loading
         currentRhythmRequestID = nil
@@ -2008,11 +2078,8 @@ struct HabitDetailSheet: View {
         }
     }
 
-    private func buildAICoachInput() -> AICoachInput {
-        let cachedComputedState = habitLogService.computedStateByHabitID[habit.id]
-        let resolvedIdentityState = (cachedComputedState?.identityState ?? identityStateSummary().state).habitState
-        let timingConfidence = frozenStateModel?.timingConfidence ?? .low
-        let strongestTime = cachedComputedState?.timingInsight.map { humanTime(for: $0.peakHour) }
+    private func buildAICoachInput(context: CoachingContext) -> AICoachInput {
+        let strongestTime = context.input.timeOfDayInsights.strongestWindow
         let streakLabel: String = {
             let streak = currentStreakState(now: appTime.now)
             guard streak.currentStreak > 0 else { return "forming" }
@@ -2027,17 +2094,20 @@ struct HabitDetailSheet: View {
         }()
 
         return AICoachInput(
+            coachingInput: context.input,
+            depth: context.depth,
+            selectedSignals: context.selectedSignals,
             habitName: habit.name,
             recentLogs: recentLogsSummary(),
-            state: resolvedIdentityState,
-            timingConfidence: timingConfidence,
+            state: context.input.identityState,
+            timingConfidence: context.input.timeOfDayInsights.confidence,
             strongestTime: strongestTime,
             weakestTime: nil,
             streakState: streakLabel,
             identity: userDefinedIdentityText,
             stacking: guidancePattern()?.description,
-            todayStatus: BehaviourCopyFormatter.dailyStatus(isDoneToday: hasActivityToday()),
-            behaviourSummary: behaviourSummary(for: resolvedIdentityState)
+            todayStatus: context.input.todayStatus,
+            behaviourSummary: context.input.recentBehaviourSummary
         )
     }
 
@@ -2090,13 +2160,20 @@ struct HabitDetailSheet: View {
         }
     }
 
-    private func resolvedAICoachMessage(for output: GuidanceOutput) -> String {
+    private func resolvedCoachMessage(for output: GuidanceOutput) -> String {
         let trimmedAI = aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedAI.isEmpty {
+        if coachPresentationMode == .aiCoach, !trimmedAI.isEmpty {
             return normalizeAICoachMessage(trimmedAI)
         }
-
-        return fallbackAICoachMessage(for: output.type)
+        let guidance = guidanceCoachText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !guidance.isEmpty {
+            return guidance
+        }
+        let outputText = output.action.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !outputText.isEmpty {
+            return outputText
+        }
+        return SafeMinimalCoaching.line
     }
 
     private func normalizeAICoachMessage(_ text: String) -> String {
@@ -2107,32 +2184,281 @@ struct HabitDetailSheet: View {
         return normalized
     }
 
-    private func fallbackAICoachMessage(for type: GuidanceType) -> String {
-        switch type {
-        case .momentum:
-            return "Your strongest window is becoming more repeatable, and your recent check-ins are reinforcing that pattern. Keep today’s entry quick and specific so this rhythm stays easy to maintain."
-        case .atRisk:
-            return "Your strongest window is still available today, even if the timing feels tighter than usual. A short check-in now keeps this routine intact and makes tomorrow easier to repeat."
-        case .recovery:
-            return "Your recent timing has become less steady, but your strongest window still gives you a reliable place to restart. Keep today’s step small and concrete so consistency can rebuild naturally."
-        case .identity:
-            return "Your check-ins are settling into a recognizable strongest window that supports this habit day to day. Show up once today with a light, repeatable action so this identity keeps strengthening."
-        }
-    }
-
     private var isAICoachThinking: Bool {
-        aiCoachSectionState.isLoading || (aiCoachIsLoading && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        aiCoachSectionState.isLoading || (
+            coachPresentationMode == .aiCoach &&
+            aiCoachIsLoading &&
+            aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
     }
 
     private var aiCoachDetailMessage: String {
         switch aiCoachSectionState {
         case .loaded(let output):
-            return resolvedAICoachMessage(for: output)
+            return resolvedCoachMessage(for: output)
         case .loading:
-            return "Your guidance is being prepared."
+            return SafeMinimalCoaching.line
         case .empty:
-            return "Insights are building as your check-ins accumulate."
+            return SafeMinimalCoaching.line
         }
+    }
+
+    private var coachCardLabel: String {
+        coachPresentationMode == .aiCoach ? "AI Coach" : "Guidance"
+    }
+
+    private var resolvedCoachingDepth: CoachingDepth {
+        purchaseService.premiumStatus == .premium ? .premium : .basic
+    }
+
+    private func buildCoachingContext(
+        now: Date,
+        streakState: StreakState,
+        identityState: HabitIdentityStateSnapshot
+    ) -> CoachingContext {
+        let cachedComputedState = habitLogService.computedStateByHabitID[habit.id]
+        let resolvedIdentityState = (cachedComputedState?.identityState ?? identityState.state).habitState
+        let strongestWindow = cachedComputedState?.timingInsight.map { humanTime(for: $0.peakHour) }
+        let timingConfidence = frozenStateModel?.timingConfidence ?? .low
+        let streakLabel = streakDescription(streakState)
+        let completionRate = Int((identityState.completionRate ?? 0).rounded())
+        let consistency = max(0, min(completionRate, 100))
+        let startOfDay = calculationCalendar.startOfDay(for: now)
+        let dayBucket = Int64(startOfDay.timeIntervalSince1970)
+        let dayOrdinal = calculationCalendar.ordinality(of: .day, in: .era, for: startOfDay) ?? 0
+        let input = CoachingInput(
+            identityState: resolvedIdentityState,
+            streakState: streakLabel,
+            consistency: consistency,
+            timeOfDayInsights: CoachingTimeOfDayInsights(
+                strongestWindow: strongestWindow,
+                confidence: timingConfidence
+            ),
+            recentBehaviourSummary: behaviourSummary(for: resolvedIdentityState),
+            todayStatus: BehaviourCopyFormatter.dailyStatus(isDoneToday: hasActivityToday()),
+            windowDays: max(1, identityState.windowDays),
+            dayBucket: dayBucket,
+            dayOrdinal: dayOrdinal
+        )
+        let depth = resolvedCoachingDepth
+        let selectedSignals = GuidanceEngine.selectSignals(for: input, depth: depth)
+        let coreMeaningFingerprint = input.coreMeaningFingerprint(selectedSignals: selectedSignals)
+        let aiFingerprint = input.aiFingerprint(depth: depth, selectedSignals: selectedSignals)
+        return CoachingContext(
+            input: input,
+            depth: depth,
+            selectedSignals: selectedSignals,
+            coreMeaningFingerprint: coreMeaningFingerprint,
+            aiFingerprint: aiFingerprint
+        )
+    }
+
+    private func refreshCoachingContextAndGuidance(now: Date) {
+        let previousAIFingerprint = coachingContext?.aiFingerprint
+        let streakState = currentStreakState(now: now)
+        let identityState = identityStateSummary()
+        let context = buildCoachingContext(
+            now: now,
+            streakState: streakState,
+            identityState: identityState
+        )
+        coachingContext = context
+        if let previousAIFingerprint, previousAIFingerprint != context.aiFingerprint {
+            aiCoachText = ""
+            aiUsedSignals = []
+            pendingAICandidate = nil
+            if coachPresentationMode == .aiCoach {
+                coachPresentationMode = .guidanceFallback
+            }
+        }
+
+        let guidanceBody = GuidanceEngine.coachingBody(
+            from: context.input,
+            depth: context.depth,
+            selectedSignals: context.selectedSignals,
+            meaningScope: habit.id.uuidString
+        )
+        guidanceCoachText = guidanceBody.text
+        guidanceUsedSignals = guidanceBody.usedSignals
+
+        let baseOutput = guidanceOutput(
+            streakState: streakState,
+            identityState: identityState
+        )
+        let resolvedOutput = GuidanceOutput(
+            id: baseOutput.id,
+            title: baseOutput.title,
+            action: guidanceBody.text,
+            supportingContext: baseOutput.supportingContext,
+            emphasisLabel: baseOutput.emphasisLabel,
+            type: baseOutput.type,
+            payload: GuidancePayload(
+                state: baseOutput.payload.state,
+                strongestWindow: baseOutput.payload.strongestWindow,
+                confidence: baseOutput.payload.confidence,
+                guidance: guidanceBody.text,
+                explanation: baseOutput.payload.explanation
+            ),
+            usedSignals: guidanceBody.usedSignals
+        )
+        frozenGuidanceOutput = resolvedOutput
+        if case .loaded = aiCoachSectionState {
+            aiCoachSectionState = .loaded(resolvedOutput)
+        }
+    }
+
+    private func streakDescription(_ streakState: StreakState) -> String {
+        guard streakState.currentStreak > 0 else { return "forming" }
+        switch streakState.status {
+        case .safe:
+            return "\(streakState.currentStreak)-period streak"
+        case .atRisk:
+            return "\(streakState.currentStreak)-period streak at risk"
+        case .broken:
+            return "streak broken"
+        }
+    }
+
+    private func expectedUsedSignals(
+        depth: CoachingDepth,
+        selectedSignals: SelectedCoachingSignals
+    ) -> Set<CoachingSignalID> {
+        if depth == .premium, selectedSignals.secondary != nil {
+            return selectedSignals.all
+        }
+        return [selectedSignals.primary]
+    }
+
+    private func applyAICandidate(_ candidate: PendingAICandidate) {
+        guard let context = coachingContext, candidate.aiFingerprint == context.aiFingerprint else { return }
+        let now = Date()
+        if now < coachRenderLockedUntil {
+            pendingAICandidate = candidate
+            scheduleCoachRenderUnlock()
+            return
+        }
+        publishAICandidate(candidate)
+    }
+
+    private func publishAICandidate(_ candidate: PendingAICandidate) {
+        guard coachingContext?.aiFingerprint == candidate.aiFingerprint else { return }
+        let text = normalizeAICoachMessage(candidate.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        let guidanceText = guidanceCoachText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let similarity = similarityScore(lhs: guidanceText, rhs: text)
+        let aiIsSuperset = candidate.usedSignals.isSuperset(of: guidanceUsedSignals)
+        let hasAdditionalSignals = aiIsSuperset && candidate.usedSignals.count > guidanceUsedSignals.count
+        let aiSignalCountValid = candidate.usedSignals.count >= guidanceUsedSignals.count
+        let significantDifference = similarity < 0.88
+        let borderlineBoost = similarity < 0.92 && text.wordCount > guidanceText.wordCount + 5
+        let qualityFloorPass = aiQualityFloorPasses(
+            aiText: text,
+            aiUsedSignals: candidate.usedSignals,
+            guidanceText: guidanceText,
+            guidanceUsedSignals: guidanceUsedSignals
+        )
+        let shouldUpgrade = qualityFloorPass && aiSignalCountValid && (hasAdditionalSignals || significantDifference || borderlineBoost)
+
+        if coachPresentationMode == .guidanceFallback {
+            guard shouldUpgrade else { return }
+            coachPresentationMode = .aiCoach
+        } else if !qualityFloorPass {
+            return
+        }
+
+        aiCoachText = text
+        aiUsedSignals = candidate.usedSignals
+        aiCoachIsLoading = false
+        lockCoachRenderWindow()
+    }
+
+    private func lockCoachRenderWindow() {
+        coachRenderLockedUntil = Date().addingTimeInterval(1.0)
+        scheduleCoachRenderUnlock()
+    }
+
+    private func scheduleCoachRenderUnlock() {
+        coachRenderUnlockTask?.cancel()
+        let waitNanos = UInt64(max(coachRenderLockedUntil.timeIntervalSinceNow, 0) * 1_000_000_000)
+        coachRenderUnlockTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: waitNanos)
+            guard !Task.isCancelled else { return }
+            if let pending = pendingAICandidate {
+                pendingAICandidate = nil
+                publishAICandidate(pending)
+            }
+        }
+    }
+
+    private func similarityScore(lhs: String, rhs: String) -> Double {
+        let lhsTokens = Set(
+            lhs.lowercased()
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count > 2 }
+        )
+        let rhsTokens = Set(
+            rhs.lowercased()
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count > 2 }
+        )
+        guard !lhsTokens.isEmpty, !rhsTokens.isEmpty else { return 0 }
+        let intersection = lhsTokens.intersection(rhsTokens).count
+        let union = lhsTokens.union(rhsTokens).count
+        guard union > 0 else { return 0 }
+        return Double(intersection) / Double(union)
+    }
+
+    private func aiQualityFloorPasses(
+        aiText: String,
+        aiUsedSignals: Set<CoachingSignalID>,
+        guidanceText: String,
+        guidanceUsedSignals: Set<CoachingSignalID>
+    ) -> Bool {
+        guard aiUsedSignals.count >= guidanceUsedSignals.count else { return false }
+        guard containsActionDirective(aiText) else { return false }
+        return genericityScore(aiText) <= genericityScore(guidanceText)
+    }
+
+    private func containsActionDirective(_ text: String) -> Bool {
+        let normalized = normalizedCoachText(text)
+        let directives = ["try", "use", "lean into", "focus on", "aim to"]
+        return directives.contains { directive in
+            if directive.contains(" ") {
+                return normalized.contains(directive)
+            }
+            return Set(normalized.split(whereSeparator: \.isWhitespace).map(String.init)).contains(directive)
+        }
+    }
+
+    private func genericityScore(_ text: String) -> Int {
+        let normalized = normalizedCoachText(text)
+        let genericPhrases = [
+            "keep going",
+            "you re doing great",
+            "you are doing great",
+            "stay consistent",
+            "you will succeed",
+            "you got this",
+            "don t give up",
+            "dont give up"
+        ]
+        return genericPhrases.reduce(into: 0) { score, phrase in
+            if normalized.contains(phrase) {
+                score += 1
+            }
+        }
+    }
+
+    private func normalizedCoachText(_ text: String) -> String {
+        let collapsed = text.lowercased().replacingOccurrences(
+            of: "[^a-z0-9]+",
+            with: " ",
+            options: .regularExpression
+        )
+        return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func openHistoryFromDetail(earliestCalendarDate: Date?) {
@@ -2544,6 +2870,7 @@ private struct IdentityExplainerSheet: View {
 }
 
 private struct AICoachDetailSheet: View {
+    let title: String
     let message: String
     let isLoading: Bool
     let loadingText: String
@@ -2551,7 +2878,7 @@ private struct AICoachDetailSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CadenceTokens.Space.md) {
-                Text("AI Coach")
+                Text(title)
                     .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
                     .foregroundStyle(CadenceTokens.Color.Text.primary)
 
@@ -2564,6 +2891,12 @@ private struct AICoachDetailSheet: View {
             .padding(CadenceTokens.Space.lg)
         }
         .presentationBackground(CadenceTokens.Color.Background.primary)
+    }
+}
+
+private extension String {
+    var wordCount: Int {
+        split(whereSeparator: \.isWhitespace).count
     }
 }
 
