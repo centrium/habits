@@ -2,6 +2,22 @@ import SwiftUI
 import SwiftData
 import Combine
 
+private enum SectionLoadState<Value> {
+    case loading
+    case loaded(Value)
+    case empty
+
+    var value: Value? {
+        guard case .loaded(let value) = self else { return nil }
+        return value
+    }
+
+    var isLoading: Bool {
+        if case .loading = self { return true }
+        return false
+    }
+}
+
 private enum ActiveSheet: Identifiable {
     case edit
     case insights
@@ -147,7 +163,9 @@ struct HabitDetailSheet: View {
     @State private var selectedDate: Date
     @State private var isHistoryPresented = false
     @State private var cueInsight: CueInsight?
-    @State private var rhythmData: [HourValue] = []
+    @State private var rhythmSectionState: SectionLoadState<[HourValue]> = .loading
+    @State private var aiCoachSectionState: SectionLoadState<GuidanceOutput> = .loading
+    @State private var metadataSectionState: SectionLoadState<Void> = .loading
     @State private var prefersIdentityFocusOnEdit = false
     private let aiCoachTitle: String = "AI Coach"
     @State private var aiCoachText: String = ""
@@ -158,10 +176,10 @@ struct HabitDetailSheet: View {
     @State private var shouldAnimateGoalProgress = false
     @State private var goalProgressAnimationResetTask: Task<Void, Never>?
     @State private var cueRefreshTask: Task<Void, Never>?
-    @State private var rhythmRefreshTask: Task<Void, Never>?
     @State private var historyProjectedDayStates: [Date: HabitProjectedDayState] = [:]
     @State private var cueRequestSequence: UInt64 = 0
-    @State private var rhythmRequestSequence: UInt64 = 0
+    @State private var currentRhythmRequestID: UUID?
+    @State private var detailAppearStartedAt: Date?
     @StateObject private var viewModel = HabitDetailViewModel()
     private let onDeleted: (() -> Void)?
 
@@ -325,20 +343,15 @@ struct HabitDetailSheet: View {
         }
         .onAppear {
             viewModel.activate()
-            habitLogService.updateCalendar(calculationCalendar)
-            habitLogService.prepare(habit)
-            refreshHistoryProjectionState(seedFromCommitted: true)
-            scheduleProgressSnapshotRefresh(now: now)
-            viewModel.refreshHistorySnapshot(
-                projectedDayStates: historyProjectedDayStates,
-                calendar: calculationCalendar
-            )
-            debugPrintRecentHabitLogTimestamps()
+            detailAppearStartedAt = Date()
+            rhythmSectionState = .loading
+            aiCoachSectionState = .loading
+            metadataSectionState = .loading
             frozenStateModel = nil
             frozenGuidanceOutput = nil
-            freezeStateModelOnAppear()
-            freezeGuidanceOutputOnAppear(now: now)
-            regenerateAICoachOnAppear()
+            Task { @MainActor in
+                await bootstrapDetailSections(now: now)
+            }
 
             guard purchaseService.premiumStatus == .free else { return }
 
@@ -360,12 +373,11 @@ struct HabitDetailSheet: View {
             snapshotRefreshTask?.cancel()
             goalProgressAnimationResetTask?.cancel()
             cueRefreshTask?.cancel()
-            rhythmRefreshTask?.cancel()
             freezeDetailState()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             habitLogService.updateCalendar(calculationCalendar)
-            refreshHistoryProjectionState(seedFromCommitted: true)
+            refreshHistoryProjectionState(seedFromCommitted: false)
             viewModel.refreshHistorySnapshot(
                 projectedDayStates: historyProjectedDayStates,
                 calendar: calculationCalendar
@@ -382,7 +394,7 @@ struct HabitDetailSheet: View {
             scheduleProgressSnapshotRefresh()
         }
         .onChange(of: progressRevision) { _, _ in
-            refreshHistoryProjectionState(seedFromCommitted: true)
+            refreshHistoryProjectionState(seedFromCommitted: false)
             viewModel.refreshHistorySnapshot(
                 projectedDayStates: historyProjectedDayStates,
                 calendar: calculationCalendar
@@ -405,8 +417,6 @@ struct HabitDetailSheet: View {
             cueRefreshTask = Task {
                 await refreshCueInsight()
             }
-            rhythmRefreshTask?.cancel()
-            rhythmRefreshTask = Task { await refreshRhythmData() }
         }
         .onChange(of: isHistoryPresented) { _, presented in
             if presented {
@@ -418,30 +428,33 @@ struct HabitDetailSheet: View {
             viewModel.activate()
             frozenStateModel = nil
             frozenGuidanceOutput = nil
-            refreshHistoryProjectionState(seedFromCommitted: true)
+            refreshHistoryProjectionState(seedFromCommitted: false)
+            metadataSectionState = .loaded(())
             scheduleProgressSnapshotRefresh()
             cueRefreshTask?.cancel()
             cueRefreshTask = Task { await refreshCueInsight() }
-            rhythmRefreshTask?.cancel()
-            rhythmRefreshTask = Task { await refreshRhythmData() }
-            Task {
-                try? await Task.sleep(nanoseconds: 650_000_000)
-                guard !Task.isCancelled else { return }
-                await refreshRhythmData()
-            }
+            aiCoachSectionState = .loading
+            freezeGuidanceOutputOnAppear(now: Date())
+            aiCoachSectionState = {
+                guard let output = frozenGuidanceOutput else { return .empty }
+                return .loaded(output)
+            }()
             regenerateAICoach(
                 requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
             )
         }
         .task(id: habit.id) {
+            if let startedAt = detailAppearStartedAt {
+                detailPerfLog("first-paint-ms=\(detailElapsedMs(since: startedAt))")
+                detailAppearStartedAt = nil
+            }
             guard viewModel.isActive, !isHistoryPresented else { return }
             cueRefreshTask?.cancel()
             cueRefreshTask = Task { await refreshCueInsight() }
         }
         .task(id: rhythmTaskKey) {
-            guard viewModel.isActive, !isHistoryPresented else { return }
-            rhythmRefreshTask?.cancel()
-            rhythmRefreshTask = Task { await refreshRhythmData() }
+            rhythmDebugLog("task-trigger key=\(rhythmTaskKey)")
+            await refreshRhythmData()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
             let liveHistorySnapshot = viewModel.historySnapshot
@@ -531,8 +544,9 @@ struct HabitDetailSheet: View {
         let identityStatText = identityText == nil
             ? nil
             : CadenceLanguage.identityStat(days: identityState.activeDays, window: identityState.windowDays)
-        let guidanceOutput = frozenGuidanceOutput
+        let guidanceOutput = aiCoachSectionState.value
         let identityReflectionText = pairedIdentityReflection(for: guidanceOutput)
+        let isMetadataLoading = metadataSectionState.isLoading
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -588,6 +602,7 @@ struct HabitDetailSheet: View {
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.sm)
+                .redacted(reason: isMetadataLoading ? .placeholder : [])
 
                 VStack(alignment: .leading, spacing: CadenceTokens.Space.sm) {
                     if logCount == 0 {
@@ -621,6 +636,7 @@ struct HabitDetailSheet: View {
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md)
+                .redacted(reason: isMetadataLoading ? .placeholder : [])
 
                 Button {
                     openHistoryFromDetail(earliestCalendarDate: earliestCalendarDate)
@@ -648,39 +664,96 @@ struct HabitDetailSheet: View {
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.md + 2)
 
-                if let guidanceOutput {
-                    GuidanceCard(
-                        output: guidanceOutput,
-                        accent: accent,
-                        variant: GuidanceEngine.visualVariant(for: guidanceOutput),
-                        label: aiCoachTitle,
-                        guidanceText: resolvedAICoachMessage(for: guidanceOutput),
-                        isLoading: aiCoachIsLoading && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                        loadingText: aiCoach.loadingText
-                    )
-                    .padding(.horizontal, sectionPadding)
-                    .padding(.top, CadenceTokens.Space.lg + 4)
+                Group {
+                    switch aiCoachSectionState {
+                    case .loading:
+                        GuidanceCard(
+                            output: placeholderGuidanceOutput,
+                            accent: accent,
+                            variant: .focus,
+                            label: aiCoachTitle,
+                            guidanceText: nil,
+                            isLoading: true,
+                            loadingText: "Finding your strongest window.\nBuilding your next cue.\nKeeping today simple."
+                        )
+                    case .loaded(let output):
+                        GuidanceCard(
+                            output: output,
+                            accent: accent,
+                            variant: GuidanceEngine.visualVariant(for: output),
+                            label: aiCoachTitle,
+                            guidanceText: resolvedAICoachMessage(for: output),
+                            isLoading: aiCoachIsLoading && aiCoachText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            loadingText: aiCoach.loadingText
+                        )
+                    case .empty:
+                        GuidanceCard(
+                            output: placeholderGuidanceOutput,
+                            accent: accent,
+                            variant: .focus,
+                            label: aiCoachTitle,
+                            guidanceText: "Insights are building as your check-ins accumulate.",
+                            isLoading: false
+                        )
+                    }
                 }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: aiCoachSectionPhase)
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.lg + 4)
 
-                if !rhythmData.isEmpty {
-                    RhythmCardView(
-                        isPremium: purchaseService.premiumStatus == .premium,
-                        data: rhythmData,
-                        rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(
-                            for: habit,
-                            isPremium: purchaseService.premiumStatus == .premium
-                        ),
-                        computedState: nil,
-                        stateModel: stateModel,
-                        identitySnapshot: identityState,
-                        habit: habit,
-                        onUnlock: {
-                            showPaywall(feature: .advancedInsights)
-                        }
-                    )
-                    .padding(.horizontal, sectionPadding)
-                    .padding(.top, CadenceTokens.Space.md + 2)
+                Group {
+                    switch rhythmSectionState {
+                    case .loading:
+                        RhythmCardView(
+                            isPremium: purchaseService.premiumStatus == .premium,
+                            data: rhythmPlaceholderData,
+                            rhythm: nil,
+                            computedState: nil,
+                            stateModel: stateModel,
+                            identitySnapshot: identityState,
+                            habit: habit,
+                            onUnlock: {
+                                showPaywall(feature: .advancedInsights)
+                            }
+                        )
+                        .redacted(reason: .placeholder)
+                        .allowsHitTesting(false)
+                    case .loaded(let values):
+                        RhythmCardView(
+                            isPremium: purchaseService.premiumStatus == .premium,
+                            data: values,
+                            rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(
+                                for: habit,
+                                isPremium: purchaseService.premiumStatus == .premium
+                            ),
+                            computedState: nil,
+                            stateModel: stateModel,
+                            identitySnapshot: identityState,
+                            habit: habit,
+                            onUnlock: {
+                                showPaywall(feature: .advancedInsights)
+                            }
+                        )
+                    case .empty:
+                        RhythmCardView(
+                            isPremium: purchaseService.premiumStatus == .premium,
+                            data: rhythmZeroData,
+                            rhythm: nil,
+                            computedState: nil,
+                            stateModel: stateModel,
+                            identitySnapshot: identityState,
+                            habit: habit,
+                            onUnlock: {
+                                showPaywall(feature: .advancedInsights)
+                            }
+                        )
+                    }
                 }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: rhythmSectionPhase)
+                .padding(.horizontal, sectionPadding)
+                .padding(.top, CadenceTokens.Space.md + 2)
 
                 HabitIdentityCard(
                     identityText: identityText,
@@ -1030,6 +1103,7 @@ struct HabitDetailSheet: View {
 
     private func debugPrintRecentHabitLogTimestamps() {
 #if DEBUG
+        guard isDetailPerfDebugEnabled else { return }
         TimeInsightEngine.debugDumpAllLogs(
             for: habit,
             now: Date(),
@@ -1249,6 +1323,7 @@ struct HabitDetailSheet: View {
             selectedDate: selectedDate,
             dayMetrics: dayMetrics
         )
+        metadataSectionState = .loaded(())
     }
 
     private var weekLayoutStrategy: WeekLayoutStrategy {
@@ -1493,19 +1568,31 @@ struct HabitDetailSheet: View {
     }
 
     private var rhythmTaskKey: String {
+        let metricsRevision = habitLogService.metricsRevision(for: habit.id)
         let projectionVersion = uiStateStore.projectionVersionByHabitID[habit.id] ?? 0
-        let premiumFlag = purchaseService.premiumStatus == .premium ? "premium" : "free"
-        return "\(habit.id.uuidString)-\(projectionVersion)-\(premiumFlag)"
+        let premiumStateToken: String = {
+            switch purchaseService.premiumStatus {
+            case .unknown:
+                return "unknown"
+            case .free:
+                return "free"
+            case .premium:
+                return "premium"
+            }
+        }()
+        return "\(habit.id.uuidString)-\(metricsRevision)-\(projectionVersion)-\(premiumStateToken)"
     }
 
     private func refreshRhythmData() async {
-        guard viewModel.isActive else { return }
+        let requestID = UUID()
+        currentRhythmRequestID = requestID
+        let startedAt = Date()
+        rhythmDebugLog("compute-start request=\(requestID.uuidString) premium=\(String(describing: purchaseService.premiumStatus))")
         guard purchaseService.premiumStatus != .unknown else {
-            rhythmData = []
+            rhythmSectionState = .loading
+            rhythmDebugLog("compute-end request=\(requestID.uuidString) count=0 reason=premium-unknown elapsedMs=\(rhythmElapsedMs(since: startedAt))")
             return
         }
-        let requestSequence = rhythmRequestSequence + 1
-        rhythmRequestSequence = requestSequence
 
         let values = await TimeOfDayPerformanceService.shared.hourlyValues(
             for: habit,
@@ -1515,8 +1602,142 @@ struct HabitDetailSheet: View {
             calendar: calculationCalendar
         )
 
-        guard !Task.isCancelled, rhythmRequestSequence == requestSequence else { return }
-        rhythmData = values
+        guard !Task.isCancelled else {
+            rhythmDebugLog("compute-cancelled request=\(requestID.uuidString)")
+            return
+        }
+        guard currentRhythmRequestID == requestID else {
+            rhythmDebugLog("compute-stale request=\(requestID.uuidString)")
+            return
+        }
+        rhythmSectionState = values.isEmpty ? .empty : .loaded(values)
+        detailPerfLog("rhythm-resolve-ms=\(detailElapsedMs(since: startedAt)) count=\(values.count)")
+        rhythmDebugLog("compute-end request=\(requestID.uuidString) count=\(values.count) elapsedMs=\(rhythmElapsedMs(since: startedAt))")
+    }
+
+    @MainActor
+    private func bootstrapDetailSections(now: Date) async {
+        await Task.yield()
+        measureMainThreadWork("bootstrap.updateCalendar") {
+            habitLogService.updateCalendar(calculationCalendar)
+        }
+        measureMainThreadWork("bootstrap.prepare") {
+            habitLogService.prepare(habit)
+        }
+        measureMainThreadWork("bootstrap.historyProjection") {
+            refreshHistoryProjectionState(seedFromCommitted: false)
+        }
+        measureMainThreadWork("bootstrap.historySnapshot") {
+            viewModel.refreshHistorySnapshot(
+                projectedDayStates: historyProjectedDayStates,
+                calendar: calculationCalendar
+            )
+        }
+        // Do not keep header/meta content blocked on progress snapshot timing.
+        metadataSectionState = .loaded(())
+        scheduleProgressSnapshotRefresh(now: now)
+        debugPrintRecentHabitLogTimestamps()
+        freezeStateModelOnAppear()
+        freezeGuidanceOutputOnAppear(now: now)
+        aiCoachSectionState = {
+            guard let output = frozenGuidanceOutput else { return .empty }
+            return .loaded(output)
+        }()
+        detailPerfLog("ai-section-ready")
+        regenerateAICoachOnAppear()
+    }
+
+    private var aiCoachSectionPhase: Int {
+        switch aiCoachSectionState {
+        case .loading:
+            return 0
+        case .loaded:
+            return 1
+        case .empty:
+            return 2
+        }
+    }
+
+    private var rhythmSectionPhase: Int {
+        switch rhythmSectionState {
+        case .loading:
+            return 0
+        case .loaded:
+            return 1
+        case .empty:
+            return 2
+        }
+    }
+
+    private var rhythmPlaceholderData: [HourValue] {
+        (0..<24).map { hour in
+            let wave = (sin((Double(hour) / 24.0) * .pi * 2.0) + 1.0) * 0.35
+            return HourValue(hour: hour, value: max(0.05, wave))
+        }
+    }
+
+    private var rhythmZeroData: [HourValue] {
+        (0..<24).map { HourValue(hour: $0, value: 0) }
+    }
+
+    private var placeholderGuidanceOutput: GuidanceOutput {
+        GuidanceOutput(
+            id: "detail-placeholder",
+            title: "Building your rhythm",
+            action: "Your guidance will appear here once this section resolves.",
+            supportingContext: nil,
+            emphasisLabel: nil,
+            type: .identity,
+            payload: GuidancePayload(
+                state: .forming,
+                strongestWindow: "—",
+                confidence: .low,
+                guidance: "Your guidance will appear here once this section resolves.",
+                explanation: "Loading placeholder"
+            )
+        )
+    }
+
+    private var isRhythmDetailDebugEnabled: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["RHYTHM_DETAIL_DEBUG"]?.lowercased() == "1"
+        #else
+        false
+        #endif
+    }
+
+    private func rhythmDebugLog(_ message: String) {
+        guard isRhythmDetailDebugEnabled else { return }
+        print("[RhythmDetail] \(message)")
+    }
+
+    private func rhythmElapsedMs(since start: Date) -> String {
+        String(format: "%.1f", Date().timeIntervalSince(start) * 1000)
+    }
+
+    private var isDetailPerfDebugEnabled: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["DETAIL_PERF_DEBUG"]?.lowercased() == "1"
+        #else
+        false
+        #endif
+    }
+
+    private func detailPerfLog(_ message: String) {
+        guard isDetailPerfDebugEnabled else { return }
+        print("[DetailPerf] \(message)")
+    }
+
+    private func detailElapsedMs(since start: Date) -> String {
+        String(format: "%.1f", Date().timeIntervalSince(start) * 1000)
+    }
+
+    private func measureMainThreadWork(_ label: String, _ work: () -> Void) {
+        let startedAt = Date()
+        work()
+        let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
+        guard elapsedMs > 16 else { return }
+        detailPerfLog("main-thread-\(label)-ms=\(String(format: "%.1f", elapsedMs))")
     }
 
     private var detectedCueText: String? {
@@ -1565,6 +1786,10 @@ struct HabitDetailSheet: View {
     private func freezeDetailState() {
         cueInsight = nil
         aiCoachIsLoading = false
+        aiCoachSectionState = .loading
+        metadataSectionState = .loading
+        currentRhythmRequestID = nil
+        rhythmSectionState = .loading
         snapshotRefreshTask?.cancel()
         goalProgressAnimationResetTask?.cancel()
         shouldAnimateGoalProgress = false
