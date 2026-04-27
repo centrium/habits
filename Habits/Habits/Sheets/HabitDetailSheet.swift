@@ -1773,7 +1773,7 @@ struct HabitDetailSheet: View {
         let input = buildAICoachInput()
         aiCoachText = ""
         aiCoachIsLoading = true
-        aiCoach.generate(input: input, requestKey: requestKey) { finalText in
+        aiCoach.generate(habitID: habit.id, input: input, requestKey: requestKey) { finalText in
             self.aiCoachText = finalText
             self.aiCoachIsLoading = false
         }

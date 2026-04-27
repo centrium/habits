@@ -18,16 +18,25 @@ struct AICoachInput: Sendable {
 }
 
 final class AICoachService {
+    struct AICoachCache {
+        let text: String
+        let generatedAt: Date
+        let inputFingerprint: String
+    }
+
     static let shared = AICoachService()
 
     let loadingText = "Thinking…"
     private let fallbackGuidance = "Your timing signal is becoming clearer as you keep showing up. Keep today’s check-in light and specific so this routine stays easy to repeat."
+    private let cacheTTL: TimeInterval = 60 * 60
     private var generationTask: Task<Void, Never>?
     private var requestSequence: UInt64 = 0
     private var lastRequestKey: String?
+    private var cacheByHabitID: [UUID: AICoachCache] = [:]
 
     @MainActor
     func generate(
+        habitID: UUID,
         input: AICoachInput,
         requestKey: String,
         onComplete: @escaping @MainActor (String) -> Void
@@ -36,6 +45,10 @@ final class AICoachService {
         lastRequestKey = requestKey
 
         let clean = sanitized(input)
+        if let cached = cachedText(habitID: habitID, input: clean) {
+            onComplete(cached)
+            return
+        }
 
         print("AI: publish start at \(Date())")
 
@@ -48,11 +61,86 @@ final class AICoachService {
             guard let result = await self.run(clean, sequence: sequence) else { return }
             print("AI: main actor hop at \(Date())")
             await MainActor.run {
+                self.updateCache(
+                    habitID: habitID,
+                    input: clean,
+                    text: result,
+                    generatedAt: .now
+                )
                 print("AI: publish end at \(Date())")
                 onComplete(result)
             }
         }
     }
+
+    @MainActor
+    private func cachedText(
+        habitID: UUID,
+        input: AICoachInput,
+        now: Date = .now
+    ) -> String? {
+        guard let entry = cacheByHabitID[habitID] else { return nil }
+        if now.timeIntervalSince(entry.generatedAt) >= cacheTTL {
+            cacheByHabitID.removeValue(forKey: habitID)
+            return nil
+        }
+
+        let fingerprint = inputFingerprint(for: input)
+        guard entry.inputFingerprint == fingerprint else {
+            return nil
+        }
+
+        return entry.text
+    }
+
+    @MainActor
+    private func updateCache(
+        habitID: UUID,
+        input: AICoachInput,
+        text: String,
+        generatedAt: Date = .now
+    ) {
+        cacheByHabitID[habitID] = AICoachCache(
+            text: text,
+            generatedAt: generatedAt,
+            inputFingerprint: inputFingerprint(for: input)
+        )
+    }
+
+    @MainActor
+    private func resetCache() {
+        cacheByHabitID.removeAll()
+        generationTask?.cancel()
+        generationTask = nil
+        requestSequence = 0
+        lastRequestKey = nil
+    }
+
+#if DEBUG
+    @MainActor
+    func cachedTextForTesting(
+        habitID: UUID,
+        input: AICoachInput,
+        now: Date = .now
+    ) -> String? {
+        cachedText(habitID: habitID, input: input, now: now)
+    }
+
+    @MainActor
+    func updateCacheForTesting(
+        habitID: UUID,
+        input: AICoachInput,
+        text: String,
+        generatedAt: Date = .now
+    ) {
+        updateCache(habitID: habitID, input: input, text: text, generatedAt: generatedAt)
+    }
+
+    @MainActor
+    func resetCacheForTesting() {
+        resetCache()
+    }
+#endif
 
     func sanitized(_ input: AICoachInput) -> AICoachInput {
         AICoachInput(
@@ -189,6 +277,22 @@ final class AICoachService {
 
         Return only the 2 sentences.
         """
+    }
+
+    private func inputFingerprint(for input: AICoachInput) -> String {
+        [
+            input.habitName,
+            input.recentLogs,
+            input.state.rawValue,
+            input.timingConfidence.rawValue,
+            input.strongestTime ?? "",
+            input.weakestTime ?? "",
+            input.streakState,
+            input.identity ?? "",
+            input.stacking ?? "",
+            input.todayStatus,
+            input.behaviourSummary
+        ].joined(separator: "||")
     }
 
     private func run(_ input: AICoachInput, sequence: UInt64) async -> String? {
