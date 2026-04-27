@@ -237,6 +237,73 @@ final class InsightPerformanceSignalsTests: BaseTestCase {
         XCTAssertLessThanOrEqual(automatic.visibleMax, automatic.activeBand.upper)
     }
 
+    func testRenderContainmentClampKeepsFootprintInsideBandForRegressionCase() {
+        let halfWidth = 0.03
+        let result = GradientGaugeView.clampMarkerCentreForBand(
+            rawValue: 0,
+            bandMin: 0.2,
+            bandMax: 0.4,
+            halfWidth: halfWidth
+        )
+
+        XCTAssertEqual(result, 0.231, accuracy: 0.000001)
+        XCTAssertGreaterThanOrEqual(result - halfWidth, 0.2)
+        XCTAssertLessThanOrEqual(result + halfWidth, 0.4)
+    }
+
+    func testRenderContainmentClampAtBandEdgesKeepsMarkerInside() {
+        let halfWidth = 0.02
+        let bandMin = 0.2
+        let bandMax = 0.4
+
+        let atMin = GradientGaugeView.clampMarkerCentreForBand(
+            rawValue: bandMin,
+            bandMin: bandMin,
+            bandMax: bandMax,
+            halfWidth: halfWidth
+        )
+        let atMax = GradientGaugeView.clampMarkerCentreForBand(
+            rawValue: bandMax,
+            bandMin: bandMin,
+            bandMax: bandMax,
+            halfWidth: halfWidth
+        )
+
+        XCTAssertEqual(atMin, 0.221, accuracy: 0.000001)
+        XCTAssertEqual(atMax, 0.379, accuracy: 0.000001)
+        XCTAssertGreaterThanOrEqual(atMin - halfWidth, bandMin)
+        XCTAssertLessThanOrEqual(atMax + halfWidth, bandMax)
+    }
+
+    func testRenderContainmentClampFallsBackToBandCenterWhenBandTooNarrow() {
+        let result = GradientGaugeView.clampMarkerCentreForBand(
+            rawValue: 0.2,
+            bandMin: 0.2,
+            bandMax: 0.22,
+            halfWidth: 0.02
+        )
+
+        XCTAssertEqual(result, 0.21, accuracy: 0.000001)
+    }
+
+    func testRenderContainmentClampKeepsInterpolatedValuesInsideBand() {
+        let halfWidth = 0.025
+        let bandMin = 0.25
+        let bandMax = 0.5
+        let samples = stride(from: 0.0, through: 1.0, by: 0.05).map { $0 }
+
+        for rawValue in samples {
+            let clamped = GradientGaugeView.clampMarkerCentreForBand(
+                rawValue: rawValue,
+                bandMin: bandMin,
+                bandMax: bandMax,
+                halfWidth: halfWidth
+            )
+            XCTAssertGreaterThanOrEqual(clamped - halfWidth, bandMin)
+            XCTAssertLessThanOrEqual(clamped + halfWidth, bandMax)
+        }
+    }
+
     private func makeHabit(
         now: Date,
         createdAtOffset: Int = -60,

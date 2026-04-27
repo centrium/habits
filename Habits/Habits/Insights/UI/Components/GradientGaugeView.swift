@@ -178,14 +178,24 @@ struct GradientGaugeView: View {
             return min(max(rawValue, 0), 1)
         }
 
+        let markerWidth = markerVisibleRadiusNormalized(width: width) * 2
+        let halfWidth = markerWidth / 2
+        let safeValue = Self.clampMarkerCentreForBand(
+            rawValue: calibration.adjustedPosition,
+            bandMin: calibration.activeBand.lower,
+            bandMax: calibration.activeBand.upper,
+            halfWidth: halfWidth
+        )
+
         #if DEBUG
         debugValidateMarkerContainment(
             calibration,
-            width: width
+            renderedValue: safeValue,
+            halfWidth: halfWidth
         )
         #endif
 
-        return min(max(calibration.adjustedPosition, 0), 1)
+        return safeValue
     }
 
     private func markerVisibleRadiusNormalized(width: CGFloat) -> Double {
@@ -257,22 +267,24 @@ struct GradientGaugeView: View {
     #if DEBUG
     private func debugValidateMarkerContainment(
         _ calibration: SignalMarkerCalibration.Result,
-        width: CGFloat
+        renderedValue: Double,
+        halfWidth: Double
     ) {
-        let visibleRadius = markerVisibleRadiusNormalized(width: width)
-        let canFitInsideBand = (visibleRadius * 2) <= calibration.activeBand.span
+        let canFitInsideBand = (halfWidth * 2) <= calibration.activeBand.span
 
         guard canFitInsideBand else {
             print(
                 "[SignalMarker] containment_skipped profile=\(calibration.profile.name) " +
                     "band=\(calibration.activeBand.label) width=\(format(calibration.activeBand.span)) " +
-                    "required=\(format(visibleRadius * 2))"
+                    "required=\(format(halfWidth * 2))"
             )
             return
         }
 
-        let contained = calibration.visibleMin >= calibration.activeBand.lower &&
-            calibration.visibleMax <= calibration.activeBand.upper
+        let visibleMin = renderedValue - halfWidth
+        let visibleMax = renderedValue + halfWidth
+        let contained = visibleMin >= calibration.activeBand.lower &&
+            visibleMax <= calibration.activeBand.upper
 
         if !contained {
             print(
@@ -281,10 +293,10 @@ struct GradientGaugeView: View {
                     "safe=[\(format(calibration.safeBandMin)),\(format(calibration.safeBandMax))] " +
                     "raw=\(format(calibration.rawPosition)) adjusted=\(format(calibration.adjustedPosition)) " +
                     "nearestDividerDistance=\(format(calibration.nearestDividerDistance)) " +
-                    "bias=\(format(calibration.biasStrength)) visible=[\(format(calibration.visibleMin)),\(format(calibration.visibleMax))]"
+                    "bias=\(format(calibration.biasStrength)) visible=[\(format(visibleMin)),\(format(visibleMax))]"
             )
-            assertionFailure("Marker footprint crossed band boundary")
         }
+        assert(contained, "Marker footprint crossed band boundary")
 
         if ProcessInfo.processInfo.environment["HABITS_DEBUG_SIGNAL_MARKERS"] == "1" {
             print(
@@ -293,7 +305,7 @@ struct GradientGaugeView: View {
                     "nearestDividerDistance=\(format(calibration.nearestDividerDistance)) " +
                     "bias=\(format(calibration.biasStrength)) " +
                     "safe=[\(format(calibration.safeBandMin)),\(format(calibration.safeBandMax))] " +
-                    "visible=[\(format(calibration.visibleMin)),\(format(calibration.visibleMax))]"
+                    "visible=[\(format(visibleMin)),\(format(visibleMax))]"
             )
         }
     }
@@ -303,6 +315,31 @@ struct GradientGaugeView: View {
     }
     #endif
 
+    static func clampMarkerCentreForBand(
+        rawValue: Double,
+        bandMin: Double,
+        bandMax: Double,
+        halfWidth: Double
+    ) -> Double {
+        let epsilon = 0.001
+        let minCentre = bandMin + halfWidth + epsilon
+        let maxCentre = bandMax - halfWidth - epsilon
+        let resolvedMinCentre: Double
+        let resolvedMaxCentre: Double
+
+        if minCentre <= maxCentre {
+            resolvedMinCentre = minCentre
+            resolvedMaxCentre = maxCentre
+        } else {
+            let center = (bandMin + bandMax) / 2
+            resolvedMinCentre = center
+            resolvedMaxCentre = center
+        }
+
+        let clamped = min(max(rawValue, resolvedMinCentre), resolvedMaxCentre)
+        let safeValue = min(max(clamped, resolvedMinCentre), resolvedMaxCentre)
+        return min(max(safeValue, 0), 1)
+    }
 }
 
 struct SignalMarkerCalibration {
