@@ -471,7 +471,7 @@ struct HabitDetailSheet: View {
         .onChange(of: isHistoryPresented) { _, presented in
             if presented {
                 viewModel.deactivate()
-                freezeDetailState()
+                freezeDetailState(resetCueInsight: false)
                 return
             }
 
@@ -1940,6 +1940,12 @@ struct HabitDetailSheet: View {
 
     private func regenerateAICoach(requestKey: String) {
         guard viewModel.isActive else { return }
+        if let cached = aiCoach.cachedTextIfFresh(habitID: habit.id) {
+            aiCoachText = cached
+            aiCoachIsLoading = false
+            return
+        }
+
         let input = buildAICoachInput()
         aiCoachText = ""
         aiCoachIsLoading = true
@@ -1974,8 +1980,10 @@ struct HabitDetailSheet: View {
         )
     }
 
-    private func freezeDetailState() {
-        cueInsight = nil
+    private func freezeDetailState(resetCueInsight: Bool = true) {
+        if resetCueInsight {
+            cueInsight = nil
+        }
         aiCoachText = ""
         aiCoachIsLoading = false
         aiCoachSectionState = .loading

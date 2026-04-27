@@ -21,7 +21,6 @@ final class AICoachService {
     struct AICoachCache {
         let text: String
         let generatedAt: Date
-        let inputFingerprint: String
     }
 
     static let shared = AICoachService()
@@ -45,7 +44,7 @@ final class AICoachService {
         lastRequestKey = requestKey
 
         let clean = sanitized(input)
-        if let cached = cachedText(habitID: habitID, input: clean) {
+        if let cached = cachedText(habitID: habitID) {
             onComplete(cached)
             return
         }
@@ -63,7 +62,6 @@ final class AICoachService {
             await MainActor.run {
                 self.updateCache(
                     habitID: habitID,
-                    input: clean,
                     text: result,
                     generatedAt: .now
                 )
@@ -76,7 +74,6 @@ final class AICoachService {
     @MainActor
     private func cachedText(
         habitID: UUID,
-        input: AICoachInput,
         now: Date = .now
     ) -> String? {
         guard let entry = cacheByHabitID[habitID] else { return nil }
@@ -84,27 +81,27 @@ final class AICoachService {
             cacheByHabitID.removeValue(forKey: habitID)
             return nil
         }
-
-        let fingerprint = inputFingerprint(for: input)
-        guard entry.inputFingerprint == fingerprint else {
-            return nil
-        }
-
         return entry.text
     }
 
     @MainActor
     private func updateCache(
         habitID: UUID,
-        input: AICoachInput,
         text: String,
         generatedAt: Date = .now
     ) {
         cacheByHabitID[habitID] = AICoachCache(
             text: text,
-            generatedAt: generatedAt,
-            inputFingerprint: inputFingerprint(for: input)
+            generatedAt: generatedAt
         )
+    }
+
+    @MainActor
+    func cachedTextIfFresh(
+        habitID: UUID,
+        now: Date = .now
+    ) -> String? {
+        cachedText(habitID: habitID, now: now)
     }
 
     @MainActor
@@ -120,20 +117,18 @@ final class AICoachService {
     @MainActor
     func cachedTextForTesting(
         habitID: UUID,
-        input: AICoachInput,
         now: Date = .now
     ) -> String? {
-        cachedText(habitID: habitID, input: input, now: now)
+        cachedText(habitID: habitID, now: now)
     }
 
     @MainActor
     func updateCacheForTesting(
         habitID: UUID,
-        input: AICoachInput,
         text: String,
         generatedAt: Date = .now
     ) {
-        updateCache(habitID: habitID, input: input, text: text, generatedAt: generatedAt)
+        updateCache(habitID: habitID, text: text, generatedAt: generatedAt)
     }
 
     @MainActor
@@ -277,22 +272,6 @@ final class AICoachService {
 
         Return only the 2 sentences.
         """
-    }
-
-    private func inputFingerprint(for input: AICoachInput) -> String {
-        [
-            input.habitName,
-            input.recentLogs,
-            input.state.rawValue,
-            input.timingConfidence.rawValue,
-            input.strongestTime ?? "",
-            input.weakestTime ?? "",
-            input.streakState,
-            input.identity ?? "",
-            input.stacking ?? "",
-            input.todayStatus,
-            input.behaviourSummary
-        ].joined(separator: "||")
     }
 
     private func run(_ input: AICoachInput, sequence: UInt64) async -> String? {
