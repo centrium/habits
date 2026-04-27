@@ -37,6 +37,10 @@ private enum ActiveSheet: Identifiable {
     }
 }
 
+private enum TodayLayoutSpacing {
+    static let growthPlanBottomInternal: CGFloat = 2
+}
+
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -72,6 +76,11 @@ struct HabitsListView: View {
     @State private var pendingGlobalInsightsRefreshTask: Task<Void, Never>?
     @State private var todayInsightRequestSequence: UInt64 = 0
     @State private var globalInsightsRequestSequence: UInt64 = 0
+    @State private var hasResolvedInitialTodayInsight: Bool = false
+    @State private var hasResolvedInitialCoachingInsight: Bool = false
+    @State private var didLogTodayHeaderFirstPaint: Bool = false
+    @State private var didLogGrowthPlanInjection: Bool = false
+    @State private var didLogCoachingInjection: Bool = false
 
     init() {}
 
@@ -284,37 +293,22 @@ struct HabitsListView: View {
     private var listContent: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                TodayIntroBlock(
+                TodayHeaderContainer(
                     symbolName: greetingPresentation.symbolName,
                     greeting: greetingLine,
-                    insightParagraph: coachingParagraph,
-                    isExpanded: isIntroExpanded,
+                    renderState: todayHeaderRenderState,
                     onToggle: toggleIntroExpansion
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, CadenceTokens.Space.xs)
-                .padding(.bottom, isIntroExpanded ? 12 : 8)
+                .onAppear(perform: markTodayHeaderFirstPaintIfNeeded)
 
-                if !visibleHabits.isEmpty {
-                    Text("Growth Plan")
-                        .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
-                        .foregroundStyle(CadenceTokens.Color.Text.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 8)
-                        .padding(.bottom, CadenceTokens.Space.xs)
-                        .accessibilityAddTraits(.isHeader)
-                }
-
-                if !growthPlanLines.isEmpty {
-                    GrowthPlanLineList(lines: growthPlanLines)
-                        .padding(.bottom, CadenceTokens.Space.lg)
-                }
-
-                LazyVStack(spacing: isReordering ? CadenceTokens.Space.xl : CadenceTokens.Space.md) {
+                LazyVStack(spacing: cardToCardSpacing) {
                     ForEach(visibleHabits) { habit in
                         habitRow(for: habit)
                     }
                 }
+                .padding(.top, headerToFirstCardSpacing)
 
                 if habitLimitPolicy.showsUpgradeHint {
                     UpgradeHintRow()
@@ -671,6 +665,7 @@ struct HabitsListView: View {
         guard !visibleHabits.isEmpty else {
             todayInsight = nil
             selectedInsightHabitID = nil
+            hasResolvedInitialTodayInsight = true
             return
         }
 
@@ -689,6 +684,13 @@ struct HabitsListView: View {
         guard !Task.isCancelled, todayInsightRequestSequence == requestSequence else { return }
         todayInsight = insight
         selectedInsightHabitID = insight?.habit.id
+        if hasResolvedInitialTodayInsight == false {
+            hasResolvedInitialTodayInsight = true
+        }
+        if didLogGrowthPlanInjection == false, insight != nil {
+            logTodayHeaderPhase("growth-plan.content-injection")
+            didLogGrowthPlanInjection = true
+        }
         logTodayTimingTrace()
     }
 
@@ -696,6 +698,7 @@ struct HabitsListView: View {
         guard !habits.isEmpty else {
             globalInsightsSnapshot = nil
             coachingInsight = nil
+            hasResolvedInitialCoachingInsight = true
             return
         }
 
@@ -728,6 +731,13 @@ struct HabitsListView: View {
             )
         } else {
             coachingInsight = nil
+        }
+        if hasResolvedInitialCoachingInsight == false {
+            hasResolvedInitialCoachingInsight = true
+        }
+        if didLogCoachingInjection == false, coachingInsight != nil {
+            logTodayHeaderPhase("greeting.content-injection")
+            didLogCoachingInjection = true
         }
         logTodayTimingTrace()
     }
@@ -929,6 +939,25 @@ struct HabitsListView: View {
         habits
     }
 
+    private var cardToCardSpacing: CGFloat {
+        isReordering ? CadenceTokens.Space.xl : CadenceTokens.Space.md
+    }
+
+    private var headerToFirstCardSpacing: CGFloat {
+        max(0, cardToCardSpacing - TodayLayoutSpacing.growthPlanBottomInternal)
+    }
+
+    private var todayHeaderRenderState: TodayHeaderRenderState {
+        TodayHeaderRenderState(
+            hasVisibleHabits: !visibleHabits.isEmpty,
+            isIntroExpanded: isIntroExpanded,
+            hasResolvedInitialCoachingInsight: hasResolvedInitialCoachingInsight,
+            hasResolvedInitialTodayInsight: hasResolvedInitialTodayInsight,
+            coachingParagraph: coachingParagraph,
+            growthPlanLines: growthPlanLines
+        )
+    }
+
     private var growthPlanLines: [AttributedString] {
         guard let todayInsight else {
             return []
@@ -942,7 +971,9 @@ struct HabitsListView: View {
             lines.append(atRiskMessage)
         }
 
-        return lines.map { message in
+        let sentenceBullets = lines.flatMap(splitGrowthPlanSentences(from:))
+
+        return sentenceBullets.map { message in
             var line = AttributedString(message)
             line.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
 
@@ -961,6 +992,41 @@ struct HabitsListView: View {
             }
             return line
         }
+        .prefix(TodayHeaderRenderState.growthPlanLineCount)
+        .map { $0 }
+    }
+
+    private func splitGrowthPlanSentences(from message: String) -> [String] {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return [] }
+
+        let pattern = "(?<=[.!?])\\s+"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return [trimmed]
+        }
+
+        let nsRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        let matches = regex.matches(in: trimmed, options: [], range: nsRange)
+        guard matches.isEmpty == false else { return [trimmed] }
+
+        var bullets: [String] = []
+        var start = trimmed.startIndex
+
+        for match in matches {
+            guard let range = Range(match.range, in: trimmed) else { continue }
+            let sentence = trimmed[start..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            if sentence.isEmpty == false {
+                bullets.append(sentence)
+            }
+            start = range.upperBound
+        }
+
+        let trailing = trimmed[start...].trimmingCharacters(in: .whitespacesAndNewlines)
+        if trailing.isEmpty == false {
+            bullets.append(trailing)
+        }
+
+        return bullets.isEmpty ? [trimmed] : bullets
     }
 
     private func bestTimeSummary(from message: String) -> String? {
@@ -1068,6 +1134,22 @@ struct HabitsListView: View {
         #endif
     }
 
+    private func markTodayHeaderFirstPaintIfNeeded() {
+        guard didLogTodayHeaderFirstPaint == false else { return }
+        didLogTodayHeaderFirstPaint = true
+        logTodayHeaderPhase("header-shell.first-paint")
+    }
+
+    private func logTodayHeaderPhase(_ phase: String) {
+        #if DEBUG
+        guard TimeInsightTraceLogger.isEnabled else { return }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        print("[TodayHeader PHASE]")
+        print("phase: \(phase)")
+        print("timestamp: \(timestamp)")
+        #endif
+    }
+
     private var backgroundColor: Color {
         colorScheme == .light
             ? Color(white: 0.96)
@@ -1141,38 +1223,111 @@ private struct TodayGreetingPresentation {
     let symbolName: String
 }
 
-private struct GrowthPlanLineList: View {
-    let lines: [AttributedString]
+struct TodayHeaderRenderState {
+    static let greetingLineLimit = 3
+    static let growthPlanLineCount = 3
+    static let growthPlanLineLimitPerBullet = 2
+    static let growthPlanReservedLineCount = 2
+    private static let growthPlanRowSpacing: CGFloat = 2
+    private static let growthPlanFont = UIFont.systemFont(ofSize: 14, weight: .regular)
+    static let growthPlanMinHeight =
+        (growthPlanFont.lineHeight * CGFloat(growthPlanReservedLineCount)) +
+        (growthPlanRowSpacing * CGFloat(growthPlanReservedLineCount - 1))
+    static let fallbackGreetingMessage = "You're building a steady rhythm, and a quick check-in keeps things moving."
+    static let greetingPlaceholderMessage = "Cadence insight loading.\nCadence insight loading.\nCadence insight loading."
+    static let fallbackGrowthPlanMessage = "A quick check-in today keeps your momentum steady."
+
+    let hasVisibleHabits: Bool
+    let isIntroExpanded: Bool
+    let hasResolvedInitialCoachingInsight: Bool
+    let hasResolvedInitialTodayInsight: Bool
+    let coachingParagraph: AttributedString?
+    let growthPlanLines: [AttributedString]
+
+    var showsGreetingBlock: Bool {
+        hasVisibleHabits && isIntroExpanded
+    }
+
+    var showsGreetingPlaceholder: Bool {
+        showsGreetingBlock && hasResolvedInitialCoachingInsight == false
+    }
+
+    var resolvedGreetingParagraph: AttributedString {
+        if let coachingParagraph {
+            return coachingParagraph
+        }
+        return AttributedString(Self.fallbackGreetingMessage)
+    }
+
+    var greetingHeightTemplate: String {
+        Array(repeating: "Cadence rhythm template.", count: Self.greetingLineLimit).joined(separator: "\n")
+    }
+
+    var resolvedGrowthPlanLines: [AttributedString] {
+        let clipped = Array(growthPlanLines.prefix(Self.growthPlanLineCount))
+        if clipped.isEmpty {
+            var fallback = AttributedString(Self.fallbackGrowthPlanMessage)
+            fallback.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
+            return [fallback]
+        }
+        return clipped
+    }
+
+    var showsGrowthPlanPlaceholder: Bool {
+        hasVisibleHabits && hasResolvedInitialTodayInsight == false
+    }
+
+    var growthPlanPlaceholderLines: [AttributedString] {
+        var firstLine = AttributedString("Best time for today")
+        firstLine.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
+        var secondLine = AttributedString("One habit is ready for a check-in")
+        secondLine.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
+        var thirdLine = AttributedString("Keep your strongest window available this afternoon")
+        thirdLine.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
+        return [firstLine, secondLine, thirdLine]
+    }
+}
+
+private struct TodayHeaderContainer: View {
+    let symbolName: String
+    let greeting: String
+    let renderState: TodayHeaderRenderState
+    let onToggle: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("•")
-                        .font(CadenceTokens.Typography.body)
-                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+        VStack(alignment: .leading, spacing: 0) {
+            TodayIntroBlock(
+                symbolName: symbolName,
+                greeting: greeting,
+                renderState: renderState,
+                onToggle: onToggle
+            )
+            .padding(.bottom, renderState.isIntroExpanded ? 12 : 8)
 
-                    Text(line)
-                        .font(CadenceTokens.Typography.body)
-                        .lineSpacing(0)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            if renderState.hasVisibleHabits {
+                Text("Growth Plan")
+                    .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
+                    .foregroundStyle(CadenceTokens.Color.Text.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+                    .padding(.bottom, CadenceTokens.Space.xs)
+                    .accessibilityAddTraits(.isHeader)
+
+                GrowthPlanBlock(renderState: renderState)
+                    .padding(.bottom, TodayLayoutSpacing.growthPlanBottomInternal)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct TodayIntroBlock: View {
     let symbolName: String
     let greeting: String
-    let insightParagraph: AttributedString?
-    let isExpanded: Bool
+    let renderState: TodayHeaderRenderState
     let onToggle: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isExpanded ? 4 : 0) {
+        VStack(alignment: .leading, spacing: renderState.showsGreetingBlock ? 4 : 0) {
             HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.sm) {
                     Image(systemName: symbolName)
@@ -1203,19 +1358,86 @@ private struct TodayIntroBlock: View {
             .accessibilityHint("Double-tap to toggle insights")
             .accessibilityAddTraits(.isButton)
 
-            if isExpanded, let insightParagraph {
-                Text(insightParagraph)
-                    .font(CadenceTokens.Typography.body.weight(.medium))
-                    .foregroundStyle(CadenceTokens.Color.Text.primary)
-                    .lineSpacing(1)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .offset(y: 6)),
-                        removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))
-                    ))
+            if renderState.showsGreetingBlock {
+                ZStack(alignment: .topLeading) {
+                    Text(renderState.greetingHeightTemplate)
+                        .font(CadenceTokens.Typography.body.weight(.medium))
+                        .lineSpacing(1)
+                        .lineLimit(TodayHeaderRenderState.greetingLineLimit)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+
+                    Text(renderState.resolvedGreetingParagraph)
+                        .font(CadenceTokens.Typography.body.weight(.medium))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
+                        .lineSpacing(1)
+                        .lineLimit(TodayHeaderRenderState.greetingLineLimit)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(renderState.showsGreetingPlaceholder ? 0 : 1)
+
+                    Text(TodayHeaderRenderState.greetingPlaceholderMessage)
+                        .font(CadenceTokens.Typography.body.weight(.medium))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
+                        .lineSpacing(1)
+                        .lineLimit(TodayHeaderRenderState.greetingLineLimit)
+                        .redacted(reason: .placeholder)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(renderState.showsGreetingPlaceholder ? 1 : 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .clipped()
+                .animation(AppMotion.quickFade, value: renderState.showsGreetingPlaceholder)
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: isExpanded)
+        .animation(.easeInOut(duration: 0.22), value: renderState.isIntroExpanded)
+    }
+
+    private var isExpanded: Bool {
+        renderState.isIntroExpanded
+    }
+}
+
+private struct GrowthPlanBlock: View {
+    let renderState: TodayHeaderRenderState
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            GrowthPlanLineList(lines: renderState.resolvedGrowthPlanLines)
+                .opacity(renderState.showsGrowthPlanPlaceholder ? 0 : 1)
+
+            GrowthPlanLineList(lines: renderState.growthPlanPlaceholderLines)
+                .redacted(reason: .placeholder)
+                .opacity(renderState.showsGrowthPlanPlaceholder ? 1 : 0)
+        }
+        .frame(minHeight: TodayHeaderRenderState.growthPlanMinHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(AppMotion.quickFade, value: renderState.showsGrowthPlanPlaceholder)
+    }
+}
+
+private struct GrowthPlanLineList: View {
+    let lines: [AttributedString]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(lines.prefix(TodayHeaderRenderState.growthPlanLineCount).enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("•")
+                        .font(CadenceTokens.Typography.body)
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.9))
+
+                    Text(line)
+                        .font(CadenceTokens.Typography.body)
+                        .lineLimit(TodayHeaderRenderState.growthPlanLineLimitPerBullet)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
