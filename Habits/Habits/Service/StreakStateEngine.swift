@@ -69,9 +69,18 @@ struct StreakStateEngine {
         let todaySuccessful = summary.successfulDays.contains(window.endDay)
         let previousDay = calendar.date(byAdding: .day, value: -1, to: window.endDay)
         let previousSuccessful = previousDay.map { summary.successfulDays.contains($0) } ?? false
+        let currentStreak: Int = {
+            if summary.current > 0 { return summary.current }
+            guard previousSuccessful, let previousDay else { return 0 }
+            return streakLengthEnding(
+                at: previousDay,
+                startDay: window.startDay,
+                successfulDays: summary.successfulDays
+            )
+        }()
 
         return StreakResult(
-            current: summary.current,
+            current: currentStreak,
             best: summary.best,
             lastCompletedDate: summary.lastCompletedDate,
             isAtRisk: !todaySuccessful && previousSuccessful,
@@ -328,5 +337,22 @@ private extension StreakStateEngine {
             lastCompletedDate: lastCompletedDate,
             successfulDays: successfulDays
         )
+    }
+
+    func streakLengthEnding(
+        at day: Date,
+        startDay: Date,
+        successfulDays: Set<Date>
+    ) -> Int {
+        var cursor = day
+        var length = 0
+
+        while cursor >= startDay, successfulDays.contains(cursor) {
+            length += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+
+        return length
     }
 }

@@ -9,6 +9,11 @@ import SwiftUI
 import SwiftData
 import UserNotifications
 
+enum RuntimeEnvironment {
+    static let isRunningTests =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
 enum StartupProfiler {
     nonisolated static let launchStartTime = CFAbsoluteTimeGetCurrent()
     @MainActor private static var hasLoggedFirstInteractiveRender = false
@@ -62,6 +67,7 @@ struct RootView: View {
             }
         }
         .onAppear {
+            guard !RuntimeEnvironment.isRunningTests else { return }
             deepLinkManager.processPendingHabitIfNeeded()
             Task { @MainActor in
                 await Task.yield()
@@ -71,9 +77,11 @@ struct RootView: View {
             scheduleWidgetSync(delayNanoseconds: 200_000_000, marksInitialSync: true)
         }
         .onChange(of: deepLinkManager.pendingHabitID) { _, _ in
+            guard !RuntimeEnvironment.isRunningTests else { return }
             deepLinkManager.processPendingHabitIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
+            guard !RuntimeEnvironment.isRunningTests else { return }
             guard phase == .active else { return }
             guard hasCompletedInitialWidgetSync else { return }
             scheduleWidgetSync(delayNanoseconds: 200_000_000, marksInitialSync: false)
@@ -141,6 +149,7 @@ struct HabitsApp: App {
                 }
             }
             .task {
+                guard !RuntimeEnvironment.isRunningTests else { return }
                 await prepareContainerIfNeeded()
                 if let container {
                     configureRuntimeServicesIfNeeded(using: container)
@@ -166,10 +175,7 @@ struct HabitsApp: App {
     }
 
     nonisolated private static func makeInitialContainer() -> ModelContainer {
-        let isRunningTests =
-            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-
-        if isRunningTests {
+        if RuntimeEnvironment.isRunningTests {
             return try! Persistence.makeInMemoryContainer()
         }
 

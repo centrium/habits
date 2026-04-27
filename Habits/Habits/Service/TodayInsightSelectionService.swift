@@ -25,7 +25,10 @@ struct TodayInsightCandidate {
 
 @MainActor
 final class TodayInsightSelectionService {
-    static let shared = TodayInsightSelectionService()
+    private static let defaultShared = TodayInsightSelectionService()
+    static var shared: TodayInsightSelectionService {
+        TestIsolationRegistry.todayInsightSelectionService ?? defaultShared
+    }
 
     private struct SelectionState {
         let habitID: UUID
@@ -44,7 +47,7 @@ final class TodayInsightSelectionService {
     private let recentCompletionWindow: TimeInterval = 2 * 60 * 60
     private var previousSelection: SelectionState?
 
-    private init() {}
+    init() {}
 
     func reset() {
         previousSelection = nil

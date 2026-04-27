@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class InsightsStreakCalculationTests: XCTestCase {
+final class InsightsStreakCalculationTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testSimpleStreak() {

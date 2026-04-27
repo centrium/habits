@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HabitIdentityEngineTests: XCTestCase {
+final class HabitIdentityEngineTests: BaseTestCase {
     func testNoIdentityReturnsNil() {
         // GIVEN
         let identity: String? = nil
@@ -33,7 +33,7 @@ final class HabitIdentityEngineTests: XCTestCase {
 
         // THEN
         XCTAssertEqual(output.identityLine, "Someone who trains daily")
-        XCTAssertEqual(output.behaviourLine, "Shown up 0 of the last 7 days")
+        XCTAssertEqual(output.behaviourLine, "Getting started this week")
         XCTAssertNil(output.emotionalLine)
     }
 
@@ -51,7 +51,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.behaviourLine, "Shown up 5 of the last 7 days")
+        XCTAssertEqual(output.behaviourLine, "5 days this week")
         XCTAssertNil(output.emotionalLine)
     }
 
@@ -69,7 +69,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.behaviourLine, "Shown up 4 of the last 7 days")
+        XCTAssertEqual(output.behaviourLine, "4 days this week")
         XCTAssertNil(output.emotionalLine)
     }
 
@@ -87,7 +87,7 @@ final class HabitIdentityEngineTests: XCTestCase {
         let output = try XCTUnwrap(result)
 
         // THEN
-        XCTAssertEqual(output.behaviourLine, "Shown up 1 of the last 7 days")
+        XCTAssertEqual(output.behaviourLine, "1 day this week")
         XCTAssertNil(output.emotionalLine)
     }
 

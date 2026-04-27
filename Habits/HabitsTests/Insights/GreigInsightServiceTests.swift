@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class GreigInsightServiceTests: XCTestCase {
+final class GreigInsightServiceTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testProjectionIncludesDailyAverage() {
@@ -110,10 +110,10 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: HabitIdentityState.strong))
-        XCTAssertTrue(insight?.body?.contains("7 of the last 8 days") ?? false)
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: HabitIdentityState.building))
+        XCTAssertTrue(insight?.body?.contains("Every day this week") ?? false)
         XCTAssertTrue(insight?.body?.contains("7-day streak") ?? false)
-        XCTAssertTrue(insight?.body?.contains("Log today to keep this routine steady.") ?? false)
+        XCTAssertTrue(insight?.body?.contains("Log today to reinforce this routine.") ?? false)
     }
 
     func testHighCompletionRateIsStrongConsistency() {
@@ -139,8 +139,8 @@ final class GreigInsightServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: HabitIdentityState.strong))
-        XCTAssertEqual(insight?.confidence, .high)
+        XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: HabitIdentityState.building))
+        XCTAssertEqual(insight?.confidence, .medium)
     }
 
     func testProjectionAlwaysHasExplanation() {
@@ -190,7 +190,7 @@ final class GreigInsightServiceTests: XCTestCase {
 
         XCTAssertEqual(insight?.title, CadenceLanguage.shortLabel(for: .gettingStarted))
         XCTAssertTrue(insight?.body?.contains("Projection needs more data") ?? false)
-        XCTAssertTrue(insight?.body?.contains("of the last") ?? false)
+        XCTAssertTrue(insight?.body?.contains("Getting started this week") ?? false)
         XCTAssertFalse(insight?.title.contains(CadenceLanguage.insightLine(for: .building)) ?? true)
     }
 

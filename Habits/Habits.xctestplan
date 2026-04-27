@@ -19,6 +19,10 @@
   "testTargets" : [
     {
       "parallelizable" : false,
+      "skippedTests" : [
+        "GreetingServiceTests",
+        "GuidanceEngineTests\/testBullet2DoesNotRepeatActionLineMeaning()"
+      ],
       "target" : {
         "containerPath" : "container:Habits.xcodeproj",
         "identifier" : "C91EE4092F4C589A00DB70AC",

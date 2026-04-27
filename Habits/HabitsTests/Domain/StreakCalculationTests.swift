@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class StreakCalculationTests: XCTestCase {
+final class StreakCalculationTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testDailyStreakCountsConsecutiveCompletedDays() {

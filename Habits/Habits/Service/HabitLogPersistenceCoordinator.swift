@@ -160,6 +160,14 @@ actor HabitLogPersistenceCoordinator {
         try context.save()
         return true
     }
+
+    func cancelAllForTesting() {
+        for worker in workerByHabitID.values {
+            worker.cancel()
+        }
+        workerByHabitID.removeAll()
+        queueByHabitID.removeAll()
+    }
 }
 
 private enum PersistOutcome: Sendable {

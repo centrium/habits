@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class StreakStateEngineTests: XCTestCase {
+final class StreakStateEngineTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
     private lazy var engine = StreakStateEngine(
         calendar: calendar,

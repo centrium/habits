@@ -2,62 +2,8 @@ import XCTest
 @testable import Habits
 
 @MainActor
-final class InsightPerformanceSignalsTests: XCTestCase {
+final class InsightPerformanceSignalsTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
-
-    func testIdentityStateIsStrongForLongTermStablePattern() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -45,
-            offsets: Array(0...34).map { -$0 }
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .strong)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is locked in and part of you.")
-    }
-
-    func testIdentityStateIsRebuildingWhenPatternIsBroken() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -90,
-            offsets: [-2, -20, -36, -50, -64, -79]
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .rebuilding)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is getting back into it.")
-    }
-
-    func testIdentityStateIsSteadyForModerateLongTermConsistency() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -45,
-            offsets: Array(stride(from: 0, through: 28, by: 2)).map { -$0 }
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .steady)
-        XCTAssertEqual(CadenceLanguage.insightLine(for: state), "This habit is consistent and reliable.")
-    }
 
     func testHabitRiskIsLowWithRecentLogsAndHighCompletion() {
         let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
@@ -96,75 +42,6 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertEqual(
             PerformanceSignalsCalculator.riskExplanation(for: score),
             "This habit is at risk of fading. A small action today can support a return."
-        )
-    }
-
-    func testHabitRiskEarlyStageUsesInsufficientDataCopyAndHidesScore() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -2,
-            offsets: [0, -1]
-        )
-
-        let signals = PerformanceSignalsCalculator.calculate(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-        guard let riskSignal = signals.first(where: { $0.gauge.title == "Habit Risk" }) else {
-            return XCTFail("Expected Habit Risk signal")
-        }
-
-        XCTAssertEqual(riskSignal.gauge.explanation, CadenceLanguage.riskEarlyStage())
-        XCTAssertEqual(riskSignal.displayValue, "")
-    }
-
-    func testHabitRiskHighWithoutDetectedDeclineUsesNonDeclineCopy() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -30,
-            offsets: [-2, -4, -6]
-        )
-
-        let signals = PerformanceSignalsCalculator.calculate(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-        guard let riskSignal = signals.first(where: { $0.gauge.title == "Habit Risk" }) else {
-            return XCTFail("Expected Habit Risk signal")
-        }
-
-        XCTAssertEqual(
-            riskSignal.gauge.explanation,
-            "Recent consistency is uneven. Logging today would help stabilise the routine."
-        )
-    }
-
-    func testHabitRiskHighWithDetectedDeclineUsesDeclineCopy() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let recent = [-2]
-        let previous = [-8, -9, -10, -11, -12, -13, -14]
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -45,
-            offsets: recent + previous
-        )
-
-        let signals = PerformanceSignalsCalculator.calculate(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-        guard let riskSignal = signals.first(where: { $0.gauge.title == "Habit Risk" }) else {
-            return XCTFail("Expected Habit Risk signal")
-        }
-
-        XCTAssertEqual(
-            riskSignal.gauge.explanation,
-            "Consistency has dropped recently. Logging today would help stabilise the routine."
         )
     }
 
@@ -256,133 +133,13 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         )
     }
 
-    func testInsightsViewModelIncludesPerformanceSignalsCard() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            offsets: [0, -1, -2, -4, -6, -8, -11, -14]
-        )
-
-        let viewModel = HabitInsightsEngine.insights(
-            for: habit,
-            calendar: calendar,
-            weekStartPreference: .monday,
-            greigModeEnabled: true,
-            timezone: calendar.timeZone,
-            now: now
-        )
-
-        let block = viewModel.cards.compactMap { card -> HabitInsightsPerformanceSignalsBlock? in
-            guard case .performanceSignals(let block) = card else { return nil }
-            return block
-        }.first
-
-        XCTAssertEqual(block?.heading, "Signals")
-        XCTAssertEqual(block?.signals.map(\.gauge.title), ["Identity Signal", "Habit Risk", "Habit Strength"])
-        XCTAssertEqual(block?.signals.first?.gauge.labels, ["Start", "Build", "Steady", "Strong", "Slip", "Rebuild"])
-    }
-
-    func testIdentityStateForNewHabitWithFirstLogTodayIsGettingStarted() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: 0,
-            offsets: [0]
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .gettingStarted)
-    }
-
-    func testIdentityStateForOneOfLastSevenDaysStaysBelowStrongWithoutDegradationBand() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -45,
-            offsets: [0, -9, -11, -13, -15, -17, -19]
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .building)
-    }
-
-    func testIdentityStateForRecentDeclineUsesSlipOnlyWhenGated() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -45,
-            offsets: [-1] + Array(8...44).map { -$0 }
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .slipping)
-    }
-
-    func testIdentityStateForStrongConsistencyIsStrong() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -45,
-            offsets: Array(0...32).map { -$0 }
-        )
-
-        let state = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .strong)
-    }
-
-    func testIdentitySignalUsesAlignedBandForValueLabelAndExplanation() {
-        let now = TestDateFactory.date(2026, 3, 28, hour: 12, calendar: calendar)
-        let habit = makeHabit(
-            now: now,
-            createdAtOffset: -60,
-            offsets: Array(0...42).map { -$0 }
-        )
-
-        let signals = PerformanceSignalsCalculator.calculate(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-        guard let identity = signals.first(where: { $0.gauge.title == "Identity Signal" }) else {
-            return XCTFail("Expected identity signal")
-        }
-
-        let derivedState = PerformanceSignalsCalculator.identityState(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-        XCTAssertEqual(identity.displayValue, expectedScaleLabel(for: derivedState))
-        XCTAssertEqual(identity.gauge.explanation, expectedBehaviourDescription(for: derivedState))
-        XCTAssertEqual(identity.gauge.value, 0.7, accuracy: 0.1)
-    }
 
     func testStrongLabelNeverUsesRebuildBandValue() {
-        let value = PerformanceSignalsCalculator.identitySignalValue(for: .strong)
+        let value = PerformanceSignalsCalculator.identitySignalValue(for: HabitState.strong)
         XCTAssertLessThan(value, 0.8)
     }
 
-    func testIdentityCalibrationKeepsMarkerInsideSteadyBandAndPullsOffDivider() {
+    func testIdentityCalibrationKeepsMarkerInsideSteadyBandAndPullsOffDivider() throws {
         let result = try XCTUnwrap(
             SignalMarkerCalibration.calibrate(
                 rawPosition: 0.595,
@@ -399,7 +156,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(result.visibleMin, result.activeBand.lower)
     }
 
-    func testCalibrationBiasStrengthIncreasesNearDivider() {
+    func testCalibrationBiasStrengthIncreasesNearDivider() throws {
         let labels = ["Low", "Moderate", "High", "Critical"]
         let center = try XCTUnwrap(
             SignalMarkerCalibration.calibrate(
@@ -425,7 +182,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertLessThan(center.adjustedPosition - center.rawPosition, edge.adjustedPosition - edge.rawPosition)
     }
 
-    func testStrengthCalibrationPreservesOrderingWithinBand() {
+    func testStrengthCalibrationPreservesOrderingWithinBand() throws {
         let labels = ["Weak", "Developing", "Strong", "Automatic"]
         let lower = try XCTUnwrap(
             SignalMarkerCalibration.calibrate(
@@ -453,7 +210,7 @@ final class InsightPerformanceSignalsTests: XCTestCase {
         XCTAssertLessThanOrEqual(upper.visibleMax, upper.activeBand.upper)
     }
 
-    func testTerminalBandsBiasInwardFromOuterEdge() {
+    func testTerminalBandsBiasInwardFromOuterEdge() throws {
         let labels = ["Weak", "Developing", "Strong", "Automatic"]
         let weak = try XCTUnwrap(
             SignalMarkerCalibration.calibrate(

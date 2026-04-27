@@ -230,6 +230,17 @@ private final class WidgetSyncScheduler {
             _ = await WidgetDataSync.syncAsync(in: container)
         }
     }
+
+    func resetForTesting() {
+        pendingTask?.cancel()
+        pendingTask = nil
+        latestModelContainer = nil
+    }
+}
+
+@MainActor
+func resetWidgetSyncSchedulerForTesting() {
+    WidgetSyncScheduler.shared.resetForTesting()
 }
 
 private func widgetIdentityState(from state: HabitIdentityState) -> WidgetHabitIdentityState {

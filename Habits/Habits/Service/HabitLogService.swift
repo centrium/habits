@@ -197,6 +197,9 @@ final class CueInsightService {
 }
 
 final class HabitLogService: ObservableObject {
+    private static var trackedServicesForTesting: [HabitLogService] = []
+    private static let isRunningTests: Bool =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     private struct CachedDayMetrics {
         let revision: Int
         let timeZoneIdentifier: String
@@ -218,10 +221,6 @@ final class HabitLogService: ObservableObject {
     private let uiStateStore: HabitUIStateStore
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.1
-    private var pendingSaveWorkItem: DispatchWorkItem?
-    private var pendingSyncReferenceDate: Date?
-    private var pendingChangedHabitIDs: Set<UUID> = []
-    private let saveCoalescingDelay: TimeInterval = 1.2
     private var pendingComputedStateRefreshTasks: [UUID: Task<Void, Never>] = [:]
     private var computedStateRequestSequenceByHabitID: [UUID: UInt64] = [:]
     private let computedStateRefreshDelayNanoseconds: UInt64 = 120_000_000
@@ -259,6 +258,11 @@ final class HabitLogService: ObservableObject {
         self.uiStateStore = uiStateStore
         self.habitVersionStore = habitVersionStore
         self.cueInsightService = CueInsightService(modelContext: modelContext)
+#if DEBUG
+        if Self.isRunningTests {
+            Self.trackedServicesForTesting.append(self)
+        }
+#endif
     }
 
     func updateCalendar(_ calendar: Calendar) {
@@ -280,56 +284,6 @@ final class HabitLogService: ObservableObject {
         } else {
             Haptics.impactLight()
         }
-    }
-
-    private func saveAndPlayHaptic(
-        for habit: Habit,
-        referenceDate: Date,
-        wasComplete: Bool,
-        becameCompleteOverride: Bool? = nil
-    ) {
-        let becameComplete = becameCompleteOverride ?? (!wasComplete && habit.isComplete(for: referenceDate, calendar: calendar))
-
-        if Thread.isMainThread {
-            playHaptic(becameComplete: becameComplete)
-        } else {
-            DispatchQueue.main.async { [becameComplete] in
-                self.playHaptic(becameComplete: becameComplete)
-            }
-        }
-
-        scheduleHabitComputedStateRefresh(for: habit.id, referenceDate: referenceDate)
-        schedulePersistAndReflectionSync(referenceDate: referenceDate, habitID: habit.id)
-    }
-
-    private func schedulePersistAndReflectionSync(referenceDate: Date, habitID: UUID) {
-        pendingSyncReferenceDate = referenceDate
-        pendingSaveWorkItem?.cancel()
-
-        let workItem = DispatchWorkItem { [self] in
-            let syncReferenceDate = pendingSyncReferenceDate ?? referenceDate
-            let changedHabitIDs = pendingChangedHabitIDs
-            pendingSyncReferenceDate = nil
-            pendingSaveWorkItem = nil
-            pendingChangedHabitIDs.removeAll()
-
-            guard changedHabitIDs.contains(habitID) else { return }
-            Task { @MainActor in
-                let didSave = modelContext.saveAndSyncWidgetData()
-                if didSave {
-                    LoggingPerformanceMonitor.markPersistCommitted(habitID: habitID, referenceDate: syncReferenceDate)
-                }
-                await NotificationService.shared.syncEveningReflectionFromStoredSettings(
-                    referenceDate: syncReferenceDate
-                )
-            }
-        }
-
-        pendingSaveWorkItem = workItem
-        DispatchQueue.global(qos: .utility).asyncAfter(
-            deadline: .now() + saveCoalescingDelay,
-            execute: workItem
-        )
     }
 
     private func logs(for habit: Habit, on date: Date) -> [HabitLog] {
@@ -400,11 +354,6 @@ final class HabitLogService: ObservableObject {
         }
     }
 
-    private func removeLogs(for habit: Habit, on date: Date) {
-        let day = calendar.startOfDay(for: date)
-        habit.logs.removeAll { $0.day == day }
-    }
-
     private func normalizeLogsIfNeeded(for habit: Habit) {
         guard habit.normalizeCumulativeLogs(calendar: calendar) else { return }
         invalidateMetricsCache(for: habit.id)
@@ -422,7 +371,6 @@ final class HabitLogService: ObservableObject {
         cueInsightService.resetCache()
         // Drop stale cached computed state so UI falls back to optimistic/live state immediately.
         computedStateByHabitID.removeValue(forKey: habitID)
-        pendingChangedHabitIDs.insert(habitID)
     }
 
     private func dayKey(habitID: UUID, day: Date) -> String {
@@ -1823,5 +1771,41 @@ private extension HabitLogService {
         copy.logKindRaw = log.logKindRaw
         copy.createdAt = log.createdAt
         return copy
+    }
+
+}
+
+extension HabitLogService {
+    func shutdownForTesting() {
+        for task in pendingComputedStateRefreshTasks.values {
+            task.cancel()
+        }
+        pendingComputedStateRefreshTasks.removeAll()
+        computedStateRequestSequenceByHabitID.removeAll()
+        dayMetricsCache.removeAll()
+        pendingDayMetricsByKey.removeAll()
+        metricsRevisions.removeAll()
+        mutationLedger = HabitLogMutationLedger()
+        mutationSequenceTracker = HabitLogSequenceTracker()
+        computedStateByHabitID.removeAll()
+        cueInsightService.resetCache()
+    }
+
+    var persistenceCoordinatorForTesting: HabitLogPersistenceCoordinator {
+        persistenceCoordinator
+    }
+
+    var sideEffectCoordinatorForTesting: HabitLogSideEffectCoordinator {
+        sideEffectCoordinator
+    }
+
+    static func shutdownAllForTesting() async {
+        let services = trackedServicesForTesting
+        for service in services {
+            service.shutdownForTesting()
+            await service.persistenceCoordinator.cancelAllForTesting()
+            await service.sideEffectCoordinator.cancelAllForTesting()
+        }
+        trackedServicesForTesting.removeAll()
     }
 }

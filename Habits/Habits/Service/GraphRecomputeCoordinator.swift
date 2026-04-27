@@ -1,8 +1,24 @@
 import Foundation
 
 @MainActor
+enum TestIsolationRegistry {
+    static var timeOfDayPerformanceService: TimeOfDayPerformanceService?
+    static var graphRecomputeCoordinator: GraphRecomputeCoordinator?
+    static var todayInsightSelectionService: TodayInsightSelectionService?
+
+    static func reset() {
+        timeOfDayPerformanceService = nil
+        graphRecomputeCoordinator = nil
+        todayInsightSelectionService = nil
+    }
+}
+
+@MainActor
 final class GraphRecomputeCoordinator {
-    static let shared = GraphRecomputeCoordinator()
+    private static let defaultShared = GraphRecomputeCoordinator()
+    static var shared: GraphRecomputeCoordinator {
+        TestIsolationRegistry.graphRecomputeCoordinator ?? defaultShared
+    }
 
     private struct Observer {
         let habitID: UUID
@@ -14,8 +30,15 @@ final class GraphRecomputeCoordinator {
     private var lastScheduledVersionByHabitID: [UUID: Int] = [:]
     private var lastExecutedVersionByHabitID: [UUID: Int] = [:]
     private var observers: [UUID: Observer] = [:]
+    private var traceEnabled: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["GRAPH_RECOMPUTE_DEBUG"]?.lowercased() == "1"
+        #else
+        false
+        #endif
+    }
 
-    private init() {}
+    init() {}
 
     func register(
         id: UUID,
@@ -37,7 +60,9 @@ final class GraphRecomputeCoordinator {
         lastScheduledVersionByHabitID[habitID] = version
 
         taskByHabitID[habitID]?.cancel()
-        print("GRAPH: scheduled at \(Date())")
+        if traceEnabled {
+            print("GRAPH: scheduled at \(Date())")
+        }
 
         let task = Task {
             try? await Task.sleep(nanoseconds: 50_000_000)
@@ -50,7 +75,9 @@ final class GraphRecomputeCoordinator {
     private func execute(habitID: UUID, version: Int) async {
         if isRunningByHabitID[habitID] == true { return }
         isRunningByHabitID[habitID] = true
-        print("GRAPH: executed at \(Date())")
+        if traceEnabled {
+            print("GRAPH: executed at \(Date())")
+        }
 
         defer { isRunningByHabitID[habitID] = false }
 
@@ -64,6 +91,19 @@ final class GraphRecomputeCoordinator {
         }
 
         lastExecutedVersionByHabitID[habitID] = version
-        print("GRAPH: recompute at \(Date())")
+        if traceEnabled {
+            print("GRAPH: recompute at \(Date())")
+        }
+    }
+
+    func resetForTesting() {
+        for task in taskByHabitID.values {
+            task.cancel()
+        }
+        taskByHabitID.removeAll()
+        isRunningByHabitID.removeAll()
+        lastScheduledVersionByHabitID.removeAll()
+        lastExecutedVersionByHabitID.removeAll()
+        observers.removeAll()
     }
 }

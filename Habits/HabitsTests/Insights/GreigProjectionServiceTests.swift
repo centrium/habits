@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class GreigProjectionServiceTests: XCTestCase {
+final class GreigProjectionServiceTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testMinimumWindowIsSevenDays() {

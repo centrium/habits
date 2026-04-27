@@ -1075,6 +1075,13 @@ struct HabitDetailSheet: View {
         guard let startedAt = habitLogService.lastLogUserActionAt else { return }
         let deltaMs = Date().timeIntervalSince(startedAt) * 1000
 
+        #if DEBUG
+        let traceEnabled = ProcessInfo.processInfo.environment["UI_RECONCILE_DEBUG"]?.lowercased() == "1"
+        guard traceEnabled else { return }
+        #else
+        return
+        #endif
+
         // Ignore stale probes from older actions and prevent duplicate noise per stage.
         guard deltaMs >= 0, deltaMs < 3_000 else { return }
         let probeKey = "\(startedAt.timeIntervalSince1970)-\(stage)"

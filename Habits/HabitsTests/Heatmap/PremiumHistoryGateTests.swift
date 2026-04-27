@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class PremiumHistoryGateTests: XCTestCase {
+final class PremiumHistoryGateTests: BaseTestCase {
     private var calendar: Calendar {
         TestDateFactory.utcCalendar
     }

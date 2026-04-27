@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class CalendarLogicTests: XCTestCase {
+final class CalendarLogicTests: BaseTestCase {
     private var calendar: Calendar {
         TestDateFactory.utcCalendar
     }

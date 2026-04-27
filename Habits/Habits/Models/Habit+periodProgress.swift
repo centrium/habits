@@ -45,6 +45,9 @@ func computeProgress(
         state = .onTrack
     } else if trackable.completed >= expectedByNow * 0.8 {
         state = .onTrack
+    } else if expectedByNow < 1 {
+        // Avoid classifying a fresh period as off-track before meaningful expected progress accrues.
+        state = .atRisk
     } else if trackable.completed >= expectedByNow * 0.4 {
         state = .atRisk
     } else {

@@ -244,7 +244,7 @@ enum PerformanceSignalsCalculator {
     }
 }
 
-private extension PerformanceSignalsCalculator {
+extension PerformanceSignalsCalculator {
     struct HabitRiskAssessment {
         let state: HabitRiskState
         let score: Double
@@ -667,6 +667,9 @@ private extension PerformanceSignalsCalculator {
 
     static func debugValidateIdentityAlignment(_ identity: IdentityAssessment) {
         #if DEBUG
+        guard ProcessInfo.processInfo.environment["IDENTITY_SIGNAL_DEBUG"]?.lowercased() == "1" else {
+            return
+        }
         let label = CadenceLanguage.shortLabel(for: identity.state)
         let line = CadenceLanguage.insightLine(for: identity.state)
         let expectedState = state(for: identity.score, allowsDegradationBands: identity.allowsDegradationBands)

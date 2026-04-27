@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class WidgetConsistencySnapshotTests: XCTestCase {
+final class WidgetConsistencySnapshotTests: BaseTestCase {
     func testConsistencySnapshotMatchesAggregatedSevenDayData() {
         let calendar = TestDateFactory.utcCalendar
         let referenceDate = TestDateFactory.referenceNow

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HeatmapTimelineTests: XCTestCase {
+final class HeatmapTimelineTests: BaseTestCase {
     private var calendar: Calendar {
         TestDateFactory.utcCalendar
     }

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class DeepLinkManagerTests: XCTestCase {
+final class DeepLinkManagerTests: BaseTestCase {
     func testHabitIDParsesValidHabitURL() async throws {
         let expectedID = UUID()
         let url = try XCTUnwrap(URL(string: "habits://habit/\(expectedID.uuidString)"))

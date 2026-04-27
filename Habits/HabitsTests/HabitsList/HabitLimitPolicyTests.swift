@@ -2,7 +2,7 @@ import XCTest
 @testable import Habits
 
 @MainActor
-final class HabitLimitPolicyTests: XCTestCase {
+final class HabitLimitPolicyTests: BaseTestCase {
     func testFreeUserCanCreateHabitsBelowLimit() {
         // GIVEN
         let policy = HabitLimitPolicy(

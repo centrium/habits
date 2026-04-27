@@ -96,4 +96,9 @@ final class WidgetDataStore {
             return false
         }
     }
+
+    func clearForTesting() {
+        guard let defaults = UserDefaults(suiteName: Self.suiteName) else { return }
+        defaults.removeObject(forKey: Self.key)
+    }
 }

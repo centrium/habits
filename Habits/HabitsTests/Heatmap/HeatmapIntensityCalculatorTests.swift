@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HeatmapIntensityCalculatorTests: XCTestCase {
+final class HeatmapIntensityCalculatorTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testOpenGoalWithoutLogsHasZeroIntensity() {

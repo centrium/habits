@@ -1,4 +1,5 @@
 import SwiftData
+import XCTest
 @testable import Habits
 
 struct TestPersistence {

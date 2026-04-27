@@ -2,7 +2,7 @@ import XCTest
 @testable import Habits
 
 @MainActor
-final class WidgetHabitIdentityFallbackTests: XCTestCase {
+final class WidgetHabitIdentityFallbackTests: BaseTestCase {
     func testMissingIdentityStateDefaultsToStarting() throws {
         let json = """
         {

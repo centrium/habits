@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HabitGoalTests: XCTestCase {
+final class HabitGoalTests: BaseTestCase {
     func testFrequencyGoalEnforcesMinimumTargetOfOne() {
         // Given
         let habit = TestHabitFactory.frequency(target: 0)

@@ -348,4 +348,14 @@ final class HabitUIStateStore: ObservableObject {
         projectionSubjectsByHabitID[habitID] = subject
         return subject
     }
+
+    func resetForTesting() {
+        progressByHabitAndDate.removeAll()
+        completionByHabitAndDate.removeAll()
+        projectionVersionByHabitID.removeAll()
+        committedDayStateByKey.removeAll()
+        pendingMutationsByHabitID.removeAll()
+        projectedDayStateByKey.removeAll()
+        projectionSubjectsByHabitID.removeAll()
+    }
 }

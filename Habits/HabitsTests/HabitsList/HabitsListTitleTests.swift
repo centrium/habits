@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HabitsListTitleTests: XCTestCase {
+final class HabitsListTitleTests: BaseTestCase {
     func testListBaseTitleIsCadence() {
         XCTAssertEqual(HabitsListTitleCopy.baseTitle, "Cadence")
     }

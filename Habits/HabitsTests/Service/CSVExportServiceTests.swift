@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class CSVExportServiceTests: XCTestCase {
+final class CSVExportServiceTests: BaseTestCase {
     func testExportProducesUserFriendlyCSVFiles() throws {
         let persistence = try TestPersistence()
         let calendar = TestDateFactory.utcCalendar
@@ -124,7 +124,7 @@ final class CSVExportServiceTests: XCTestCase {
     }
 }
 
-final class CSVBuilderTests: XCTestCase {
+final class CSVBuilderTests: BaseTestCase {
     func testMakeCSVEscapesCommasQuotesAndNewlines() {
         let csv = CSVBuilder().makeCSV(
             headers: ["name", "note"],

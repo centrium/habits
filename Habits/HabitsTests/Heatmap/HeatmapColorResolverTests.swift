@@ -2,7 +2,7 @@ import SwiftUI
 import XCTest
 @testable import Habits
 
-final class HeatmapColorResolverTests: XCTestCase {
+final class HeatmapColorResolverTests: BaseTestCase {
     func testHabitColorFromHexPrefersDirectPaletteMatchOverLegacyAliases() {
         XCTAssertEqual(HabitColor.from(hex: HabitColor.fern.hex), .fern)
         XCTAssertEqual(HabitColor.from(hex: HabitColor.sage.hex), .sage)

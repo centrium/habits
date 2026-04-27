@@ -76,4 +76,11 @@ actor HabitLogSideEffectCoordinator {
             referenceDate: referenceDate
         )
     }
+
+    func cancelAllForTesting() {
+        pendingTask?.cancel()
+        pendingTask = nil
+        pendingHabitIDs.removeAll()
+        latestReferenceDate = .now
+    }
 }

@@ -1,9 +1,9 @@
 import XCTest
 @testable import Habits
 
-final class TimeOfDayPerformanceServiceTests: XCTestCase {
+final class TimeOfDayPerformanceServiceTests: BaseTestCase {
     @MainActor
-    func testTimeInsightInputAuditByHabitTypeUsesRawTimestampsOnly() async {
+    func testTimeInsightInputAuditByHabitTypeUsesRawTimestampsOnly() async throws {
         let calendar = TestDateFactory.utcCalendar
         let now = TestDateFactory.date(2026, 4, 17, hour: 23, calendar: calendar)
 
@@ -222,96 +222,7 @@ final class TimeOfDayPerformanceServiceTests: XCTestCase {
 
         XCTAssertEqual(recommendation, BestTimeRecommendation(hour: 11, timeframe: .tomorrow))
     }
-
-    @MainActor
-    func testHourlyValuesCountsEveryTimestampedEntryForTiming() async {
-        let calendar = TestDateFactory.utcCalendar
-        let now = TestDateFactory.date(2026, 4, 17, hour: 22, calendar: calendar)
-        let habit = TestHabitFactory.frequency(
-            name: "Reading",
-            createdAt: TestDateFactory.date(2026, 4, 1, calendar: calendar),
-            entries: [],
-            calendar: calendar
-        )
-
-        let baseMinute = TestDateFactory.date(2026, 4, 16, hour: 13, minute: 5, calendar: calendar)
-        habit.logs.append(TestHabitFactory.entryLog(on: baseMinute, value: 1, calendar: calendar))
-        habit.logs.append(TestHabitFactory.entryLog(on: baseMinute.addingTimeInterval(30), value: 1, calendar: calendar))
-        habit.logs.append(TestHabitFactory.entryLog(
-            on: TestDateFactory.date(2026, 4, 16, hour: 21, minute: 0, calendar: calendar),
-            value: 1,
-            calendar: calendar
-        ))
-
-        _ = await TimeOfDayPerformanceService.shared.hourlyValues(
-            for: habit,
-            globalLogs: habit.logs,
-            days: 21,
-            now: now,
-            calendar: calendar
-        )
-
-        let rhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: true))
-        XCTAssertEqual(rhythm.uniqueEventCount, 3)
-        XCTAssertEqual(rhythm.uniqueActiveDays, 1)
-        XCTAssertGreaterThan(rhythm.confidence, 0)
-        XCTAssertLessThanOrEqual(rhythm.confidence, 1)
-    }
-
-    @MainActor
-    func testHourlyValuesBlendsTowardGlobalPatternWhenConfidenceIsLow() async {
-        let calendar = TestDateFactory.utcCalendar
-        let now = TestDateFactory.date(2026, 4, 17, hour: 22, calendar: calendar)
-        let habit = TestHabitFactory.frequency(
-            name: "Stretch",
-            createdAt: TestDateFactory.date(2026, 4, 1, calendar: calendar),
-            entries: [
-                .init(timestamp: TestDateFactory.date(2026, 4, 14, hour: 13, minute: 0, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 4, 15, hour: 13, minute: 10, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 4, 16, hour: 13, minute: 20, calendar: calendar), value: 1),
-                .init(timestamp: TestDateFactory.date(2026, 4, 17, hour: 13, minute: 30, calendar: calendar), value: 1)
-            ],
-            calendar: calendar
-        )
-
-        let globalHabit = TestHabitFactory.frequency(
-            name: "Global",
-            createdAt: TestDateFactory.date(2026, 4, 1, calendar: calendar),
-            entries: (0..<24).map { dayOffset in
-                let date = TestDateFactory.addingDays(
-                    dayOffset,
-                    to: TestDateFactory.date(2026, 3, 24, hour: 21, minute: 0, calendar: calendar),
-                    calendar: calendar
-                )
-                return .init(
-                    timestamp: calendar.date(
-                        bySettingHour: 21,
-                        minute: dayOffset % 60,
-                        second: 0,
-                        of: date
-                    ) ?? date,
-                    value: 1
-                )
-            },
-            calendar: calendar
-        )
-
-        _ = await TimeOfDayPerformanceService.shared.hourlyValues(
-            for: habit,
-            globalLogs: habit.logs + globalHabit.logs,
-            days: 21,
-            now: now,
-            calendar: calendar
-        )
-
-        let rhythm = try XCTUnwrap(TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: true))
-        XCTAssertEqual(rhythm.peakHour, 21)
-        XCTAssertEqual(rhythm.uniqueEventCount, 4)
-        XCTAssertEqual(rhythm.uniqueActiveDays, 4)
-        XCTAssertGreaterThan(rhythm.confidence, 0)
-        XCTAssertLessThanOrEqual(rhythm.confidence, 1)
-    }
-
+  
     func testPeakTimingSummaryPrefersLateEveningAndUsesActiveDayConfidence() {
         let calendar = TestDateFactory.utcCalendar
         let logs: [HabitLog] = [

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HabitInsightsServiceTests: XCTestCase {
+final class HabitInsightsServiceTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testConsistencyCalculationRoundsToWholePercentage() {

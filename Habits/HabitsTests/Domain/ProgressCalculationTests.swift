@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class ProgressCalculationTests: XCTestCase {
+final class ProgressCalculationTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testCumulativeGoalClampsProgressAtTarget() {

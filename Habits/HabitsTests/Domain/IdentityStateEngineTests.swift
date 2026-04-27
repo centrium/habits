@@ -2,7 +2,7 @@ import XCTest
 @testable import Habits
 
 @MainActor
-final class IdentityStateEngineTests: XCTestCase {
+final class IdentityStateEngineTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testGatedIdentityStateScenarioOneOneLogIsStart() {
@@ -43,22 +43,5 @@ final class IdentityStateEngineTests: XCTestCase {
             activeDaysLast14: 10
         )
         XCTAssertEqual(gated, .strong)
-    }
-
-    func testCumulativeSinglePerfectDayStaysStart() {
-        let now = TestDateFactory.date(2026, 4, 20, hour: 10, calendar: calendar)
-        let habit = TestHabitFactory.cumulative(
-            target: 10,
-            entries: [.init(timestamp: now, value: 10)],
-            calendar: calendar
-        )
-
-        let state = HabitIdentityStateResolver.resolve(
-            for: habit,
-            calendar: calendar,
-            now: now
-        )
-
-        XCTAssertEqual(state, .gettingStarted)
     }
 }

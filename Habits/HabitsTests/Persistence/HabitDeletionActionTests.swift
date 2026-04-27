@@ -2,7 +2,7 @@ import SwiftData
 import XCTest
 @testable import Habits
 
-final class HabitDeletionActionTests: XCTestCase {
+final class HabitDeletionActionTests: BaseTestCase {
     func testDeleteActionRemovesHabitAndLogsAndTriggersDismissCallbacks() throws {
         // Given
         let persistence = try TestPersistence()

@@ -2,7 +2,7 @@ import XCTest
 import SwiftData
 @testable import Habits
 
-final class HabitOrderingTests: XCTestCase {
+final class HabitOrderingTests: BaseTestCase {
     func testHabitReorderingUpdatesIndexes() throws {
         let persistence = try TestPersistence()
 

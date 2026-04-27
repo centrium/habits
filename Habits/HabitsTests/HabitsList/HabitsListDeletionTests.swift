@@ -4,7 +4,7 @@ import SwiftData
 import XCTest
 @testable import Habits
 
-final class HabitsListDeletionTests: XCTestCase {
+final class HabitsListDeletionTests: BaseTestCase {
     func testDeletingHabitRemovesItFromTheModel() throws {
         let persistence = try TestPersistence()
         let keepHabit = makeHabit(name: "Keep", orderIndex: 0)

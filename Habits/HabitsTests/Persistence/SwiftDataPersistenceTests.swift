@@ -2,7 +2,7 @@ import SwiftData
 import XCTest
 @testable import Habits
 
-final class SwiftDataPersistenceTests: XCTestCase {
+final class SwiftDataPersistenceTests: BaseTestCase {
     func testHabitDefaultsToGeneralCategoryAndNilIdentity() {
         let habit = TestHabitFactory.frequency(name: "Read")
 

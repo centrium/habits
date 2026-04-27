@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class LogInterpretationTests: XCTestCase {
+final class LogInterpretationTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testLegacyLogsUseCountForNumericValueAndFrequencyContribution() {

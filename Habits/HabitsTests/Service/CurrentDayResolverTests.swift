@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import Habits
 
-final class CurrentDayResolverTests: XCTestCase {
+final class CurrentDayResolverTests: BaseTestCase {
     func testCurrentDayResolvesWithProvidedNow() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/London") ?? .gmt

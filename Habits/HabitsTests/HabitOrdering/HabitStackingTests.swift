@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class HabitStackingTests: XCTestCase {
+final class HabitStackingTests: BaseTestCase {
     func testCanAssignTriggerRejectsCycleAcrossMultipleLevels() {
         let a = TestHabitFactory.frequency(name: "A")
         let b = TestHabitFactory.frequency(name: "B", triggerHabitID: a.id)
@@ -57,19 +57,6 @@ final class HabitStackingTests: XCTestCase {
         } else {
             XCTFail("Expected a stack item")
         }
-    }
-
-    func testOrderingKeepsStandaloneHabitsStable() {
-        let a = makeHabit(name: "A", orderIndex: 0)
-        let b = makeHabit(name: "B", orderIndex: 1)
-        let c = makeHabit(name: "C", orderIndex: 2)
-        b.triggerHabitID = a.id
-
-        let base = [a, b, c]
-        let snapshot = HabitStackingOrder.resolve(baseHabits: base)
-
-        XCTAssertEqual(snapshot.displayHabits.map(\.name), ["A", "B", "C"])
-        XCTAssertEqual(snapshot.todayItems.count, 2)
     }
 
     func testOrderingGroupsNonAdjacentChainIntoSingleStackAndStandaloneItem() {

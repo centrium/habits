@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class StreakIndicatorPresentationTests: XCTestCase {
+final class StreakIndicatorPresentationTests: BaseTestCase {
     func testDoesNotShowIndicatorWhenStreakIsZero() {
         // Given
         let streak = 0

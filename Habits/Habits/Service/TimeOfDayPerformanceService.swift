@@ -194,7 +194,10 @@ final class TimeOfDayPerformanceService {
         let logs: [HabitLog]
     }
 
-    static let shared = TimeOfDayPerformanceService()
+    private static let defaultShared = TimeOfDayPerformanceService()
+    static var shared: TimeOfDayPerformanceService {
+        TestIsolationRegistry.timeOfDayPerformanceService ?? defaultShared
+    }
 
     private struct CacheKey: Hashable {
         let habitID: UUID
@@ -215,7 +218,7 @@ final class TimeOfDayPerformanceService {
     private var requestSequenceByKey: [CacheKey: UInt64] = [:]
     private let lock = NSLock()
 
-    private init() {}
+    init() {}
 
     func hourlyValues(
         for habit: Habit,
@@ -245,6 +248,13 @@ final class TimeOfDayPerformanceService {
     func cachedLastCompletedDate(for habit: Habit, isPremium: Bool) -> Date? {
         let key = CacheKey(habitID: habit.id, days: isPremium ? 21 : 3)
         return withLock { cache[key]?.newestTimestamp }
+    }
+
+    func resetForTesting() {
+        withLock {
+            cache.removeAll()
+            requestSequenceByKey.removeAll()
+        }
     }
 
     func hourlyValues(

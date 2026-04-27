@@ -1,7 +1,7 @@
 import XCTest
 @testable import Habits
 
-final class StreakEngineResultTests: XCTestCase {
+final class StreakEngineResultTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
 
     func testGrowingStreakReturnsMatchingCurrentAndBest() {
