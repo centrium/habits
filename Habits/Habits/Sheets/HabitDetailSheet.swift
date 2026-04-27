@@ -68,6 +68,31 @@ private struct HistorySnapshot: Equatable {
     )
 }
 
+private struct DetailDeferredRefreshQueue {
+    var progressSnapshot = false
+    var cueInsight = false
+    var rhythmData = false
+    var historyProjectionSnapshot = false
+    var historyProjectionSeedFromCommitted = false
+    var aiCoachRequestKey: String?
+
+    var isEmpty: Bool {
+        !progressSnapshot &&
+        !cueInsight &&
+        !rhythmData &&
+        !historyProjectionSnapshot &&
+        aiCoachRequestKey == nil
+    }
+}
+
+private struct DetailScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 @MainActor
 private final class HabitDetailViewModel: ObservableObject {
     @Published private(set) var isActive = false
@@ -183,8 +208,24 @@ struct HabitDetailSheet: View {
     @State private var cueRequestSequence: UInt64 = 0
     @State private var currentRhythmRequestID: UUID?
     @State private var detailAppearStartedAt: Date?
+    @State private var cachedIdentitySnapshot = HabitIdentityStateSnapshot(
+        state: .gettingStarted,
+        completionRate: 0,
+        activeDays: 0,
+        windowDays: 7,
+        hasRecentData: false,
+        totalLogs: 0,
+        uniqueDays: 0,
+        activeDaysLast14: 0
+    )
+    @State private var cachedTodayGoalProgress: TodayGoalProgressPresentation?
+    @State private var isDetailScrollActive = false
+    @State private var lastObservedDetailScrollOffset: CGFloat?
+    @State private var detailScrollIdleTask: Task<Void, Never>?
+    @State private var deferredRefreshQueue = DetailDeferredRefreshQueue()
     @StateObject private var viewModel = HabitDetailViewModel()
     private let onDeleted: (() -> Void)?
+    private let detailScrollCoordinateSpace = "habit-detail-scroll-space"
 
     let habit: Habit
 
@@ -387,50 +428,45 @@ struct HabitDetailSheet: View {
             snapshotRefreshTask?.cancel()
             goalProgressAnimationResetTask?.cancel()
             cueRefreshTask?.cancel()
+            detailScrollIdleTask?.cancel()
+            deferredRefreshQueue = DetailDeferredRefreshQueue()
             freezeDetailState()
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             habitLogService.updateCalendar(calculationCalendar)
-            refreshHistoryProjectionState(seedFromCommitted: false)
-            viewModel.refreshHistorySnapshot(
-                projectedDayStates: historyProjectedDayStates,
-                calendar: calculationCalendar
-            )
+            requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
             guard viewModel.isActive, !isHistoryPresented else { return }
-            scheduleProgressSnapshotRefresh()
+            requestProgressSnapshotRefresh()
         }
         .onChange(of: selectedDate) { _, _ in
             guard viewModel.isActive, !isHistoryPresented else { return }
-            scheduleProgressSnapshotRefresh()
+            requestProgressSnapshotRefresh()
         }
         .onChange(of: selectionState.visibleMonth) { _, _ in
             guard viewModel.isActive, !isHistoryPresented else { return }
-            scheduleProgressSnapshotRefresh()
+            requestProgressSnapshotRefresh()
+        }
+        .onChange(of: appTime.now) { oldValue, newValue in
+            guard viewModel.isActive, !isHistoryPresented else { return }
+            let previousDay = calculationCalendar.startOfDay(for: oldValue)
+            let currentDay = calculationCalendar.startOfDay(for: newValue)
+            guard previousDay != currentDay else { return }
+            requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
+            requestProgressSnapshotRefresh(now: newValue)
         }
         .onChange(of: progressRevision) { _, _ in
-            refreshHistoryProjectionState(seedFromCommitted: false)
-            viewModel.refreshHistorySnapshot(
-                projectedDayStates: historyProjectedDayStates,
-                calendar: calculationCalendar
-            )
+            requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
             guard viewModel.isActive, !isHistoryPresented else { return }
-            scheduleProgressSnapshotRefresh()
-            Task { await refreshCueInsight() }
+            requestProgressSnapshotRefresh()
+            requestCueInsightRefresh()
         }
         .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
-            refreshHistoryProjectionState()
-            viewModel.refreshHistorySnapshot(
-                projectedDayStates: historyProjectedDayStates,
-                calendar: calculationCalendar
-            )
+            requestHistoryProjectionSnapshotRefresh()
             guard viewModel.isActive, !isHistoryPresented else { return }
             recordUIReconcileProbe(stage: "projection")
-            scheduleProgressSnapshotRefresh()
+            requestProgressSnapshotRefresh()
             triggerGoalProgressAnimation()
-            cueRefreshTask?.cancel()
-            cueRefreshTask = Task {
-                await refreshCueInsight()
-            }
+            requestCueInsightRefresh()
         }
         .onChange(of: isHistoryPresented) { _, presented in
             if presented {
@@ -442,18 +478,17 @@ struct HabitDetailSheet: View {
             viewModel.activate()
             frozenStateModel = nil
             frozenGuidanceOutput = nil
-            refreshHistoryProjectionState(seedFromCommitted: false)
+            requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
             metadataSectionState = .loaded(())
-            scheduleProgressSnapshotRefresh()
-            cueRefreshTask?.cancel()
-            cueRefreshTask = Task { await refreshCueInsight() }
+            requestProgressSnapshotRefresh()
+            requestCueInsightRefresh()
             aiCoachSectionState = .loading
             freezeGuidanceOutputOnAppear(now: Date())
             aiCoachSectionState = {
                 guard let output = frozenGuidanceOutput else { return .empty }
                 return .loaded(output)
             }()
-            regenerateAICoach(
+            requestAICoachRegeneration(
                 requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
             )
         }
@@ -463,12 +498,11 @@ struct HabitDetailSheet: View {
                 detailAppearStartedAt = nil
             }
             guard viewModel.isActive, !isHistoryPresented else { return }
-            cueRefreshTask?.cancel()
-            cueRefreshTask = Task { await refreshCueInsight() }
+            requestCueInsightRefresh()
         }
         .task(id: rhythmTaskKey) {
             rhythmDebugLog("task-trigger key=\(rhythmTaskKey)")
-            await refreshRhythmData()
+            await requestRhythmRefresh()
         }
         .navigationDestination(isPresented: $isHistoryPresented) {
             let liveHistorySnapshot = viewModel.historySnapshot
@@ -540,7 +574,7 @@ struct HabitDetailSheet: View {
         let sectionPadding = CadenceTokens.Space.lg
         let accent = CadenceTokens.Color.accent(for: habit)
         let stateModel = frozenStateModel
-        let identityState = identityStateSummary()
+        let identityState = cachedIdentitySnapshot
         let heroStatus = CadenceLanguage.shortLabel(for: identityState.state)
         let logCount = viewModel.historySnapshot.totalEntries
         let isLowDataActivityState = logCount == 0
@@ -800,7 +834,19 @@ struct HabitDetailSheet: View {
                     .frame(height: CadenceTokens.Space.lg + 2)
                     .allowsHitTesting(false)
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DetailScrollOffsetPreferenceKey.self,
+                        value: proxy.frame(in: .named(detailScrollCoordinateSpace)).minY
+                    )
+                }
+            )
             .padding(.bottom, CadenceTokens.Space.md)
+        }
+        .coordinateSpace(name: detailScrollCoordinateSpace)
+        .onPreferenceChange(DetailScrollOffsetPreferenceKey.self) { offset in
+            handleDetailScrollOffsetChange(offset)
         }
         .scrollContentBackground(.hidden)
     }
@@ -967,56 +1013,7 @@ struct HabitDetailSheet: View {
     }
 
     private func identityStateSummary() -> HabitIdentityStateSnapshot {
-        let normalizedWindow = 7
-        let today = calculationCalendar.startOfDay(for: Date())
-        let earliest = calculationCalendar.date(byAdding: .day, value: -(normalizedWindow - 1), to: today) ?? today
-        let last14Start = calculationCalendar.date(byAdding: .day, value: -13, to: today) ?? today
-
-        var uniqueDays = 0
-        var activeDays = 0
-        var activeDaysLast14 = 0
-        var totalLogs = 0
-
-        for (day, state) in historyProjectedDayStates {
-            let normalizedDay = calculationCalendar.startOfDay(for: day)
-            guard normalizedDay <= today else { continue }
-            let hasActivity = state.count > 0 || state.value > 0
-            guard hasActivity else { continue }
-
-            uniqueDays += 1
-            totalLogs += max(0, state.count)
-
-            if normalizedDay >= earliest && normalizedDay <= today {
-                activeDays += 1
-            }
-            if normalizedDay >= last14Start && normalizedDay <= today {
-                activeDaysLast14 += 1
-            }
-        }
-
-        let completionRate = Double(activeDays) / Double(normalizedWindow)
-        let state: HabitIdentityState
-        switch completionRate {
-        case ..<0.2:
-            state = activeDays > 0 ? .rebuilding : .gettingStarted
-        case ..<0.5:
-            state = .building
-        case ..<0.75:
-            state = .steady
-        default:
-            state = .strong
-        }
-
-        return HabitIdentityStateSnapshot(
-            state: state,
-            completionRate: completionRate,
-            activeDays: activeDays,
-            windowDays: normalizedWindow,
-            hasRecentData: activeDays > 0,
-            totalLogs: totalLogs,
-            uniqueDays: uniqueDays,
-            activeDaysLast14: activeDaysLast14
-        )
+        cachedIdentitySnapshot
     }
 
     private func streakCardConfiguration(streakState: StreakState) -> StreakCardConfiguration? {
@@ -1162,7 +1159,238 @@ struct HabitDetailSheet: View {
         if seedFromCommitted {
             _ = habitLogService.projectedHistoryDayStates(for: habit)
         }
-        historyProjectedDayStates = uiStateStore.projectedDayStates(for: habit.id)
+        let updatedStates = uiStateStore.projectedDayStates(for: habit.id)
+        guard updatedStates != historyProjectedDayStates else { return }
+        historyProjectedDayStates = updatedStates
+        refreshIdentitySnapshotCache()
+        refreshTodayGoalProgressPresentation()
+    }
+
+    private func refreshIdentitySnapshotCache() {
+        let normalizedWindow = 7
+        let today = calculationCalendar.startOfDay(for: Date())
+        let earliest = calculationCalendar.date(byAdding: .day, value: -(normalizedWindow - 1), to: today) ?? today
+        let last14Start = calculationCalendar.date(byAdding: .day, value: -13, to: today) ?? today
+
+        var uniqueDays = 0
+        var activeDays = 0
+        var activeDaysLast14 = 0
+        var totalLogs = 0
+
+        for (day, state) in historyProjectedDayStates {
+            let normalizedDay = calculationCalendar.startOfDay(for: day)
+            guard normalizedDay <= today else { continue }
+            let hasActivity = state.count > 0 || state.value > 0
+            guard hasActivity else { continue }
+
+            uniqueDays += 1
+            totalLogs += max(0, state.count)
+
+            if normalizedDay >= earliest && normalizedDay <= today {
+                activeDays += 1
+            }
+            if normalizedDay >= last14Start && normalizedDay <= today {
+                activeDaysLast14 += 1
+            }
+        }
+
+        let completionRate = Double(activeDays) / Double(normalizedWindow)
+        let state: HabitIdentityState
+        switch completionRate {
+        case ..<0.2:
+            state = activeDays > 0 ? .rebuilding : .gettingStarted
+        case ..<0.5:
+            state = .building
+        case ..<0.75:
+            state = .steady
+        default:
+            state = .strong
+        }
+
+        cachedIdentitySnapshot = HabitIdentityStateSnapshot(
+            state: state,
+            completionRate: completionRate,
+            activeDays: activeDays,
+            windowDays: normalizedWindow,
+            hasRecentData: activeDays > 0,
+            totalLogs: totalLogs,
+            uniqueDays: uniqueDays,
+            activeDaysLast14: activeDaysLast14
+        )
+    }
+
+    private func refreshTodayGoalProgressPresentation() {
+        guard habit.hasGoal,
+              let targetValue = habit.effectiveTargetValue,
+              targetValue > 0 else {
+            cachedTodayGoalProgress = nil
+            return
+        }
+
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        let currentValue: Double
+        switch habit.goalType {
+        case .frequency:
+            currentValue = Double(habitLogService.count(for: habit, on: today))
+        case .cumulative:
+            currentValue = habitLogService.value(for: habit, on: today)
+        }
+
+        let clampedProgress = min(max(currentValue / targetValue, 0), 1)
+        let isComplete = clampedProgress >= 1
+        let displayCurrent = isComplete ? targetValue : max(0, currentValue)
+        let summaryText = "\(formattedTodayGoalValue(displayCurrent)) of \(formattedTodayGoalValue(targetValue)) today"
+
+        if clampedProgress == 0 {
+            cachedTodayGoalProgress = TodayGoalProgressPresentation(
+                summaryText: summaryText,
+                readinessText: "Start when ready",
+                fraction: clampedProgress,
+                isComplete: false
+            )
+            return
+        }
+
+        if isComplete {
+            cachedTodayGoalProgress = TodayGoalProgressPresentation(
+                summaryText: summaryText,
+                readinessText: nil,
+                fraction: clampedProgress,
+                isComplete: true
+            )
+            return
+        }
+
+        let remainingValue = max(0, targetValue - currentValue)
+        let summaryWithRemaining: String
+        switch habit.goalType {
+        case .frequency:
+            let remainingCount = max(0, Int(remainingValue.rounded(.up)))
+            summaryWithRemaining = "\(summaryText) • \(remainingCount) more to hit today"
+        case .cumulative:
+            summaryWithRemaining = "\(summaryText) • \(formattedTodayGoalValue(remainingValue)) to go"
+        }
+
+        cachedTodayGoalProgress = TodayGoalProgressPresentation(
+            summaryText: summaryWithRemaining,
+            readinessText: nil,
+            fraction: clampedProgress,
+            isComplete: false
+        )
+    }
+
+    private func applyHistoryProjectionSnapshotRefresh(seedFromCommitted: Bool = false) {
+        refreshHistoryProjectionState(seedFromCommitted: seedFromCommitted)
+        viewModel.refreshHistorySnapshot(
+            projectedDayStates: historyProjectedDayStates,
+            calendar: calculationCalendar
+        )
+    }
+
+    private func requestHistoryProjectionSnapshotRefresh(seedFromCommitted: Bool = false) {
+        guard viewModel.isActive, !isHistoryPresented else {
+            applyHistoryProjectionSnapshotRefresh(seedFromCommitted: seedFromCommitted)
+            return
+        }
+
+        guard isDetailScrollActive else {
+            applyHistoryProjectionSnapshotRefresh(seedFromCommitted: seedFromCommitted)
+            return
+        }
+
+        deferredRefreshQueue.historyProjectionSnapshot = true
+        deferredRefreshQueue.historyProjectionSeedFromCommitted = deferredRefreshQueue.historyProjectionSeedFromCommitted || seedFromCommitted
+        detailPerfLog("scroll-defer history-projection")
+    }
+
+    private func requestProgressSnapshotRefresh(now: Date = Date()) {
+        guard viewModel.isActive, !isHistoryPresented else { return }
+        guard !isDetailScrollActive else {
+            deferredRefreshQueue.progressSnapshot = true
+            detailPerfLog("scroll-defer progress-snapshot")
+            return
+        }
+        scheduleProgressSnapshotRefresh(now: now)
+    }
+
+    private func startCueInsightRefreshTask() {
+        cueRefreshTask?.cancel()
+        cueRefreshTask = Task { await refreshCueInsight() }
+    }
+
+    private func requestCueInsightRefresh() {
+        guard viewModel.isActive, !isHistoryPresented else { return }
+        guard !isDetailScrollActive else {
+            deferredRefreshQueue.cueInsight = true
+            detailPerfLog("scroll-defer cue-refresh")
+            return
+        }
+        startCueInsightRefreshTask()
+    }
+
+    private func requestAICoachRegeneration(requestKey: String) {
+        guard viewModel.isActive else { return }
+        guard !isDetailScrollActive else {
+            deferredRefreshQueue.aiCoachRequestKey = requestKey
+            detailPerfLog("scroll-defer ai-coach")
+            return
+        }
+        regenerateAICoach(requestKey: requestKey)
+    }
+
+    private func requestRhythmRefresh() async {
+        guard viewModel.isActive, !isHistoryPresented else { return }
+        guard !isDetailScrollActive else {
+            deferredRefreshQueue.rhythmData = true
+            detailPerfLog("scroll-defer rhythm-refresh")
+            return
+        }
+        await refreshRhythmData()
+    }
+
+    private func flushDeferredRefreshQueueIfNeeded() {
+        guard !deferredRefreshQueue.isEmpty else { return }
+        let queued = deferredRefreshQueue
+        deferredRefreshQueue = DetailDeferredRefreshQueue()
+
+        if queued.historyProjectionSnapshot {
+            applyHistoryProjectionSnapshotRefresh(seedFromCommitted: queued.historyProjectionSeedFromCommitted)
+        }
+        if queued.progressSnapshot {
+            scheduleProgressSnapshotRefresh()
+        }
+        if queued.cueInsight {
+            startCueInsightRefreshTask()
+        }
+        if queued.rhythmData {
+            Task { await refreshRhythmData() }
+        }
+        if let requestKey = queued.aiCoachRequestKey {
+            regenerateAICoach(requestKey: requestKey)
+        }
+        detailPerfLog("scroll-flush completed")
+    }
+
+    private func handleDetailScrollOffsetChange(_ offset: CGFloat) {
+        guard viewModel.isActive, !isHistoryPresented else { return }
+        defer { lastObservedDetailScrollOffset = offset }
+
+        guard let previous = lastObservedDetailScrollOffset else { return }
+        guard abs(previous - offset) > 0.5 else { return }
+
+        if !isDetailScrollActive {
+            isDetailScrollActive = true
+            detailPerfLog("scroll-start")
+        }
+
+        detailScrollIdleTask?.cancel()
+        detailScrollIdleTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            isDetailScrollActive = false
+            detailPerfLog("scroll-stop")
+            flushDeferredRefreshQueueIfNeeded()
+        }
     }
 
     private func recordUIReconcileProbe(stage: String) {
@@ -1343,6 +1571,7 @@ struct HabitDetailSheet: View {
             selectedDate: selectedDate,
             dayMetrics: dayMetrics
         )
+        refreshTodayGoalProgressPresentation()
         metadataSectionState = .loaded(())
     }
 
@@ -1473,60 +1702,7 @@ struct HabitDetailSheet: View {
     }
 
     private var todayGoalProgressPresentation: TodayGoalProgressPresentation? {
-        guard habit.hasGoal,
-              let targetValue = habit.effectiveTargetValue,
-              targetValue > 0 else {
-            return nil
-        }
-
-        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-        let currentValue: Double
-        switch habit.goalType {
-        case .frequency:
-            currentValue = Double(habitLogService.count(for: habit, on: today))
-        case .cumulative:
-            currentValue = habitLogService.value(for: habit, on: today)
-        }
-
-        let clampedProgress = min(max(currentValue / targetValue, 0), 1)
-        let isComplete = clampedProgress >= 1
-        let displayCurrent = isComplete ? targetValue : max(0, currentValue)
-        let summaryText = "\(formattedTodayGoalValue(displayCurrent)) of \(formattedTodayGoalValue(targetValue)) today"
-
-        if clampedProgress == 0 {
-            return TodayGoalProgressPresentation(
-                summaryText: summaryText,
-                readinessText: "Start when ready",
-                fraction: clampedProgress,
-                isComplete: false
-            )
-        }
-
-        if isComplete {
-            return TodayGoalProgressPresentation(
-                summaryText: summaryText,
-                readinessText: nil,
-                fraction: clampedProgress,
-                isComplete: true
-            )
-        }
-
-        let remainingValue = max(0, targetValue - currentValue)
-        let summaryWithRemaining: String
-        switch habit.goalType {
-        case .frequency:
-            let remainingCount = max(0, Int(remainingValue.rounded(.up)))
-            summaryWithRemaining = "\(summaryText) • \(remainingCount) more to hit today"
-        case .cumulative:
-            summaryWithRemaining = "\(summaryText) • \(formattedTodayGoalValue(remainingValue)) to go"
-        }
-
-        return TodayGoalProgressPresentation(
-            summaryText: summaryWithRemaining,
-            readinessText: nil,
-            fraction: clampedProgress,
-            isComplete: false
-        )
+        cachedTodayGoalProgress
     }
 
     private func formattedTodayGoalValue(_ value: Double) -> String {
@@ -1644,14 +1820,8 @@ struct HabitDetailSheet: View {
         measureMainThreadWork("bootstrap.prepare") {
             habitLogService.prepare(habit)
         }
-        measureMainThreadWork("bootstrap.historyProjection") {
-            refreshHistoryProjectionState(seedFromCommitted: false)
-        }
-        measureMainThreadWork("bootstrap.historySnapshot") {
-            viewModel.refreshHistorySnapshot(
-                projectedDayStates: historyProjectedDayStates,
-                calendar: calculationCalendar
-            )
+        measureMainThreadWork("bootstrap.historyProjectionSnapshot") {
+            applyHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
         }
         // Do not keep header/meta content blocked on progress snapshot timing.
         metadataSectionState = .loaded(())
@@ -1814,6 +1984,10 @@ struct HabitDetailSheet: View {
         rhythmSectionState = .loading
         snapshotRefreshTask?.cancel()
         goalProgressAnimationResetTask?.cancel()
+        detailScrollIdleTask?.cancel()
+        isDetailScrollActive = false
+        deferredRefreshQueue = DetailDeferredRefreshQueue()
+        lastObservedDetailScrollOffset = nil
         shouldAnimateGoalProgress = false
     }
 
