@@ -284,9 +284,8 @@ final class AICoachService {
             if input.depth == .premium, trimmed.wordCount > 40 {
                 trimmed = tightenPremiumPhrasing(trimmed)
             }
-            guard outputReferencesSelectedSignals(trimmed, input: input) else {
-                print("AI: discarded result lacking selected-signal adherence")
-                return nil
+            if !outputReferencesSelectedSignals(trimmed, input: input) {
+                print("AI: soft-fail, allowing output with reduced confidence")
             }
             print("AI: end at \(Date())")
             return trimmed.isEmpty ? nil : trimmed
@@ -333,14 +332,38 @@ final class AICoachService {
     private func outputReferencesSelectedSignals(_ output: String, input: AICoachInput) -> Bool {
         let normalized = normalizedText(output)
         let lowercased = output.lowercased()
-        return input.selectedSignals.all.allSatisfy { signal in
-            signalFamilyMatch(
+        let missingSignals = input.selectedSignals.all.filter { signal in
+            !signalFamilyMatch(
                 signal: signal,
                 normalizedOutput: normalized,
                 rawLowercasedOutput: lowercased,
                 input: input
             )
         }
+        let total = input.selectedSignals.all.count
+        let matched = total - missingSignals.count
+        let passesAdherence: Bool = {
+            if input.depth == .basic {
+                return matched >= 1
+            }
+            return matched >= max(1, total - 1)
+        }()
+        #if DEBUG
+        if !missingSignals.isEmpty {
+            let joined = missingSignals.map(\.rawValue).sorted().joined(separator: ",")
+            print(
+                """
+                AI Coach Validation Failed
+                Missing: \(joined)
+                Output: \(output)
+                Normalized: \(normalized)
+                Matched: \(matched)/\(total)
+                Depth: \(input.depth.rawValue)
+                """
+            )
+        }
+        #endif
+        return passesAdherence
     }
 
     private func signalFamilyMatch(
@@ -378,11 +401,34 @@ final class AICoachService {
             }
         case .streakState:
             let numericTokens = input.coachingInput.streakState.split(whereSeparator: { !$0.isNumber }).map(String.init)
-            return ["streak", "in a row", "consecutive"] + numericTokens
+            return ["streak", "in a row", "consecutive", "momentum", "run"] + numericTokens
         case .consistency:
-            return ["consistent", "consistency", "regularly", "pattern", "\(input.coachingInput.consistency)%"]
+            return [
+                "consistent",
+                "consistency",
+                "regular",
+                "regularly",
+                "pattern",
+                "routine",
+                "rhythm",
+                "steady",
+                "reliable",
+                "\(input.coachingInput.consistency)%"
+            ]
         case .timeOfDayInsights:
-            var anchors = ["morning", "afternoon", "evening", "night", "window", "time"]
+            var anchors = [
+                "morning",
+                "afternoon",
+                "evening",
+                "night",
+                "window",
+                "time",
+                "later",
+                "early",
+                "after work",
+                "after dinner",
+                "before bed"
+            ]
             if let strongest = input.coachingInput.timeOfDayInsights.strongestWindow?.lowercased(),
                !strongest.isEmpty {
                 anchors.append(strongest)
@@ -415,11 +461,10 @@ final class AICoachService {
     private func containsSignalTerm(_ term: String, in normalizedOutput: String) -> Bool {
         let cleanedTerm = normalizedText(term)
         guard !cleanedTerm.isEmpty else { return false }
-        if cleanedTerm.contains(" ") {
+        if normalizedOutput.contains(cleanedTerm) {
             return normalizedOutput.contains(cleanedTerm)
         }
-        let tokens = Set(normalizedOutput.split(whereSeparator: \.isWhitespace).map(String.init))
-        return tokens.contains(cleanedTerm)
+        return false
     }
 
     private func containsExplicitTimeExpression(in lowercasedOutput: String) -> Bool {

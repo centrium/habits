@@ -255,7 +255,47 @@ final class AICoachServiceTests: XCTestCase {
         XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
     }
 
-    private func makeAICoachInput(selectedSignals: SelectedCoachingSignals) -> AICoachInput {
+    func testSignalFamilyValidationAcceptsReliabilityAndRhythmLanguageForConsistency() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: nil)
+        )
+
+        let output = "Your rhythm looks reliable this week. Use the same window again today."
+
+        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationBasicRequiresAtLeastOneMatch() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: nil),
+            depth: .basic
+        )
+        let output = "Your routine is steady this week. Use the same window again today."
+        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationPremiumAllowsOneMiss() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: .timeOfDayInsights),
+            depth: .premium
+        )
+        let output = "Your routine has been reliable this week. Use the same window again today."
+        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationPremiumFailsWhenAllSelectedSignalsMissing() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: .timeOfDayInsights),
+            depth: .premium
+        )
+        let output = "You are making good progress and this can keep improving."
+        XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    private func makeAICoachInput(
+        selectedSignals: SelectedCoachingSignals,
+        depth: CoachingDepth = .premium
+    ) -> AICoachInput {
         let coachingInput = CoachingInput(
             version: 1,
             identityState: .build,
@@ -270,7 +310,7 @@ final class AICoachServiceTests: XCTestCase {
         )
         return AICoachInput(
             coachingInput: coachingInput,
-            depth: .premium,
+            depth: depth,
             selectedSignals: selectedSignals,
             habitName: "Walk",
             recentLogs: "Mon 19:00, Tue 18:30",
