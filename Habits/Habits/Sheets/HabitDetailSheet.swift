@@ -378,7 +378,7 @@ struct HabitDetailSheet: View {
                         logAnchorDate: selectedDate
                     )
                 }
-                .presentationDetents([.medium, .large], selection: $insightsDetent)
+                .presentationDetents([.large], selection: $insightsDetent)
                 .presentationBackground(CadenceTokens.Color.Background.primary)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)

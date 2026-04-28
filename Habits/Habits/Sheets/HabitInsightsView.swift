@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftData
 
 struct HabitInsightsView: View {
-    @Environment(\.colorScheme) private var colorScheme
     let habit: Habit
     let logAnchorDate: Date?
 
@@ -23,26 +22,31 @@ struct HabitInsightsView: View {
 
     var body: some View {
         let title = insightsViewModel?.title ?? "Insights"
-        ScrollView {
-            if let insightsViewModel {
-                HabitInsightsCardsRenderer(
-                    viewModel: insightsViewModel,
-                    accent: accent,
-                    hasAnimatedIn: hasAnimatedIn
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 26)
-                .padding(.bottom, 40)
-            } else {
-                ProgressView()
-                    .padding(.top, 40)
+        ZStack {
+            CadenceTokens.Color.Background.primary
+                .ignoresSafeArea()
+
+            ScrollView {
+                if let insightsViewModel {
+                    HabitInsightsCardsRenderer(
+                        viewModel: insightsViewModel,
+                        accent: accent,
+                        hasAnimatedIn: hasAnimatedIn
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 26)
+                    .padding(.bottom, 40)
+                } else {
+                    ProgressView()
+                        .padding(.top, 40)
+                }
             }
+            .cadenceSurface(
+                accent: Color.systemAccent,
+                accentKey: "habit-insights-brand-ambient"
+            )
         }
-        .cadenceSurface(
-            accent: Color.systemAccent,
-            accentKey: "habit-insights-brand-ambient"
-        )
-        .background(colorScheme == .light ? Color.appBackground : Color.appGroupedBackground)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
