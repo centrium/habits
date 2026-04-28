@@ -25,7 +25,7 @@ final class HabitInsightsServiceTests: BaseTestCase {
         let snapshot = service.snapshot(for: habit, now: now)
 
         // Then
-        XCTAssertEqual(snapshot.consistency, 30)
+        XCTAssertEqual(snapshot.consistency, 29)
     }
 
     func testBestMonthReturnsMonthWithMostCompletionDays() {
@@ -155,5 +155,108 @@ final class HabitInsightsServiceTests: BaseTestCase {
 
         // Then
         XCTAssertEqual(snapshot.consistency, 100)
+    }
+
+    func testCanonicalConsistencyMetricsZeroOfSevenDaysReturnsZeroPercent() {
+        let now = TestDateFactory.date(2026, 3, 10, hour: 18, calendar: calendar)
+        let createdAt = TestDateFactory.date(2026, 1, 1, hour: 9, calendar: calendar)
+        let habit = TestHabitFactory.frequency(
+            createdAt: createdAt,
+            entries: [],
+            calendar: calendar
+        )
+
+        let metrics = HabitInsightsService(calendar: calendar).consistencyMetrics(for: habit, now: now)
+
+        XCTAssertEqual(metrics.window, 7)
+        XCTAssertEqual(metrics.daysCompleted, 0)
+        XCTAssertEqual(metrics.daysAvailable, 7)
+        XCTAssertEqual(metrics.consistencyPercentage, 0)
+    }
+
+    func testCanonicalConsistencyMetricsThreeOfSevenDaysRoundsToFortyThreePercent() {
+        let now = TestDateFactory.date(2026, 3, 10, hour: 18, calendar: calendar)
+        let createdAt = TestDateFactory.date(2026, 1, 1, hour: 9, calendar: calendar)
+        let entries: [TestHabitFactory.Entry] = [
+            .init(timestamp: TestDateFactory.date(2026, 3, 4, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 7, hour: 10, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 7, calendar: calendar), value: 1),
+        ]
+        let habit = TestHabitFactory.frequency(
+            createdAt: createdAt,
+            entries: entries,
+            calendar: calendar
+        )
+
+        let metrics = HabitInsightsService(calendar: calendar).consistencyMetrics(for: habit, now: now)
+
+        XCTAssertEqual(metrics.daysCompleted, 3)
+        XCTAssertEqual(metrics.daysAvailable, 7)
+        XCTAssertEqual(metrics.consistencyPercentage, 43)
+    }
+
+    func testCanonicalConsistencyMetricsSixOfSevenDaysRoundsToEightySixPercent() {
+        let now = TestDateFactory.date(2026, 3, 10, hour: 18, calendar: calendar)
+        let createdAt = TestDateFactory.date(2026, 1, 1, hour: 9, calendar: calendar)
+        let entries: [TestHabitFactory.Entry] = [
+            .init(timestamp: TestDateFactory.date(2026, 3, 4, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 5, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 6, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 7, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 8, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 8, calendar: calendar), value: 1),
+        ]
+        let habit = TestHabitFactory.frequency(
+            createdAt: createdAt,
+            entries: entries,
+            calendar: calendar
+        )
+
+        let metrics = HabitInsightsService(calendar: calendar).consistencyMetrics(for: habit, now: now)
+
+        XCTAssertEqual(metrics.daysCompleted, 6)
+        XCTAssertEqual(metrics.daysAvailable, 7)
+        XCTAssertEqual(metrics.consistencyPercentage, 86)
+    }
+
+    func testCanonicalConsistencyMetricsFrequencyHabitRequiresTargetBeforeDayCountsComplete() {
+        let now = TestDateFactory.date(2026, 3, 10, hour: 18, calendar: calendar)
+        let createdAt = TestDateFactory.date(2026, 1, 1, hour: 9, calendar: calendar)
+        let entries: [TestHabitFactory.Entry] = [
+            .init(timestamp: TestDateFactory.date(2026, 3, 9, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 8, calendar: calendar), value: 1),
+            .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 9, calendar: calendar), value: 1),
+        ]
+        let habit = TestHabitFactory.frequency(
+            target: 2,
+            createdAt: createdAt,
+            entries: entries,
+            calendar: calendar
+        )
+
+        let metrics = HabitInsightsService(calendar: calendar).consistencyMetrics(for: habit, now: now)
+
+        XCTAssertEqual(metrics.daysCompleted, 1)
+        XCTAssertEqual(metrics.consistencyPercentage, 14)
+    }
+
+    func testCanonicalConsistencyMetricsCumulativePartialProgressDoesNotCountCompleteDay() {
+        let now = TestDateFactory.date(2026, 3, 10, hour: 18, calendar: calendar)
+        let createdAt = TestDateFactory.date(2026, 1, 1, hour: 9, calendar: calendar)
+        let entries: [TestHabitFactory.Entry] = [
+            .init(timestamp: TestDateFactory.date(2026, 3, 9, hour: 8, calendar: calendar), value: 50),
+            .init(timestamp: TestDateFactory.date(2026, 3, 10, hour: 8, calendar: calendar), value: 100),
+        ]
+        let habit = TestHabitFactory.cumulative(
+            target: 100,
+            createdAt: createdAt,
+            entries: entries,
+            calendar: calendar
+        )
+
+        let metrics = HabitInsightsService(calendar: calendar).consistencyMetrics(for: habit, now: now)
+
+        XCTAssertEqual(metrics.daysCompleted, 1)
+        XCTAssertEqual(metrics.consistencyPercentage, 14)
     }
 }

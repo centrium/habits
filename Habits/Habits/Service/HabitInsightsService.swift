@@ -1,5 +1,16 @@
 import Foundation
 
+struct HabitConsistencyMetrics: Codable, Equatable {
+    let adherenceRate: Double
+    let daysCompleted: Int
+    let daysAvailable: Int
+    let window: Int
+
+    var consistencyPercentage: Int {
+        Int((min(max(adherenceRate, 0), 1) * 100).rounded())
+    }
+}
+
 struct HabitInsightsMetricsSnapshot: Codable, Equatable {
     let consistency: Int
     let bestMonth: String
@@ -8,6 +19,8 @@ struct HabitInsightsMetricsSnapshot: Codable, Equatable {
 }
 
 struct HabitInsightsService {
+    static let canonicalConsistencyWindowDays = 7
+
     private var calendar: Calendar
 
     init(calendar: Calendar = .current) {
@@ -19,25 +32,29 @@ struct HabitInsightsService {
         logs: [HabitLog]? = nil,
         now: Date = .now
     ) -> HabitInsightsMetricsSnapshot {
+        let resolvedLogs = logs ?? habit.logs
         let today = calendar.startOfDay(for: now)
         let trackingStart = normalizedTrackingStart(createdAt: habit.createdAt, today: today)
+        let consistencyMetrics = consistencyMetrics(
+            for: habit,
+            logs: resolvedLogs,
+            now: now
+        )
         let allCompletionDays = normalizedCompletionDays(
-            from: logs ?? habit.logs,
+            for: habit,
+            logs: resolvedLogs,
             today: today
         )
         let completionDaysWithinLifetime = normalizedCompletionDays(
-            from: logs ?? habit.logs,
+            for: habit,
+            logs: resolvedLogs,
             trackingStart: trackingStart,
             today: today
         )
         let streaks = streakLengths(for: habit, logs: logs, now: now)
 
         return HabitInsightsMetricsSnapshot(
-            consistency: consistencyPercentage(
-                completionDays: completionDaysWithinLifetime,
-                trackingStart: trackingStart,
-                today: today
-            ),
+            consistency: consistencyMetrics.consistencyPercentage,
             bestMonth: bestMonthName(completionDays: allCompletionDays, today: today),
             mostMissedDay: mostMissedWeekdayName(
                 completionDays: completionDaysWithinLifetime,
@@ -45,6 +62,37 @@ struct HabitInsightsService {
                 today: today
             ),
             averageStreak: averageStreakLength(streaks: streaks)
+        )
+    }
+
+    func consistencyMetrics(
+        for habit: Habit,
+        logs: [HabitLog]? = nil,
+        now: Date = .now
+    ) -> HabitConsistencyMetrics {
+        let today = calendar.startOfDay(for: now)
+        let window = Self.canonicalConsistencyWindowDays
+        let windowStart = calendar.date(
+            byAdding: .day,
+            value: -(window - 1),
+            to: today
+        ) ?? today
+        let trackingStart = normalizedTrackingStart(createdAt: habit.createdAt, today: today)
+        let effectiveStart = max(windowStart, trackingStart)
+        let daysAvailable = max(1, daySpan(start: effectiveStart, end: today))
+        let completedDays = completedDayStarts(
+            for: habit,
+            logs: logs ?? habit.logs,
+            start: effectiveStart,
+            end: today
+        )
+        let adherenceRate = Double(completedDays.count) / Double(daysAvailable)
+
+        return HabitConsistencyMetrics(
+            adherenceRate: min(max(adherenceRate, 0), 1),
+            daysCompleted: completedDays.count,
+            daysAvailable: daysAvailable,
+            window: window
         )
     }
 
@@ -57,7 +105,8 @@ struct HabitInsightsService {
         if let logs {
             let today = calendar.startOfDay(for: now)
             let completionDays = normalizedCompletionDays(
-                from: logs,
+                for: habit,
+                logs: logs,
                 today: today
             )
             return streakService.streakLengths(from: completionDays)
@@ -73,44 +122,63 @@ private extension HabitInsightsService {
     }
 
     func normalizedCompletionDays(
-        from logs: [HabitLog],
+        for habit: Habit,
+        logs: [HabitLog],
         today: Date
     ) -> Set<Date> {
-        Set(
-            logs.compactMap { log in
-                guard log.frequencyContribution > 0 else { return nil }
-                let day = calendar.startOfDay(for: log.effectiveTimestamp)
-                guard day <= today else { return nil }
-                return day
-            }
+        completedDayStarts(
+            for: habit,
+            logs: logs,
+            start: .distantPast,
+            end: today
         )
     }
 
     func normalizedCompletionDays(
-        from logs: [HabitLog],
+        for habit: Habit,
+        logs: [HabitLog],
         trackingStart: Date,
         today: Date
     ) -> Set<Date> {
-        Set(
-            logs.compactMap { log in
-                guard log.frequencyContribution > 0 else { return nil }
+        completedDayStarts(
+            for: habit,
+            logs: logs,
+            start: trackingStart,
+            end: today
+        )
+    }
+
+    func completedDayStarts(
+        for habit: Habit,
+        logs: [HabitLog],
+        start: Date,
+        end: Date
+    ) -> Set<Date> {
+        let streakService = StreakService(calendar: calendar)
+        let normalizedStart = calendar.startOfDay(for: start)
+        let normalizedEnd = calendar.startOfDay(for: end)
+        let candidateDays = Set(
+            logs.compactMap { log -> Date? in
                 let day = calendar.startOfDay(for: log.effectiveTimestamp)
-                guard day >= trackingStart, day <= today else { return nil }
+                guard day >= normalizedStart, day <= normalizedEnd else { return nil }
                 return day
+            }
+        )
+
+        return Set(
+            candidateDays.filter { day in
+                streakService.isDayComplete(goal: habit, on: day)
             }
         )
     }
 
-    func consistencyPercentage(
-        completionDays: Set<Date>,
-        trackingStart: Date,
-        today: Date
-    ) -> Int {
-        let elapsedDays = calendar.dateComponents([.day], from: trackingStart, to: today).day ?? 0
-        let availableDays = max(1, elapsedDays + 1)
-        let ratio = Double(completionDays.count) / Double(availableDays)
-        let clamped = min(max(ratio, 0), 1)
-        return Int((clamped * 100).rounded())
+    func daySpan(start: Date, end: Date) -> Int {
+        let elapsedDays = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: start),
+            to: calendar.startOfDay(for: end)
+        ).day ?? 0
+        return max(1, elapsedDays + 1)
     }
 
     func bestMonthName(

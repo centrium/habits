@@ -297,12 +297,22 @@ final class AICoachService {
     }
 
     func isAppleIntelligenceAvailable() -> Bool {
+#if targetEnvironment(simulator)
+        guard simulatorRepresentsAppleIntelligenceCapableDevice() else { return false }
 #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             return SystemLanguageModel.default.isAvailable
         }
 #endif
         return false
+#else
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+            return SystemLanguageModel.default.isAvailable
+        }
+#endif
+        return false
+#endif
     }
 
     private func isCurrent(sequence: UInt64) async -> Bool {
@@ -310,6 +320,11 @@ final class AICoachService {
     }
 
     private func generateFromAppleIntelligence(prompt: String) async throws -> String {
+#if targetEnvironment(simulator)
+        guard simulatorRepresentsAppleIntelligenceCapableDevice() else {
+            _ = prompt
+            throw AICoachError.unavailable
+        }
 #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             let model = SystemLanguageModel.default
@@ -327,7 +342,47 @@ final class AICoachService {
         }
 #endif
         throw AICoachError.unavailable
+#else
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+            let model = SystemLanguageModel.default
+            guard model.isAvailable else {
+                throw AICoachError.unavailable
+            }
+
+            let session = LanguageModelSession(model: model)
+            let options = GenerationOptions(
+                temperature: 0.4,
+                maximumResponseTokens: 120
+            )
+            let response = try await session.respond(to: prompt, options: options)
+            return response.content
+        }
+#endif
+        throw AICoachError.unavailable
+#endif
     }
+
+#if targetEnvironment(simulator)
+    private func simulatorRepresentsAppleIntelligenceCapableDevice() -> Bool {
+        // SIMULATOR_MODEL_IDENTIFIER examples:
+        // iPhone15,2 (14 Pro), iPhone16,1 (15 Pro), iPhone17,1 (16 Pro)
+        guard let identifier = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] else {
+            return false
+        }
+        guard identifier.hasPrefix("iPhone"),
+              let familyToken = identifier
+                .split(separator: ",")
+                .first?
+                .replacingOccurrences(of: "iPhone", with: ""),
+              let family = Int(familyToken) else {
+            return false
+        }
+
+        // Apple Intelligence-capable iPhones start at iPhone16,x (15 Pro generation) and newer.
+        return family >= 16
+    }
+#endif
 
     private func outputReferencesSelectedSignals(_ output: String, input: AICoachInput) -> Bool {
         let normalized = normalizedText(output)

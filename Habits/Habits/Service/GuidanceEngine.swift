@@ -399,6 +399,10 @@ enum GuidanceEngine {
         identitySnapshot: HabitIdentityStateSnapshot? = nil,
         rotationStore: GuidanceRotationStoring = UserDefaultsGuidanceRotationStore()
     ) -> GuidanceOutput {
+        let consistencyMetrics = HabitInsightsService(calendar: calendar).consistencyMetrics(
+            for: input.habit,
+            now: input.now
+        )
         let snapshot = identitySnapshot ?? HabitIdentityStateResolver.recentSnapshot(
             for: input.habit,
             calendar: calendar,
@@ -408,6 +412,8 @@ enum GuidanceEngine {
         let selectionContext = selectionContext(
             for: input,
             snapshot: snapshot,
+            consistencyDaysCompleted: consistencyMetrics.daysCompleted,
+            consistencyDaysAvailable: consistencyMetrics.daysAvailable,
             calendar: calendar
         )
         let confidence = confidenceBand(from: selectionContext.timingConfidence)
@@ -1267,6 +1273,8 @@ enum GuidanceEngine {
     private static func selectionContext(
         for input: GuidanceInput,
         snapshot: HabitIdentityStateSnapshot,
+        consistencyDaysCompleted: Int,
+        consistencyDaysAvailable: Int,
         calendar: Calendar
     ) -> GuidanceSelectionContext {
         let currentHour = calendar.component(.hour, from: input.now)
@@ -1305,8 +1313,8 @@ enum GuidanceEngine {
             optimalBucket: optimalBucket,
             timePosition: currentTimePosition,
             cutoffHour: cutoffHour,
-            activeDays: snapshot.activeDays,
-            windowDays: snapshot.windowDays,
+            activeDays: max(0, consistencyDaysCompleted),
+            windowDays: max(1, consistencyDaysAvailable),
             pattern: input.pattern
         )
     }

@@ -2197,8 +2197,9 @@ struct HabitDetailSheet: View {
         let strongestWindow = cachedComputedState?.timingInsight.map { humanTime(for: $0.peakHour) }
         let timingConfidence = frozenStateModel?.timingConfidence ?? .low
         let streakLabel = streakDescription(streakState)
-        let completionRate = Int((identityState.completionRate ?? 0).rounded())
-        let consistency = max(0, min(completionRate, 100))
+        let consistencyMetrics = HabitInsightsService(calendar: calculationCalendar)
+            .consistencyMetrics(for: habit, now: now)
+        let consistency = consistencyMetrics.consistencyPercentage
         let startOfDay = calculationCalendar.startOfDay(for: now)
         let dayBucket = Int64(startOfDay.timeIntervalSince1970)
         let dayOrdinal = calculationCalendar.ordinality(of: .day, in: .era, for: startOfDay) ?? 0
@@ -2212,7 +2213,7 @@ struct HabitDetailSheet: View {
             ),
             recentBehaviourSummary: behaviourSummary(for: resolvedIdentityState),
             todayStatus: BehaviourCopyFormatter.dailyStatus(isDoneToday: hasActivityToday()),
-            windowDays: max(1, identityState.windowDays),
+            windowDays: max(1, consistencyMetrics.daysAvailable),
             dayBucket: dayBucket,
             dayOrdinal: dayOrdinal
         )
