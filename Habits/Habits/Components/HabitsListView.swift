@@ -671,6 +671,10 @@ struct HabitsListView: View {
 
         let isPremium = purchaseService.premiumStatus == .premium
         let now = appTime.now
+        await habitLogService.ensureComputedStates(
+            for: visibleHabits.map(\.id),
+            referenceDate: now
+        )
         let requestSequence = todayInsightRequestSequence + 1
         todayInsightRequestSequence = requestSequence
 
@@ -754,6 +758,11 @@ struct HabitsListView: View {
                 habit: habit,
                 referenceDate: now,
                 weekStartPreference: userSettings.weekStartPreference
+            )
+            StateConsistencyTraceLogger.log(
+                surface: "Today",
+                habitID: habit.id,
+                state: computedState
             )
             let projectedToday = uiStateStore.projectedDayState(
                 habitID: habit.id,

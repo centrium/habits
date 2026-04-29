@@ -134,7 +134,6 @@ private extension GlobalInsightsService {
         for habit: Habit,
         now: Date
     ) -> HabitMetrics {
-        let insightsService = HabitInsightsService(calendar: calendar)
         let computedState = HabitComputationEngine(
             calendar: calendar,
             weekStartPreference: weekStartPreference
@@ -154,7 +153,7 @@ private extension GlobalInsightsService {
         return HabitMetrics(
             habit: habit,
             identityState: computedState.identityState,
-            consistency: insightsService.snapshot(for: habit, now: now).consistency,
+            consistency: computedState.consistency.percentage,
             riskScore: PerformanceSignalsCalculator.habitRiskScore(
                 for: habit,
                 calendar: calendar,

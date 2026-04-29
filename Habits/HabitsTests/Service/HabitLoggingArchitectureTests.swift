@@ -389,9 +389,14 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         XCTAssertEqual(resolved.streakState.currentStreak, 0)
         XCTAssertEqual(resolved.streakState.status, .safe)
         XCTAssertFalse(resolved.streakState.isBroken)
+        XCTAssertEqual(resolved.consistency.percentage, 0)
+        XCTAssertEqual(resolved.consistency.daysCompleted, 0)
+        XCTAssertEqual(resolved.consistency.daysAvailable, 1)
+        XCTAssertEqual(resolved.consistency.windowDays, 7)
         let cached = try XCTUnwrap(service.computedStateByHabitID[initialHabit.id])
         XCTAssertEqual(cached.streakState.currentStreak, 0)
         XCTAssertEqual(cached.streakState.status, .safe)
+        XCTAssertEqual(cached.consistency.percentage, 0)
     }
 
     private func persistedHabit(id: UUID, in container: ModelContainer) throws -> Habit? {

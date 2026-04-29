@@ -60,6 +60,11 @@ struct HabitInsightsEngine {
             globalLogs: globalLogs.isEmpty ? habit.logs : globalLogs,
             now: now
         )
+        StateConsistencyTraceLogger.log(
+            surface: "Insights",
+            habitID: habit.id,
+            state: computedState
+        )
 
         let streakSnapshot = Snapshot.Streak(
             current: computedState.streakState.currentStreak,
@@ -171,7 +176,7 @@ struct HabitInsightsEngine {
         cards.append(
             .overview(
                 HabitInsightsOverviewBlock(
-                    consistency: overviewSnapshot.consistency,
+                    consistency: computedState.consistency.percentage,
                     bestMonth: overviewSnapshot.bestMonth,
                     mostMissedDay: overviewSnapshot.mostMissedDay,
                     averageStreak: overviewSnapshot.averageStreak,

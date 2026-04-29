@@ -40,9 +40,17 @@ struct WeeklyPattern: Equatable {
     let sampleSize: Int
 }
 
+struct HabitComputedConsistency: Equatable {
+    let percentage: Int
+    let daysCompleted: Int
+    let daysAvailable: Int
+    let windowDays: Int
+}
+
 struct HabitComputedState: Equatable {
     let identityState: IdentityState
     let streakState: StreakState
+    let consistency: HabitComputedConsistency
     let rhythmState: RhythmState
     let timingInsight: TimingInsight?
     let completionStats: CompletionStats
@@ -97,6 +105,11 @@ final class HabitComputationEngine {
             timingDiagnostics: timingComputation.diagnostics,
             now: now
         )
+        let consistency = computedConsistency(
+            completedDays: completedDays,
+            createdAt: habit.createdAt,
+            now: now
+        )
         let weeklyPattern = computeWeeklyPattern(
             logs: normalizedLogs,
             goalType: habit.goalType,
@@ -143,6 +156,7 @@ final class HabitComputationEngine {
         return HabitComputedState(
             identityState: gatedIdentity,
             streakState: streakState,
+            consistency: consistency,
             rhythmState: rhythmState,
             timingInsight: timingInsight,
             completionStats: completionStats,
@@ -264,6 +278,27 @@ private extension HabitComputationEngine {
             uniqueCompletedDays: completedDays.count,
             recentActiveDays: recentActiveDays,
             validTimingSamples: timingDiagnostics.uniqueEventCount
+        )
+    }
+
+    func computedConsistency(
+        completedDays: Set<Date>,
+        createdAt: Date,
+        now: Date
+    ) -> HabitComputedConsistency {
+        let today = calendar.startOfDay(for: now)
+        let windowDays = 7
+        let windowStart = calendar.date(byAdding: .day, value: -(windowDays - 1), to: today) ?? today
+        let trackingStart = min(calendar.startOfDay(for: createdAt), today)
+        let effectiveStart = max(windowStart, trackingStart)
+        let daysAvailable = daySpan(start: effectiveStart, end: today)
+        let daysCompleted = completedDays.filter { $0 >= effectiveStart && $0 <= today }.count
+        let adherenceRate = Double(daysCompleted) / Double(max(1, daysAvailable))
+        return HabitComputedConsistency(
+            percentage: Int((min(max(adherenceRate, 0), 1) * 100).rounded()),
+            daysCompleted: daysCompleted,
+            daysAvailable: max(1, daysAvailable),
+            windowDays: windowDays
         )
     }
 
@@ -491,6 +526,15 @@ private extension HabitComputationEngine {
         let current = scores[hour]
         let next = scores[(hour + 1) % 24]
         return (previous + current + next) / 3.0
+    }
+
+    func daySpan(start: Date, end: Date) -> Int {
+        let elapsedDays = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: start),
+            to: calendar.startOfDay(for: end)
+        ).day ?? 0
+        return max(1, elapsedDays + 1)
     }
 }
 

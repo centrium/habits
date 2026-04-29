@@ -1167,55 +1167,30 @@ struct HabitDetailSheet: View {
     }
 
     private func refreshIdentitySnapshotCache() {
-        let normalizedWindow = 7
-        let today = calculationCalendar.startOfDay(for: Date())
-        let earliest = calculationCalendar.date(byAdding: .day, value: -(normalizedWindow - 1), to: today) ?? today
-        let last14Start = calculationCalendar.date(byAdding: .day, value: -13, to: today) ?? today
-
-        var uniqueDays = 0
-        var activeDays = 0
-        var activeDaysLast14 = 0
-        var totalLogs = 0
-
-        for (day, state) in historyProjectedDayStates {
-            let normalizedDay = calculationCalendar.startOfDay(for: day)
-            guard normalizedDay <= today else { continue }
-            let hasActivity = state.count > 0 || state.value > 0
-            guard hasActivity else { continue }
-
-            uniqueDays += 1
-            totalLogs += max(0, state.count)
-
-            if normalizedDay >= earliest && normalizedDay <= today {
-                activeDays += 1
-            }
-            if normalizedDay >= last14Start && normalizedDay <= today {
-                activeDaysLast14 += 1
-            }
-        }
-
-        let completionRate = Double(activeDays) / Double(normalizedWindow)
-        let state: HabitIdentityState
-        switch completionRate {
-        case ..<0.2:
-            state = activeDays > 0 ? .rebuilding : .gettingStarted
-        case ..<0.5:
-            state = .building
-        case ..<0.75:
-            state = .steady
-        default:
-            state = .strong
-        }
-
+        let now = Date()
+        let computedState = habitLogService.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: now,
+            weekStartPreference: userSettings.weekStartPreference
+        )
+        StateConsistencyTraceLogger.log(
+            surface: "Detail",
+            habitID: habit.id,
+            state: computedState
+        )
+        let consistency = computedState.consistency
+        let completionRate = consistency.daysAvailable > 0
+            ? Double(consistency.daysCompleted) / Double(consistency.daysAvailable)
+            : 0
         cachedIdentitySnapshot = HabitIdentityStateSnapshot(
-            state: state,
+            state: computedState.identityState,
             completionRate: completionRate,
-            activeDays: activeDays,
-            windowDays: normalizedWindow,
-            hasRecentData: activeDays > 0,
-            totalLogs: totalLogs,
-            uniqueDays: uniqueDays,
-            activeDaysLast14: activeDaysLast14
+            activeDays: consistency.daysCompleted,
+            windowDays: consistency.daysAvailable,
+            hasRecentData: consistency.daysCompleted > 0,
+            totalLogs: computedState.completionStats.totalLogs,
+            uniqueDays: computedState.completionStats.uniqueCompletedDays,
+            activeDaysLast14: computedState.completionStats.recentActiveDays
         )
     }
 
@@ -2179,17 +2154,18 @@ struct HabitDetailSheet: View {
 
     private func buildCoachingContext(
         now: Date,
-        streakState: StreakState,
-        identityState: HabitIdentityStateSnapshot
+        streakState: StreakState
     ) -> CoachingContext {
-        let cachedComputedState = habitLogService.computedStateByHabitID[habit.id]
-        let resolvedIdentityState = (cachedComputedState?.identityState ?? identityState.state).habitState
-        let strongestWindow = cachedComputedState?.timingInsight.map { humanTime(for: $0.peakHour) }
+        let computedState = habitLogService.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: now,
+            weekStartPreference: userSettings.weekStartPreference
+        )
+        let resolvedIdentityState = computedState.identityState.habitState
+        let strongestWindow = computedState.timingInsight.map { humanTime(for: $0.peakHour) }
         let timingConfidence = frozenStateModel?.timingConfidence ?? .low
         let streakLabel = streakDescription(streakState)
-        let consistencyMetrics = HabitInsightsService(calendar: calculationCalendar)
-            .consistencyMetrics(for: habit, now: now)
-        let consistency = consistencyMetrics.consistencyPercentage
+        let consistency = computedState.consistency.percentage
         let startOfDay = calculationCalendar.startOfDay(for: now)
         let dayBucket = Int64(startOfDay.timeIntervalSince1970)
         let dayOrdinal = calculationCalendar.ordinality(of: .day, in: .era, for: startOfDay) ?? 0
@@ -2203,7 +2179,7 @@ struct HabitDetailSheet: View {
             ),
             recentBehaviourSummary: behaviourSummary(for: resolvedIdentityState),
             todayStatus: BehaviourCopyFormatter.dailyStatus(isDoneToday: hasActivityToday()),
-            windowDays: max(1, consistencyMetrics.daysAvailable),
+            windowDays: computedState.consistency.daysAvailable,
             dayBucket: dayBucket,
             dayOrdinal: dayOrdinal
         )
@@ -2226,8 +2202,7 @@ struct HabitDetailSheet: View {
         let identityState = identityStateSummary()
         let context = buildCoachingContext(
             now: now,
-            streakState: streakState,
-            identityState: identityState
+            streakState: streakState
         )
         coachingContext = context
         if let previousAIFingerprint, previousAIFingerprint != context.aiFingerprint {

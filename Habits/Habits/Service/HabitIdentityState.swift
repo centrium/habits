@@ -385,10 +385,7 @@ enum HabitStateResolver {
             now: now
         )
         let normalizedLogs = InsightLogNormalizer.normalize(logs: habit.logs, calendar: calendar)
-        let consistency = HabitInsightsService(calendar: calendar).snapshot(
-            for: habit,
-            now: now
-        ).consistency
+        let consistency = computedState.consistency.percentage
         let habitStrength = PerformanceSignalsCalculator.habitStrengthScore(
             for: habit,
             logs: normalizedLogs,

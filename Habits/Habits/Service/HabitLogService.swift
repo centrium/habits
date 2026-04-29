@@ -678,6 +678,12 @@ extension HabitLogService {
                 isBroken: false,
                 status: .safe
             ),
+            consistency: HabitComputedConsistency(
+                percentage: 0,
+                daysCompleted: 0,
+                daysAvailable: 1,
+                windowDays: 7
+            ),
             rhythmState: RhythmState(
                 rhythm: nil,
                 isForming: true,

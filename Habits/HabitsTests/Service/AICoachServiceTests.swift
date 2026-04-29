@@ -250,7 +250,7 @@ final class AICoachServiceTests: XCTestCase {
             selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: .consistency)
         )
 
-        let output = "Keep going, you are doing great. Stay consistent and do your best."
+        let output = "Keep going, you are doing great. You got this."
 
         XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
     }
@@ -290,6 +290,107 @@ final class AICoachServiceTests: XCTestCase {
         )
         let output = "You are making good progress and this can keep improving."
         XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testGenerateCallsCompletionWhenRunReturnsNil() async {
+        let habitID = UUID()
+        let requestKey = "nil-result-\(UUID().uuidString)"
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        service.setRunOverrideForTesting { _, _ in
+            nil
+        }
+
+        let completionExpectation = expectation(description: "completion called for nil result")
+        var received: String?
+        service.generate(
+            habitID: habitID,
+            input: input,
+            fingerprint: "fp-nil",
+            requestKey: requestKey
+        ) { text in
+            received = text
+            completionExpectation.fulfill()
+        }
+
+        await fulfillment(of: [completionExpectation], timeout: 1.0)
+        XCTAssertEqual(received, "")
+    }
+
+    func testGenerateTimesOutAndCallsCompletion() async {
+        let localService = AICoachService(generationTimeout: 0.05)
+        localService.resetCacheForTesting()
+        let habitID = UUID()
+        let requestKey = "timeout-\(UUID().uuidString)"
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        localService.setRunOverrideForTesting { _, _ in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return "Late AI text that should not win before timeout"
+        }
+
+        let completionExpectation = expectation(description: "completion called on timeout")
+        var received: String?
+        localService.generate(
+            habitID: habitID,
+            input: input,
+            fingerprint: "fp-timeout",
+            requestKey: requestKey
+        ) { text in
+            received = text
+            completionExpectation.fulfill()
+        }
+
+        await fulfillment(of: [completionExpectation], timeout: 1.0)
+        XCTAssertEqual(received, "")
+    }
+
+    func testGenerateIgnoresLateOlderRequestWhenNewRequestStarts() async {
+        let localService = AICoachService(generationTimeout: 1.0)
+        localService.resetCacheForTesting()
+        let habitID = UUID()
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        localService.setRunOverrideForTesting { _, sequence in
+            if sequence == 1 {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                return "old-result"
+            }
+            return "new-result"
+        }
+
+        let newRequestExpectation = expectation(description: "new request completes")
+        var oldRequestCompletions = 0
+        var newRequestValue: String?
+
+        localService.generate(
+            habitID: habitID,
+            input: input,
+            fingerprint: "fp-old",
+            requestKey: "old-\(UUID().uuidString)"
+        ) { _ in
+            oldRequestCompletions += 1
+        }
+
+        localService.generate(
+            habitID: habitID,
+            input: input,
+            fingerprint: "fp-new",
+            requestKey: "new-\(UUID().uuidString)"
+        ) { text in
+            newRequestValue = text
+            newRequestExpectation.fulfill()
+        }
+
+        await fulfillment(of: [newRequestExpectation], timeout: 1.0)
+        XCTAssertEqual(newRequestValue, "new-result")
+        XCTAssertEqual(oldRequestCompletions, 0)
     }
 
     private func makeAICoachInput(

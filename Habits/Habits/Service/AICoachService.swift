@@ -31,11 +31,19 @@ final class AICoachService {
     static let shared = AICoachService()
 
     let loadingText = "Thinking…"
+    private let generationTimeout: TimeInterval
     private let cacheTTL: TimeInterval = 60 * 60
     private var generationTask: Task<Void, Never>?
     private var requestSequence: UInt64 = 0
     private var lastRequestKey: String?
     private var cacheByHabitID: [UUID: AICoachCache] = [:]
+#if DEBUG
+    private var runOverrideForTesting: (@Sendable (AICoachInput, UInt64) async -> String?)?
+#endif
+
+    init(generationTimeout: TimeInterval = 4.0) {
+        self.generationTimeout = generationTimeout
+    }
 
     @MainActor
     func generate(
@@ -66,16 +74,19 @@ final class AICoachService {
 
         generationTask = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
-            guard let result = await self.run(clean, sequence: sequence) else { return }
+            let result = await self.resolveWithTimeout(clean, sequence: sequence) ?? ""
             print("AI: main actor hop at \(Date())")
             await MainActor.run {
-                self.updateCache(
-                    habitID: habitID,
-                    text: result,
-                    fingerprint: fingerprint,
-                    depth: input.depth,
-                    generatedAt: .now
-                )
+                guard sequence == self.requestSequence else { return }
+                if !result.isEmpty {
+                    self.updateCache(
+                        habitID: habitID,
+                        text: result,
+                        fingerprint: fingerprint,
+                        depth: input.depth,
+                        generatedAt: .now
+                    )
+                }
                 print("AI: publish end at \(Date())")
                 onComplete(result)
             }
@@ -141,6 +152,9 @@ final class AICoachService {
         generationTask = nil
         requestSequence = 0
         lastRequestKey = nil
+#if DEBUG
+        runOverrideForTesting = nil
+#endif
     }
 
 #if DEBUG
@@ -172,6 +186,13 @@ final class AICoachService {
     @MainActor
     func resetCacheForTesting() {
         resetCache()
+    }
+
+    @MainActor
+    func setRunOverrideForTesting(
+        _ block: (@Sendable (AICoachInput, UInt64) async -> String?)?
+    ) {
+        runOverrideForTesting = block
     }
 
     func outputReferencesSelectedSignalsForTesting(_ output: String, input: AICoachInput) -> Bool {
@@ -293,6 +314,34 @@ final class AICoachService {
             guard !Task.isCancelled, await isCurrent(sequence: sequence) else { return nil }
             print("AI: end at \(Date())")
             return nil
+        }
+    }
+
+    private func resolveWithTimeout(_ input: AICoachInput, sequence: UInt64) async -> String? {
+        await withTaskGroup(of: String?.self) { group in
+            group.addTask { [weak self] in
+                guard let self else { return nil }
+#if DEBUG
+                if let override = await MainActor.run(body: { self.runOverrideForTesting }) {
+                    return await override(input, sequence)
+                }
+#endif
+                return await self.run(input, sequence: sequence)
+            }
+            group.addTask { [weak self] in
+                guard let self else { return nil }
+                let timeoutNanos = UInt64(max(self.generationTimeout, 0) * 1_000_000_000)
+                if timeoutNanos > 0 {
+                    try? await Task.sleep(nanoseconds: timeoutNanos)
+                }
+                guard !Task.isCancelled else { return nil }
+                guard await self.isCurrent(sequence: sequence) else { return nil }
+                return ""
+            }
+
+            let firstResult = await group.next() ?? nil
+            group.cancelAll()
+            return firstResult
         }
     }
 
