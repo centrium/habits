@@ -221,6 +221,7 @@ struct HabitDetailSheet: View {
     @State private var guidanceCoachText: String = SafeMinimalCoaching.line
     @State private var guidanceUsedSignals: Set<CoachingSignalID> = []
     @State private var aiUsedSignals: Set<CoachingSignalID> = []
+    @State private var isHandlingStaleAIDiscard = false
     @State private var coachRenderLockedUntil: Date = .distantPast
     @State private var pendingAICandidate: PendingAICandidate?
     @State private var coachRenderUnlockTask: Task<Void, Never>?
@@ -1926,6 +1927,7 @@ struct HabitDetailSheet: View {
         guard viewModel.isActive else { return }
         refreshCoachingContextAndGuidance(now: appTime.now)
         guard let context = coachingContext else { return }
+        let requestFingerprint = context.aiFingerprint
 
         let expectedSignals = expectedUsedSignals(
             depth: context.depth,
@@ -1958,7 +1960,14 @@ struct HabitDetailSheet: View {
             habitID: habit.id,
             input: input,
             fingerprint: context.aiFingerprint,
-            requestKey: requestKey
+            requestKey: requestKey,
+            isStillCurrent: {
+                self.refreshCoachingContextAndGuidance(now: self.appTime.now)
+                return self.coachingContext?.aiFingerprint == requestFingerprint
+            },
+            onDiscardedAsStale: {
+                self.handleDiscardedStaleAICandidate(previousFingerprint: requestFingerprint)
+            }
         ) { finalText in
             self.applyAICandidate(
                 PendingAICandidate(
@@ -1968,6 +1977,22 @@ struct HabitDetailSheet: View {
                 )
             )
         }
+    }
+
+    private func handleDiscardedStaleAICandidate(previousFingerprint: String) {
+        guard viewModel.isActive else { return }
+        if isHandlingStaleAIDiscard { return }
+        isHandlingStaleAIDiscard = true
+        defer { isHandlingStaleAIDiscard = false }
+
+        pendingAICandidate = nil
+        refreshCoachingContextAndGuidance(now: appTime.now)
+        coachPresentationState = .fallbackGuidance(guidanceCoachText)
+
+        guard let context = coachingContext else { return }
+        guard context.aiFingerprint != previousFingerprint else { return }
+        let retryKey = "stale-retry-\(habit.id.uuidString)-\(context.aiFingerprint)"
+        regenerateAICoach(requestKey: retryKey)
     }
 
     private func regenerateAICoachOnAppear() {
@@ -2282,6 +2307,12 @@ struct HabitDetailSheet: View {
     }
 
     private func publishAICandidate(_ candidate: PendingAICandidate) {
+        refreshCoachingContextAndGuidance(now: appTime.now)
+        if coachingContext?.aiFingerprint != candidate.aiFingerprint {
+            handleDiscardedStaleAICandidate(previousFingerprint: candidate.aiFingerprint)
+            return
+        }
+
         let text = normalizeAICoachMessage(candidate.text).trimmingCharacters(in: .whitespacesAndNewlines)
         let isUsable = !text.isEmpty && text.wordCount >= 8 && genericityScore(text) == 0
         guard isUsable else {

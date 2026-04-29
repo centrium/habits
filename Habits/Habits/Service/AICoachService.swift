@@ -51,6 +51,8 @@ final class AICoachService {
         input: AICoachInput,
         fingerprint: String,
         requestKey: String,
+        isStillCurrent: (@MainActor @Sendable () -> Bool)? = nil,
+        onDiscardedAsStale: (@MainActor @Sendable () -> Void)? = nil,
         onComplete: @escaping @MainActor (String) -> Void
     ) {
         guard requestKey != lastRequestKey else { return }
@@ -78,6 +80,10 @@ final class AICoachService {
             print("AI: main actor hop at \(Date())")
             await MainActor.run {
                 guard sequence == self.requestSequence else { return }
+                if let isStillCurrent, isStillCurrent() == false {
+                    onDiscardedAsStale?()
+                    return
+                }
                 if !result.isEmpty {
                     self.updateCache(
                         habitID: habitID,
@@ -434,6 +440,19 @@ final class AICoachService {
 #endif
 
     private func outputReferencesSelectedSignals(_ output: String, input: AICoachInput) -> Bool {
+        if containsGenericMotivationalPhrase(output) {
+            #if DEBUG
+            print(
+                """
+                AI Coach Validation Failed
+                Reason: generic motivational phrasing
+                Output: \(output)
+                """
+            )
+            #endif
+            return false
+        }
+
         let normalized = normalizedText(output)
         let lowercased = output.lowercased()
         let missingSignals = input.selectedSignals.all.filter { signal in
@@ -444,21 +463,25 @@ final class AICoachService {
                 input: input
             )
         }
-        let total = input.selectedSignals.all.count
+        let selectedSignals = input.selectedSignals.all
+        let total = selectedSignals.count
         let matched = total - missingSignals.count
-        let passesAdherence: Bool = {
-            if input.depth == .basic {
-                return matched >= 1
-            }
-            return matched >= max(1, total - 1)
-        }()
+        let matchedSignals = selectedSignals.subtracting(missingSignals)
+        let requiresTimingAndConsistency = selectedSignals.contains(.timeOfDayInsights)
+            && selectedSignals.contains(.consistency)
+        let hasTimingAndConsistency = matchedSignals.contains(.timeOfDayInsights)
+            && matchedSignals.contains(.consistency)
+        let passesAdherence = missingSignals.isEmpty
+            && (!requiresTimingAndConsistency || hasTimingAndConsistency)
         #if DEBUG
-        if !missingSignals.isEmpty {
-            let joined = missingSignals.map(\.rawValue).sorted().joined(separator: ",")
+        if !passesAdherence {
+            let joinedMissing = missingSignals.map(\.rawValue).sorted().joined(separator: ",")
+            let joinedMatched = matchedSignals.map(\.rawValue).sorted().joined(separator: ",")
             print(
                 """
                 AI Coach Validation Failed
-                Missing: \(joined)
+                Missing: \(joinedMissing)
+                Matched: \(joinedMatched)
                 Output: \(output)
                 Normalized: \(normalized)
                 Matched: \(matched)/\(total)
@@ -578,6 +601,21 @@ final class AICoachService {
         }
         let range = NSRange(lowercasedOutput.startIndex..<lowercasedOutput.endIndex, in: lowercasedOutput)
         return regex.firstMatch(in: lowercasedOutput, options: [], range: range) != nil
+    }
+
+    private func containsGenericMotivationalPhrase(_ output: String) -> Bool {
+        let normalized = normalizedText(output)
+        let genericPhrases = [
+            "keep going",
+            "you re doing great",
+            "you are doing great",
+            "stay consistent",
+            "you will succeed",
+            "you got this",
+            "don t give up",
+            "dont give up"
+        ]
+        return genericPhrases.contains { normalized.contains($0) }
     }
 
     private func tightenPremiumPhrasing(_ text: String) -> String {

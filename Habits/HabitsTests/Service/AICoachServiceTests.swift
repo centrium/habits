@@ -292,6 +292,24 @@ final class AICoachServiceTests: XCTestCase {
         XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
     }
 
+    func testSignalFamilyValidationRejectsStayConsistentGenericPhrase() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: nil),
+            depth: .basic
+        )
+        let output = "Stay consistent."
+        XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationRequiresAllSelectedSignals() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: .timeOfDayInsights),
+            depth: .premium
+        )
+        let output = "Your routine has been reliable this week."
+        XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
     func testGenerateCallsCompletionWhenRunReturnsNil() async {
         let habitID = UUID()
         let requestKey = "nil-result-\(UUID().uuidString)"
@@ -391,6 +409,88 @@ final class AICoachServiceTests: XCTestCase {
         await fulfillment(of: [newRequestExpectation], timeout: 1.0)
         XCTAssertEqual(newRequestValue, "new-result")
         XCTAssertEqual(oldRequestCompletions, 0)
+    }
+
+    func testGenerateDiscardsResultWhenCurrentStateValidatorFails() async {
+        let localService = AICoachService(generationTimeout: 1.0)
+        localService.resetCacheForTesting()
+        let habitID = UUID()
+        let requestKey = "stale-discard-\(UUID().uuidString)"
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        localService.setRunOverrideForTesting { _, _ in
+            "stale-result"
+        }
+
+        let staleDiscarded = expectation(description: "stale result discarded")
+        var onCompleteCalls = 0
+        localService.generate(
+            habitID: habitID,
+            input: input,
+            fingerprint: "fp-stale",
+            requestKey: requestKey,
+            isStillCurrent: { false },
+            onDiscardedAsStale: {
+                staleDiscarded.fulfill()
+            }
+        ) { _ in
+            onCompleteCalls += 1
+        }
+
+        await fulfillment(of: [staleDiscarded], timeout: 1.0)
+        XCTAssertEqual(onCompleteCalls, 0)
+        XCTAssertNil(
+            localService.cachedTextIfFresh(
+                habitID: habitID,
+                fingerprint: "fp-stale",
+                depth: input.depth
+            )
+        )
+    }
+
+    func testGeneratePublishesWhenCurrentStateValidatorPasses() async {
+        let localService = AICoachService(generationTimeout: 1.0)
+        localService.resetCacheForTesting()
+        let habitID = UUID()
+        let requestKey = "current-pass-\(UUID().uuidString)"
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        localService.setRunOverrideForTesting { _, _ in
+            "fresh-result"
+        }
+
+        let completionExpectation = expectation(description: "completion called")
+        var discardedCalls = 0
+        var received: String?
+        localService.generate(
+            habitID: habitID,
+            input: input,
+            fingerprint: "fp-fresh",
+            requestKey: requestKey,
+            isStillCurrent: { true },
+            onDiscardedAsStale: {
+                discardedCalls += 1
+            }
+        ) { text in
+            received = text
+            completionExpectation.fulfill()
+        }
+
+        await fulfillment(of: [completionExpectation], timeout: 1.0)
+        XCTAssertEqual(received, "fresh-result")
+        XCTAssertEqual(discardedCalls, 0)
+        XCTAssertEqual(
+            localService.cachedTextIfFresh(
+                habitID: habitID,
+                fingerprint: "fp-fresh",
+                depth: input.depth
+            ),
+            "fresh-result"
+        )
     }
 
     private func makeAICoachInput(
