@@ -21,6 +21,25 @@ struct AICoachInput: Sendable {
 }
 
 final class AICoachService {
+    enum FailureReason: Equatable {
+        case timeout
+        case unavailable
+        case emptyResult
+        case cancelled
+        case serviceDeallocated
+        case internalError
+    }
+
+    enum DiscardReason: Equatable {
+        case stale
+    }
+
+    enum Outcome: Equatable {
+        case success(String)
+        case failure(FailureReason)
+        case discarded(DiscardReason)
+    }
+
     struct AICoachCache {
         let text: String
         let generatedAt: Date
@@ -38,7 +57,7 @@ final class AICoachService {
     private var lastRequestKey: String?
     private var cacheByHabitID: [UUID: AICoachCache] = [:]
 #if DEBUG
-    private var runOverrideForTesting: (@Sendable (AICoachInput, UInt64) async -> String?)?
+    private var runOverrideForTesting: (@Sendable (AICoachInput, UInt64) async -> Outcome)?
 #endif
 
     init(generationTimeout: TimeInterval = 4.0) {
@@ -52,10 +71,12 @@ final class AICoachService {
         fingerprint: String,
         requestKey: String,
         isStillCurrent: (@MainActor @Sendable () -> Bool)? = nil,
-        onDiscardedAsStale: (@MainActor @Sendable () -> Void)? = nil,
-        onComplete: @escaping @MainActor (String) -> Void
+        onTerminal: @escaping @MainActor (Outcome) -> Void
     ) {
-        guard requestKey != lastRequestKey else { return }
+        guard requestKey != lastRequestKey else {
+            onTerminal(.discarded(.stale))
+            return
+        }
         lastRequestKey = requestKey
 
         let clean = sanitized(input)
@@ -64,7 +85,7 @@ final class AICoachService {
             fingerprint: fingerprint,
             depth: input.depth
         ) {
-            onComplete(cached)
+            onTerminal(.success(cached))
             return
         }
 
@@ -75,16 +96,24 @@ final class AICoachService {
         let sequence = requestSequence
 
         generationTask = Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
-            let result = await self.resolveWithTimeout(clean, sequence: sequence) ?? ""
+            guard let self else {
+                await MainActor.run {
+                    onTerminal(.failure(.serviceDeallocated))
+                }
+                return
+            }
+            let outcome = await self.resolveWithTimeout(clean, sequence: sequence)
             print("AI: main actor hop at \(Date())")
             await MainActor.run {
-                guard sequence == self.requestSequence else { return }
-                if let isStillCurrent, isStillCurrent() == false {
-                    onDiscardedAsStale?()
+                guard sequence == self.requestSequence else {
+                    onTerminal(.discarded(.stale))
                     return
                 }
-                if !result.isEmpty {
+                if let isStillCurrent, isStillCurrent() == false {
+                    onTerminal(.discarded(.stale))
+                    return
+                }
+                if case .success(let result) = outcome {
                     self.updateCache(
                         habitID: habitID,
                         text: result,
@@ -94,7 +123,7 @@ final class AICoachService {
                     )
                 }
                 print("AI: publish end at \(Date())")
-                onComplete(result)
+                onTerminal(outcome)
             }
         }
     }
@@ -196,7 +225,7 @@ final class AICoachService {
 
     @MainActor
     func setRunOverrideForTesting(
-        _ block: (@Sendable (AICoachInput, UInt64) async -> String?)?
+        _ block: (@Sendable (AICoachInput, UInt64) async -> Outcome)?
     ) {
         runOverrideForTesting = block
     }
@@ -296,9 +325,14 @@ final class AICoachService {
         """
     }
 
-    private func run(_ input: AICoachInput, sequence: UInt64) async -> String? {
+    private func run(_ input: AICoachInput, sequence: UInt64) async -> Outcome {
         try? await Task.sleep(nanoseconds: 250_000_000)
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled else {
+            if await isCurrent(sequence: sequence) {
+                return .failure(.cancelled)
+            }
+            return .discarded(.stale)
+        }
 
         print("AI: start at \(Date())")
 
@@ -306,7 +340,13 @@ final class AICoachService {
 
         do {
             let result = try await generateFromAppleIntelligence(prompt: prompt)
-            guard !Task.isCancelled, await isCurrent(sequence: sequence) else { return nil }
+            guard !Task.isCancelled else {
+                if await isCurrent(sequence: sequence) {
+                    return .failure(.cancelled)
+                }
+                return .discarded(.stale)
+            }
+            guard await isCurrent(sequence: sequence) else { return .discarded(.stale) }
             var trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
             if input.depth == .premium, trimmed.wordCount > 40 {
                 trimmed = tightenPremiumPhrasing(trimmed)
@@ -315,18 +355,27 @@ final class AICoachService {
                 print("AI: soft-fail, allowing output with reduced confidence")
             }
             print("AI: end at \(Date())")
-            return trimmed.isEmpty ? nil : trimmed
+            return trimmed.isEmpty ? .failure(.emptyResult) : .success(trimmed)
         } catch {
-            guard !Task.isCancelled, await isCurrent(sequence: sequence) else { return nil }
+            guard !Task.isCancelled else {
+                if await isCurrent(sequence: sequence) {
+                    return .failure(.cancelled)
+                }
+                return .discarded(.stale)
+            }
+            guard await isCurrent(sequence: sequence) else { return .discarded(.stale) }
             print("AI: end at \(Date())")
-            return nil
+            if let aiError = error as? AICoachError, case .unavailable = aiError {
+                return .failure(.unavailable)
+            }
+            return .failure(.internalError)
         }
     }
 
-    private func resolveWithTimeout(_ input: AICoachInput, sequence: UInt64) async -> String? {
-        await withTaskGroup(of: String?.self) { group in
+    private func resolveWithTimeout(_ input: AICoachInput, sequence: UInt64) async -> Outcome {
+        await withTaskGroup(of: Outcome.self) { group in
             group.addTask { [weak self] in
-                guard let self else { return nil }
+                guard let self else { return .failure(.serviceDeallocated) }
 #if DEBUG
                 if let override = await MainActor.run(body: { self.runOverrideForTesting }) {
                     return await override(input, sequence)
@@ -335,17 +384,17 @@ final class AICoachService {
                 return await self.run(input, sequence: sequence)
             }
             group.addTask { [weak self] in
-                guard let self else { return nil }
+                guard let self else { return .failure(.serviceDeallocated) }
                 let timeoutNanos = UInt64(max(self.generationTimeout, 0) * 1_000_000_000)
                 if timeoutNanos > 0 {
                     try? await Task.sleep(nanoseconds: timeoutNanos)
                 }
-                guard !Task.isCancelled else { return nil }
-                guard await self.isCurrent(sequence: sequence) else { return nil }
-                return ""
+                guard !Task.isCancelled else { return .discarded(.stale) }
+                guard await self.isCurrent(sequence: sequence) else { return .discarded(.stale) }
+                return .failure(.timeout)
             }
 
-            let firstResult = await group.next() ?? nil
+            let firstResult = await group.next() ?? .failure(.internalError)
             group.cancelAll()
             return firstResult
         }

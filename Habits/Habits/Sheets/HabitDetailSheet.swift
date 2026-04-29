@@ -75,6 +75,7 @@ private struct DetailDeferredRefreshQueue {
     var historyProjectionSnapshot = false
     var historyProjectionSeedFromCommitted = false
     var aiCoachRequestKey: String?
+    var aiCoachRequestTrigger: AICoachRequestTrigger = .userEvent
 
     var isEmpty: Bool {
         !progressSnapshot &&
@@ -105,12 +106,19 @@ private struct PendingAICandidate {
     let text: String
     let usedSignals: Set<CoachingSignalID>
     let aiFingerprint: String
+    let trigger: AICoachRequestTrigger
 }
 
 private enum CoachPresentationState: Equatable {
     case loadingAI
     case ai(String)
     case fallbackGuidance(String)
+}
+
+private enum AICoachRequestTrigger {
+    case userEvent
+    case automaticEvent
+    case staleRetry
 }
 
 @MainActor
@@ -225,6 +233,11 @@ struct HabitDetailSheet: View {
     @State private var coachRenderLockedUntil: Date = .distantPast
     @State private var pendingAICandidate: PendingAICandidate?
     @State private var coachRenderUnlockTask: Task<Void, Never>?
+    @State private var aiLoadingWatchdogTask: Task<Void, Never>?
+    @State private var staleRetryDebounceTask: Task<Void, Never>?
+    @State private var staleRetryCount: Int = 0
+    @State private var staleRetryCapReached = false
+    @State private var pendingStaleRetryFingerprint: String?
     @State private var frozenGuidanceOutput: GuidanceOutput?
     @State private var frozenStateModel: HabitStateModel?
     @State private var lastReconcileProbeKey: String?
@@ -486,7 +499,8 @@ struct HabitDetailSheet: View {
             guard phase == .active else { return }
             guard viewModel.isActive, !isHistoryPresented else { return }
             requestAICoachRegeneration(
-                requestKey: "scene-active-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
+                requestKey: "scene-active-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)",
+                trigger: .automaticEvent
             )
         }
         .onChange(of: progressRevision) { _, _ in
@@ -529,7 +543,8 @@ struct HabitDetailSheet: View {
                 ? .loadingAI
                 : .fallbackGuidance(guidanceCoachText)
             requestAICoachRegeneration(
-                requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
+                requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)",
+                trigger: .userEvent
             )
         }
         .task(id: habit.id) {
@@ -1304,14 +1319,18 @@ struct HabitDetailSheet: View {
         startCueInsightRefreshTask()
     }
 
-    private func requestAICoachRegeneration(requestKey: String) {
+    private func requestAICoachRegeneration(
+        requestKey: String,
+        trigger: AICoachRequestTrigger = .userEvent
+    ) {
         guard viewModel.isActive else { return }
         guard !isDetailScrollActive else {
             deferredRefreshQueue.aiCoachRequestKey = requestKey
+            deferredRefreshQueue.aiCoachRequestTrigger = trigger
             detailPerfLog("scroll-defer ai-coach")
             return
         }
-        regenerateAICoach(requestKey: requestKey)
+        regenerateAICoach(requestKey: requestKey, trigger: trigger)
     }
 
     private func requestRhythmRefresh() async {
@@ -1342,7 +1361,7 @@ struct HabitDetailSheet: View {
             Task { await refreshRhythmData() }
         }
         if let requestKey = queued.aiCoachRequestKey {
-            regenerateAICoach(requestKey: requestKey)
+            regenerateAICoach(requestKey: requestKey, trigger: queued.aiCoachRequestTrigger)
         }
         detailPerfLog("scroll-flush completed")
     }
@@ -1923,8 +1942,15 @@ struct HabitDetailSheet: View {
         return "You tend to \(habit.name.lowercased()) after \(sourceHabitName.lowercased())"
     }
 
-    private func regenerateAICoach(requestKey: String) {
+    private func regenerateAICoach(
+        requestKey: String,
+        trigger: AICoachRequestTrigger = .userEvent,
+        isBackgroundRetry: Bool = false
+    ) {
         guard viewModel.isActive else { return }
+        if trigger == .userEvent {
+            resetStaleRetryCycle()
+        }
         refreshCoachingContextAndGuidance(now: appTime.now)
         guard let context = coachingContext else { return }
         let requestFingerprint = context.aiFingerprint
@@ -1935,6 +1961,7 @@ struct HabitDetailSheet: View {
         )
 
         guard aiCoach.isAppleIntelligenceAvailable() else {
+            cancelAILoadingWatchdog()
             coachPresentationState = .fallbackGuidance(guidanceCoachText)
             return
         }
@@ -1944,18 +1971,23 @@ struct HabitDetailSheet: View {
             fingerprint: context.aiFingerprint,
             depth: context.depth
         ) {
+            cancelAILoadingWatchdog()
             applyAICandidate(
                 PendingAICandidate(
                     text: cached,
                     usedSignals: expectedSignals,
-                    aiFingerprint: context.aiFingerprint
+                    aiFingerprint: context.aiFingerprint,
+                    trigger: trigger
                 )
             )
             return
         }
 
         let input = buildAICoachInput(context: context)
-        coachPresentationState = .loadingAI
+        if !isBackgroundRetry {
+            coachPresentationState = .loadingAI
+            startAILoadingWatchdog()
+        }
         aiCoach.generate(
             habitID: habit.id,
             input: input,
@@ -1964,18 +1996,25 @@ struct HabitDetailSheet: View {
             isStillCurrent: {
                 self.refreshCoachingContextAndGuidance(now: self.appTime.now)
                 return self.coachingContext?.aiFingerprint == requestFingerprint
-            },
-            onDiscardedAsStale: {
-                self.handleDiscardedStaleAICandidate(previousFingerprint: requestFingerprint)
             }
-        ) { finalText in
-            self.applyAICandidate(
-                PendingAICandidate(
-                    text: finalText,
-                    usedSignals: expectedSignals,
-                    aiFingerprint: context.aiFingerprint
+        ) { outcome in
+            self.cancelAILoadingWatchdog()
+            switch outcome {
+            case .success(let finalText):
+                self.applyAICandidate(
+                    PendingAICandidate(
+                        text: finalText,
+                        usedSignals: expectedSignals,
+                        aiFingerprint: context.aiFingerprint,
+                        trigger: trigger
+                    )
                 )
-            )
+            case .discarded(.stale):
+                self.handleDiscardedStaleAICandidate(previousFingerprint: requestFingerprint)
+            case .failure:
+                self.refreshCoachingContextAndGuidance(now: self.appTime.now)
+                self.coachPresentationState = .fallbackGuidance(self.guidanceCoachText)
+            }
         }
     }
 
@@ -1991,14 +2030,15 @@ struct HabitDetailSheet: View {
 
         guard let context = coachingContext else { return }
         guard context.aiFingerprint != previousFingerprint else { return }
-        let retryKey = "stale-retry-\(habit.id.uuidString)-\(context.aiFingerprint)"
-        regenerateAICoach(requestKey: retryKey)
+        guard !staleRetryCapReached else { return }
+        pendingStaleRetryFingerprint = context.aiFingerprint
+        scheduleStaleRetryDebounce(expectedPreviousFingerprint: previousFingerprint)
     }
 
     private func regenerateAICoachOnAppear() {
         guard viewModel.isActive else { return }
         let requestKey = "onAppear-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)"
-        regenerateAICoach(requestKey: requestKey)
+        regenerateAICoach(requestKey: requestKey, trigger: .userEvent)
     }
 
     private func freezeStateModelOnAppear() {
@@ -2017,6 +2057,10 @@ struct HabitDetailSheet: View {
         guidanceUsedSignals = []
         aiUsedSignals = []
         pendingAICandidate = nil
+        cancelAILoadingWatchdog()
+        staleRetryDebounceTask?.cancel()
+        staleRetryDebounceTask = nil
+        pendingStaleRetryFingerprint = nil
         coachRenderUnlockTask?.cancel()
         coachRenderLockedUntil = .distantPast
         aiCoachSectionState = .loading
@@ -2297,6 +2341,7 @@ struct HabitDetailSheet: View {
 
     private func applyAICandidate(_ candidate: PendingAICandidate) {
         guard viewModel.isActive else { return }
+        guard !(staleRetryCapReached && candidate.trigger == .staleRetry) else { return }
         let now = Date()
         if now < coachRenderLockedUntil {
             pendingAICandidate = candidate
@@ -2307,6 +2352,7 @@ struct HabitDetailSheet: View {
     }
 
     private func publishAICandidate(_ candidate: PendingAICandidate) {
+        guard !(staleRetryCapReached && candidate.trigger == .staleRetry) else { return }
         refreshCoachingContextAndGuidance(now: appTime.now)
         if coachingContext?.aiFingerprint != candidate.aiFingerprint {
             handleDiscardedStaleAICandidate(previousFingerprint: candidate.aiFingerprint)
@@ -2345,6 +2391,65 @@ struct HabitDetailSheet: View {
                 publishAICandidate(pending)
             }
         }
+    }
+
+    private func startAILoadingWatchdog() {
+        aiLoadingWatchdogTask?.cancel()
+        aiLoadingWatchdogTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard viewModel.isActive else { return }
+            guard case .loadingAI = coachPresentationState else { return }
+            refreshCoachingContextAndGuidance(now: appTime.now)
+            coachPresentationState = .fallbackGuidance(guidanceCoachText)
+        }
+    }
+
+    private func cancelAILoadingWatchdog() {
+        aiLoadingWatchdogTask?.cancel()
+        aiLoadingWatchdogTask = nil
+    }
+
+    private func scheduleStaleRetryDebounce(expectedPreviousFingerprint: String) {
+        staleRetryDebounceTask?.cancel()
+        staleRetryDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            guard viewModel.isActive else { return }
+
+            refreshCoachingContextAndGuidance(now: appTime.now)
+            guard let context = coachingContext else { return }
+            guard context.aiFingerprint != expectedPreviousFingerprint else { return }
+
+            let currentFingerprint = context.aiFingerprint
+            guard pendingStaleRetryFingerprint == currentFingerprint else {
+                pendingStaleRetryFingerprint = currentFingerprint
+                scheduleStaleRetryDebounce(expectedPreviousFingerprint: expectedPreviousFingerprint)
+                return
+            }
+
+            guard staleRetryCount < 2 else {
+                staleRetryCapReached = true
+                coachPresentationState = .fallbackGuidance(guidanceCoachText)
+                return
+            }
+
+            staleRetryCount += 1
+            let retryKey = "stale-retry-\(habit.id.uuidString)-\(currentFingerprint)-\(staleRetryCount)"
+            regenerateAICoach(
+                requestKey: retryKey,
+                trigger: .staleRetry,
+                isBackgroundRetry: true
+            )
+        }
+    }
+
+    private func resetStaleRetryCycle() {
+        staleRetryDebounceTask?.cancel()
+        staleRetryDebounceTask = nil
+        pendingStaleRetryFingerprint = nil
+        staleRetryCount = 0
+        staleRetryCapReached = false
     }
 
     private func genericityScore(_ text: String) -> Int {
