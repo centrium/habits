@@ -10,7 +10,7 @@ import SwiftData
 import UserNotifications
 
 enum RuntimeEnvironment {
-    static let isRunningTests =
+    nonisolated static let isRunningTests =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }
 

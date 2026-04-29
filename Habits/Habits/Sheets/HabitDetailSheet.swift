@@ -1071,26 +1071,12 @@ struct HabitDetailSheet: View {
     }
 
     private func currentStreakState(now: Date) -> StreakState {
-        if let cached = habitLogService.computedStateByHabitID[habit.id]?.streakState {
-            return cached
-        }
-
-        let today = calculationCalendar.startOfDay(for: now)
-        let projected = uiStateStore.projectedDayState(
-            habitID: habit.id,
-            day: today,
-            calendar: calculationCalendar
+        let resolved = habitLogService.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: now,
+            weekStartPreference: userSettings.weekStartPreference
         )
-        let isCompleteToday = projected?.isComplete ?? false
-        return StreakState(
-            currentStreak: 0,
-            longestStreak: 0,
-            hasMetRequirementToday: isCompleteToday,
-            isRequiredToday: !isCompleteToday,
-            isAtRisk: false,
-            isBroken: !isCompleteToday,
-            status: isCompleteToday ? .safe : .broken
-        )
+        return resolved.streakState
     }
 
     private func reinforcement(for guidanceType: GuidanceType?) -> IdentityReinforcement {
@@ -1834,6 +1820,10 @@ struct HabitDetailSheet: View {
         measureMainThreadWork("bootstrap.prepare") {
             habitLogService.prepare(habit)
         }
+        _ = await habitLogService.ensureComputedState(
+            for: habit.id,
+            referenceDate: now
+        )
         measureMainThreadWork("bootstrap.historyProjectionSnapshot") {
             applyHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
         }

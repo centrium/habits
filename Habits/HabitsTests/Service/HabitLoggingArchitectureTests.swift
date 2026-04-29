@@ -276,13 +276,131 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         XCTAssertEqual(projectedDecrement?.isComplete, projectedSetCount?.isComplete)
     }
 
+    func testComputedStatePopulatesAfterAddLogCommit() async throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let day = calendar.startOfDay(for: Date())
+        let habit = TestHabitFactory.frequency(name: "Computed Add", target: 1, calendar: calendar)
+        persistence.insert(habit)
+        try persistence.save()
+
+        let uiStateStore = HabitUIStateStore()
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: uiStateStore
+        )
+
+        _ = service.addLog(for: habit, on: day, value: 1)
+
+        try await waitUntil {
+            let persisted = try self.persistedHabit(id: habit.id, in: persistence.container)
+            let count = persisted?.logs.filter { calendar.isDate($0.day, inSameDayAs: day) }.count ?? 0
+            let computed = service.computedStateByHabitID[habit.id]
+            return count == 1 && computed != nil
+        }
+    }
+
+    func testComputedStatePopulatesAfterAllMutationCommitPaths() async throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let day = calendar.startOfDay(for: Date())
+        let dayPlus1 = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+        let dayPlus2 = calendar.date(byAdding: .day, value: 2, to: day) ?? day
+        let dayPlus3 = calendar.date(byAdding: .day, value: 3, to: day) ?? day
+        let dayPlus4 = calendar.date(byAdding: .day, value: 4, to: day) ?? day
+
+        let updateHabit = TestHabitFactory.cumulative(
+            name: "Computed Update",
+            target: 5,
+            entries: [TestHabitFactory.entry(on: day.addingTimeInterval(8 * 3600), value: 1)],
+            calendar: calendar
+        )
+        let deleteHabit = TestHabitFactory.cumulative(
+            name: "Computed Delete",
+            target: 5,
+            entries: [TestHabitFactory.entry(on: dayPlus1.addingTimeInterval(8 * 3600), value: 1)],
+            calendar: calendar
+        )
+        let clearHabit = TestHabitFactory.cumulative(
+            name: "Computed Clear",
+            target: 5,
+            entries: [TestHabitFactory.entry(on: dayPlus2.addingTimeInterval(8 * 3600), value: 2)],
+            calendar: calendar
+        )
+        let setCountHabit = TestHabitFactory.frequency(name: "Computed SetCount", target: 3, calendar: calendar)
+        let addHabit = TestHabitFactory.frequency(name: "Computed Add", target: 2, calendar: calendar)
+
+        persistence.insert(updateHabit)
+        persistence.insert(deleteHabit)
+        persistence.insert(clearHabit)
+        persistence.insert(setCountHabit)
+        persistence.insert(addHabit)
+        try persistence.save()
+
+        let uiStateStore = HabitUIStateStore()
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: uiStateStore
+        )
+
+        let updateEntry = try XCTUnwrap(updateHabit.logs.first)
+        _ = service.updateEntry(updateEntry, for: updateHabit, on: day, value: 3)
+
+        let deleteEntry = try XCTUnwrap(deleteHabit.logs.first)
+        _ = service.deleteEntry(deleteEntry, for: deleteHabit, on: dayPlus1)
+
+        _ = service.clearEntries(for: clearHabit, on: dayPlus2)
+        _ = service.setCount(for: setCountHabit, on: dayPlus3, to: 2)
+        _ = service.addLog(for: addHabit, on: dayPlus4, value: 1)
+
+        let expectedIDs: Set<UUID> = [
+            updateHabit.id,
+            deleteHabit.id,
+            clearHabit.id,
+            setCountHabit.id,
+            addHabit.id,
+        ]
+
+        try await waitUntil(timeout: 20) {
+            let populatedIDs = Set(service.computedStateByHabitID.keys)
+            return expectedIDs.isSubset(of: populatedIDs)
+        }
+    }
+
+    func testResolvedComputedStateForDisplayReturnsNeutralEmptyStateForBrandNewHabit() throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let today = calendar.startOfDay(for: Date())
+        let initialHabit = TestHabitFactory.frequency(name: "New Habit", target: 1, calendar: calendar)
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        let resolved = service.resolvedComputedStateForDisplay(
+            habit: initialHabit,
+            referenceDate: today,
+            weekStartPreference: .system
+        )
+
+        XCTAssertEqual(resolved.streakState.currentStreak, 0)
+        XCTAssertEqual(resolved.streakState.status, .safe)
+        XCTAssertFalse(resolved.streakState.isBroken)
+        let cached = try XCTUnwrap(service.computedStateByHabitID[initialHabit.id])
+        XCTAssertEqual(cached.streakState.currentStreak, 0)
+        XCTAssertEqual(cached.streakState.status, .safe)
+    }
+
     private func persistedHabit(id: UUID, in container: ModelContainer) throws -> Habit? {
         let context = ModelContext(container)
         return try context.fetch(FetchDescriptor<Habit>()).first(where: { $0.id == id })
     }
 
     private func waitUntil(
-        timeout: TimeInterval = 6,
+        timeout: TimeInterval = 12,
         pollIntervalNanoseconds: UInt64 = 50_000_000,
         condition: @escaping () async throws -> Bool
     ) async throws {

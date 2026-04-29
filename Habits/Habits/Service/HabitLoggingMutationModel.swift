@@ -60,7 +60,7 @@ enum HabitLogMutationOperation: Hashable, Codable, Sendable {
 }
 
 enum HabitLogMutationIdentity {
-    static func deterministicLogID(baseNonce: UUID, index: Int) -> UUID {
+    nonisolated static func deterministicLogID(baseNonce: UUID, index: Int) -> UUID {
         var bytes = baseNonce.uuid
         let encodedIndex = UInt64(max(0, index)).bigEndian
         withUnsafeMutableBytes(of: &bytes) { buffer in

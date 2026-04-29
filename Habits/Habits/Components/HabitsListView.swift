@@ -706,19 +706,10 @@ struct HabitsListView: View {
         globalInsightsRequestSequence = requestSequence
         let now = appTime.now
 
-        let snapshot = await withCheckedContinuation { continuation in
-            let calendar = calculationCalendar
-            let weekStartPreference = userSettings.weekStartPreference
-            let habitsSnapshot = habits
-            DispatchQueue.global(qos: .utility).async {
-                LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
-                let output = GlobalInsightsService(
-                    calendar: calendar,
-                    weekStartPreference: weekStartPreference
-                ).snapshot(for: habitsSnapshot, now: now)
-                continuation.resume(returning: output)
-            }
-        }
+        let snapshot = GlobalInsightsService(
+            calendar: calculationCalendar,
+            weekStartPreference: userSettings.weekStartPreference
+        ).snapshot(for: habits, now: now)
 
         guard !Task.isCancelled, globalInsightsRequestSequence == requestSequence else { return }
         globalInsightsSnapshot = snapshot
@@ -758,9 +749,12 @@ struct HabitsListView: View {
         calendar: Calendar
     ) async -> TodayInsight? {
         let today = calendar.startOfDay(for: now)
-        let candidates = habits.map { habit in
-            let computedState = habitLogService.computedStateByHabitID[habit.id]
-                ?? syntheticComputedState(for: habit, now: now, calendar: calendar)
+        let candidates: [TodayInsightCandidate] = habits.map { habit in
+            let computedState = habitLogService.resolvedComputedStateForDisplay(
+                habit: habit,
+                referenceDate: now,
+                weekStartPreference: userSettings.weekStartPreference
+            )
             let projectedToday = uiStateStore.projectedDayState(
                 habitID: habit.id,
                 day: today,
@@ -784,88 +778,6 @@ struct HabitsListView: View {
             from: candidates,
             now: now,
             calendar: calendar
-        )
-    }
-
-    private func syntheticComputedState(
-        for habit: Habit,
-        now: Date,
-        calendar: Calendar
-    ) -> HabitComputedState {
-        let projected: [Date: HabitProjectedDayState] = {
-            let cached = uiStateStore.projectedDayStates(for: habit.id)
-            if !cached.isEmpty { return cached }
-            _ = habitLogService.projectedHistoryDayStates(for: habit)
-            return uiStateStore.projectedDayStates(for: habit.id)
-        }()
-        let today = calendar.startOfDay(for: now)
-        let last14Start = calendar.date(byAdding: .day, value: -13, to: today) ?? today
-
-        var uniqueCompletedDays = 0
-        var recentActiveDays = 0
-        var totalLogs = 0
-
-        for (day, state) in projected {
-            let normalizedDay = calendar.startOfDay(for: day)
-            guard normalizedDay <= today else { continue }
-            let isActive = state.count > 0 || state.value > 0
-            guard isActive else { continue }
-
-            uniqueCompletedDays += 1
-            totalLogs += max(0, state.count)
-            if normalizedDay >= last14Start {
-                recentActiveDays += 1
-            }
-        }
-
-        let identityState: HabitIdentityState = {
-            let completionRate = uniqueCompletedDays == 0 ? 0 : Double(recentActiveDays) / 14.0
-            switch completionRate {
-            case ..<0.2:
-                return uniqueCompletedDays == 0 ? .gettingStarted : .rebuilding
-            case ..<0.5:
-                return .building
-            case ..<0.75:
-                return .steady
-            default:
-                return .strong
-            }
-        }()
-
-        return HabitComputedState(
-            identityState: identityState,
-            streakState: StreakState(
-                currentStreak: 0,
-                longestStreak: 0,
-                hasMetRequirementToday: uiStateStore.projectedDayState(
-                    habitID: habit.id,
-                    day: today,
-                    calendar: calendar
-                )?.isComplete ?? false,
-                isRequiredToday: true,
-                isAtRisk: false,
-                isBroken: false,
-                status: .safe
-            ),
-            rhythmState: RhythmState(
-                rhythm: nil,
-                isForming: true,
-                visualConfidence: 0
-            ),
-            timingInsight: nil,
-            completionStats: CompletionStats(
-                totalLogs: totalLogs,
-                uniqueCompletedDays: uniqueCompletedDays,
-                recentActiveDays: recentActiveDays,
-                validTimingSamples: 0
-            ),
-            weeklyPattern: WeeklyPattern(
-                recentTopDay: nil,
-                historicalTopDay: nil,
-                weekdayDistribution: [:],
-                weekdayActiveDayCounts: [:],
-                sampleSize: 0
-            )
         )
     }
 

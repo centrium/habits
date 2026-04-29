@@ -200,6 +200,13 @@ final class HabitLogService: ObservableObject {
     private static var trackedServicesForTesting: [HabitLogService] = []
     private static let isRunningTests: Bool =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    private static let computedStateTraceEnabled: Bool = {
+#if DEBUG
+        ProcessInfo.processInfo.environment["COMPUTED_STATE_DEBUG"]?.lowercased() == "1"
+#else
+        false
+#endif
+    }()
     private struct CachedDayMetrics {
         let revision: Int
         let timeZoneIdentifier: String
@@ -329,6 +336,10 @@ final class HabitLogService: ObservableObject {
             }
             uiStateStore.applyCommittedMutation(mutation)
             clearPendingDayMetrics(for: mutation.id.habitID, day: mutation.id.dayStart)
+            scheduleHabitComputedStateRefresh(
+                for: mutation.id.habitID,
+                referenceDate: referenceDate
+            )
             LoggingPerformanceMonitor.markPersistCommitted(
                 habitID: mutation.id.habitID,
                 referenceDate: referenceDate
@@ -415,22 +426,49 @@ final class HabitLogService: ObservableObject {
         pendingComputedStateRefreshTasks[habitID]?.cancel()
         let sequence = (computedStateRequestSequenceByHabitID[habitID] ?? 0) + 1
         computedStateRequestSequenceByHabitID[habitID] = sequence
+        logComputedStateDebug(
+            "schedule habit=\(habitID.uuidString) seq=\(sequence) day=\(referenceDate.timeIntervalSince1970)"
+        )
 
         let task = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(nanoseconds: computedStateRefreshDelayNanoseconds)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                self.logComputedStateDebug(
+                    "cancel-before-compute habit=\(habitID.uuidString) seq=\(sequence)"
+                )
+                return
+            }
 
             let state = await self.computeComputedStateOffMain(
                 habitID: habitID,
                 referenceDate: referenceDate
             )
-            guard !Task.isCancelled, let state else { return }
+            guard !Task.isCancelled else {
+                self.logComputedStateDebug(
+                    "cancel-after-compute habit=\(habitID.uuidString) seq=\(sequence)"
+                )
+                return
+            }
+            guard let state else {
+                self.logComputedStateDebug(
+                    "compute-missing habit=\(habitID.uuidString) seq=\(sequence)"
+                )
+                return
+            }
 
             await MainActor.run {
-                guard self.computedStateRequestSequenceByHabitID[habitID] == sequence else { return }
+                guard self.computedStateRequestSequenceByHabitID[habitID] == sequence else {
+                    self.logComputedStateDebug(
+                        "drop-stale habit=\(habitID.uuidString) seq=\(sequence)"
+                    )
+                    return
+                }
                 self.computedStateByHabitID[habitID] = state
                 self.pendingComputedStateRefreshTasks.removeValue(forKey: habitID)
+                self.logComputedStateDebug(
+                    "publish habit=\(habitID.uuidString) seq=\(sequence) cacheSize=\(self.computedStateByHabitID.count)"
+                )
             }
         }
 
@@ -445,9 +483,15 @@ final class HabitLogService: ObservableObject {
             let modelContainer = modelContext.container
             let calendar = self.calendar
             DispatchQueue.global(qos: .utility).async {
+                Self.logComputedStateDebug(
+                    "compute-start habit=\(habitID.uuidString) day=\(referenceDate.timeIntervalSince1970)"
+                )
                 let context = ModelContext(modelContainer)
                 let descriptor = FetchDescriptor<Habit>()
                 guard let habit = try? context.fetch(descriptor).first(where: { $0.id == habitID }) else {
+                    Self.logComputedStateDebug(
+                        "compute-end-missing-habit habit=\(habitID.uuidString)"
+                    )
                     continuation.resume(returning: nil)
                     return
                 }
@@ -462,9 +506,23 @@ final class HabitLogService: ObservableObject {
                     globalLogs: logs,
                     now: referenceDate
                 )
+                Self.logComputedStateDebug(
+                    "compute-end habit=\(habitID.uuidString) streak=\(computed.streakState.currentStreak)"
+                )
                 continuation.resume(returning: computed)
             }
         }
+    }
+
+    private static func logComputedStateDebug(_ message: String) {
+#if DEBUG
+        guard computedStateTraceEnabled else { return }
+        print("COMPUTED_STATE: \(message)")
+#endif
+    }
+
+    private func logComputedStateDebug(_ message: String) {
+        Self.logComputedStateDebug(message)
     }
 }
 
@@ -519,6 +577,127 @@ extension HabitLogService {
 
     func prepare(_ habit: Habit) {
         normalizeLogsIfNeeded(for: habit)
+    }
+
+    func resolvedComputedStateForDisplay(
+        habit: Habit,
+        referenceDate: Date,
+        weekStartPreference: WeekStartPreference
+    ) -> HabitComputedState {
+        if let cached = computedStateByHabitID[habit.id] {
+            return cached
+        }
+
+        let resolved: HabitComputedState
+        if habit.logs.isEmpty {
+            resolved = emptyComputedState()
+        } else {
+            resolved = HabitComputationEngine(
+                calendar: calendar,
+                weekStartPreference: weekStartPreference
+            ).compute(
+                habit: habit,
+                logs: habit.logs,
+                globalLogs: habit.logs,
+                now: referenceDate
+            )
+        }
+
+        computedStateByHabitID[habit.id] = resolved
+        return resolved
+    }
+
+    func ensureComputedState(
+        for habitID: UUID,
+        referenceDate: Date
+    ) async -> HabitComputedState? {
+        if let existing = computedStateByHabitID[habitID] {
+            return existing
+        }
+        guard let computed = await computeComputedStateOffMain(
+            habitID: habitID,
+            referenceDate: referenceDate
+        ) else {
+            return nil
+        }
+        await MainActor.run {
+            computedStateByHabitID[habitID] = computed
+            logComputedStateDebug(
+                "warmup-publish habit=\(habitID.uuidString) cacheSize=\(computedStateByHabitID.count)"
+            )
+        }
+        return computed
+    }
+
+    func ensureComputedStates(
+        for habitIDs: [UUID],
+        referenceDate: Date
+    ) async {
+        let missingHabitIDs = habitIDs.filter { computedStateByHabitID[$0] == nil }
+        guard !missingHabitIDs.isEmpty else { return }
+        await withTaskGroup(of: (UUID, HabitComputedState?).self) { group in
+            for habitID in missingHabitIDs {
+                group.addTask { [weak self] in
+                    guard let self else { return (habitID, nil) }
+                    let state = await self.computeComputedStateOffMain(
+                        habitID: habitID,
+                        referenceDate: referenceDate
+                    )
+                    return (habitID, state)
+                }
+            }
+
+            var statesToPublish: [(UUID, HabitComputedState)] = []
+            for await (habitID, state) in group {
+                guard let state else { continue }
+                statesToPublish.append((habitID, state))
+            }
+
+            await MainActor.run {
+                for (habitID, state) in statesToPublish {
+                    computedStateByHabitID[habitID] = state
+                }
+                if !statesToPublish.isEmpty {
+                    logComputedStateDebug(
+                        "warmup-batch-publish count=\(statesToPublish.count) cacheSize=\(computedStateByHabitID.count)"
+                    )
+                }
+            }
+        }
+    }
+
+    private func emptyComputedState() -> HabitComputedState {
+        HabitComputedState(
+            identityState: .gettingStarted,
+            streakState: StreakState(
+                currentStreak: 0,
+                longestStreak: 0,
+                hasMetRequirementToday: false,
+                isRequiredToday: true,
+                isAtRisk: false,
+                isBroken: false,
+                status: .safe
+            ),
+            rhythmState: RhythmState(
+                rhythm: nil,
+                isForming: true,
+                visualConfidence: 0
+            ),
+            timingInsight: nil,
+            completionStats: CompletionStats(
+                totalLogs: 0,
+                uniqueCompletedDays: 0,
+                recentActiveDays: 0,
+                validTimingSamples: 0
+            ),
+            weeklyPattern: WeeklyPattern(
+                recentTopDay: nil,
+                historicalTopDay: nil,
+                weekdayDistribution: [:],
+                weekdayActiveDayCounts: [:],
+                sampleSize: 0
+            )
+        )
     }
 
     func daysForMonth(_ month: Date) -> [Date] {
