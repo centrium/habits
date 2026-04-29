@@ -128,10 +128,14 @@ struct HabitHeader: View {
     }
 
     private var resolvedStreakState: StreakState? {
-        if let cached = habitLogService.computedStateByHabitID[habit.id]?.streakState {
-            return cached
+        if let streakState {
+            return streakState
         }
-        return streakState
+        return habitLogService.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: selectedDate,
+            weekStartPreference: weekStartPreference
+        ).streakState
     }
 
     private var streakContext: StreakIndicatorPresentation.Context? {

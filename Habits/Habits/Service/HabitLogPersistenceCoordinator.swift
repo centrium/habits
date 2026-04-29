@@ -11,6 +11,8 @@ enum HabitLogPersistenceEvent: Sendable {
     case writing(HabitLogPendingMutation)
     case committed(HabitLogPendingMutation, Date)
     case failed(HabitLogPendingMutation, String)
+    case cancelled(HabitLogPendingMutation)
+    case stale(HabitLogPendingMutation)
 }
 
 actor HabitLogPersistenceCoordinator {

@@ -399,6 +399,117 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         XCTAssertEqual(cached.consistency.percentage, 0)
     }
 
+    func testComputedStateRefreshPolicyMatrix() throws {
+        let persistence = try TestPersistence()
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: TestDateFactory.utcCalendar,
+            uiStateStore: HabitUIStateStore()
+        )
+        let day = TestDateFactory.utcCalendar.startOfDay(for: Date())
+
+        XCTAssertTrue(service.shouldScheduleComputedStateRefresh(for: .committed(referenceDate: day)))
+        XCTAssertFalse(service.shouldScheduleComputedStateRefresh(for: .failed(errorDescription: "x")))
+        XCTAssertFalse(service.shouldScheduleComputedStateRefresh(for: .cancelled))
+        XCTAssertFalse(service.shouldScheduleComputedStateRefresh(for: .stale))
+    }
+
+    func testFailedPersistenceDoesNotPopulateComputedState() async throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let day = calendar.startOfDay(for: Date())
+        let habit = TestHabitFactory.frequency(name: "Missing", target: 1, calendar: calendar)
+
+        let uiStateStore = HabitUIStateStore()
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: uiStateStore
+        )
+
+        _ = service.addLog(for: habit, on: day, value: 1)
+
+        try await waitUntil {
+            let pending = uiStateStore.pendingMutations(for: habit.id)
+            guard let first = pending.first else { return false }
+            return first.status == .failed
+        }
+        XCTAssertNil(service.computedStateByHabitID[habit.id])
+    }
+
+    func testResolvedComputedStateBypassesCommittedCacheWhileMutationPending() throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let day = calendar.startOfDay(for: Date())
+        let habit = TestHabitFactory.frequency(name: "Pending Computed", target: 1, calendar: calendar)
+
+        let uiStateStore = HabitUIStateStore()
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: uiStateStore
+        )
+
+        let baseline = service.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: day,
+            weekStartPreference: .system
+        )
+        XCTAssertEqual(baseline.streakState.currentStreak, 0)
+
+        _ = service.addLog(for: habit, on: day, value: 1)
+
+        let resolvedPending = service.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: day,
+            weekStartPreference: .system
+        )
+
+        XCTAssertEqual(resolvedPending.streakState.currentStreak, 1)
+        XCTAssertEqual(service.computedStateByHabitID[habit.id]?.streakState.currentStreak, 0)
+    }
+
+    func testResolvedComputedStateRollsBackAfterFailedPersistence() async throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let day = calendar.startOfDay(for: Date())
+        let habit = TestHabitFactory.frequency(name: "Rollback Computed", target: 1, calendar: calendar)
+
+        let uiStateStore = HabitUIStateStore()
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: uiStateStore
+        )
+
+        _ = service.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: day,
+            weekStartPreference: .system
+        )
+        _ = service.addLog(for: habit, on: day, value: 1)
+
+        let optimistic = service.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: day,
+            weekStartPreference: .system
+        )
+        XCTAssertEqual(optimistic.streakState.currentStreak, 1)
+
+        try await waitUntil {
+            let pending = uiStateStore.pendingMutations(for: habit.id)
+            guard let first = pending.first else { return false }
+            return first.status == .failed
+        }
+
+        let rolledBack = service.resolvedComputedStateForDisplay(
+            habit: habit,
+            referenceDate: day,
+            weekStartPreference: .system
+        )
+        XCTAssertEqual(rolledBack.streakState.currentStreak, 0)
+    }
+
     private func persistedHabit(id: UUID, in container: ModelContainer) throws -> Habit? {
         let context = ModelContext(container)
         return try context.fetch(FetchDescriptor<Habit>()).first(where: { $0.id == id })
@@ -430,6 +541,8 @@ private actor TestEventStore {
             committedCount += 1
         case .failed:
             failedCount += 1
+        case .cancelled, .stale:
+            break
         case .writing:
             break
         }
