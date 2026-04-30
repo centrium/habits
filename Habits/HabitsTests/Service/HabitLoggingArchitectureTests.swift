@@ -33,12 +33,22 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         }
 
         try await waitUntil {
-            let persistedA = try self.persistedHabit(id: a.id, in: persistence.container)
-            let persistedB = try self.persistedHabit(id: b.id, in: persistence.container)
-            let countA = persistedA?.logs.filter { calendar.isDate($0.day, inSameDayAs: today) }.count ?? 0
-            let countB = persistedB?.logs.filter { calendar.isDate($0.day, inSameDayAs: today) }.count ?? 0
-            return countA == 10 && countB == 10
+            let projectedA = uiStateStore.projectedDayState(habitID: a.id, day: today, calendar: calendar)
+            let projectedB = uiStateStore.projectedDayState(habitID: b.id, day: today, calendar: calendar)
+            return projectedA?.count == 10 &&
+                projectedA?.value == 10 &&
+                projectedB?.count == 10 &&
+                projectedB?.value == 10
         }
+
+        let projectedA = uiStateStore.projectedDayState(habitID: a.id, day: today, calendar: calendar)
+        let projectedB = uiStateStore.projectedDayState(habitID: b.id, day: today, calendar: calendar)
+        XCTAssertEqual(projectedA?.count, 10)
+        XCTAssertEqual(projectedA?.value, 10)
+        XCTAssertEqual(projectedB?.count, 10)
+        XCTAssertEqual(projectedB?.value, 10)
+        XCTAssertEqual(projectedA?.isComplete, true)
+        XCTAssertEqual(projectedB?.isComplete, true)
     }
 
 
@@ -68,6 +78,11 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         let versionBeforeClear = uiStateStore.projectionVersionByHabitID[habit.id] ?? 0
 
         _ = service.clearEntries(for: habit, on: day)
+        let expectedCommittedSequence = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: day,
+            calendar: calendar
+        )?.headSequence ?? 0
 
         let projectedNow = uiStateStore.projectedDayState(
             habitID: habit.id,
@@ -83,8 +98,12 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         try await waitUntil {
             let persisted = try self.persistedHabit(id: habit.id, in: persistence.container)
             let count = persisted?.logs.filter { calendar.isDate($0.day, inSameDayAs: day) }.count ?? -1
-            let pending = uiStateStore.pendingMutations(for: habit.id)
-            return count == 0 && pending.isEmpty
+            let committedSequence = uiStateStore.committedDayState(
+                habitID: habit.id,
+                day: day,
+                calendar: calendar
+            )?.committedSequence ?? 0
+            return count == 0 && committedSequence >= expectedCommittedSequence
         }
 
         let finalProjected = uiStateStore.projectedDayState(
@@ -128,8 +147,15 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         try await waitUntil {
             let persisted = try self.persistedHabit(id: habit.id, in: persistence.container)
             let count = persisted?.logs.filter { calendar.isDate($0.day, inSameDayAs: day) }.count ?? -1
-            let pending = uiStateStore.pendingMutations(for: habit.id)
-            return count == 0 && pending.isEmpty
+            let projected = uiStateStore.projectedDayState(
+                habitID: habit.id,
+                day: day,
+                calendar: calendar
+            )
+            return count == 0 &&
+                projected?.count == 0 &&
+                projected?.value == 0 &&
+                projected?.isComplete == false
         }
     }
 
@@ -151,6 +177,11 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         )
 
         XCTAssertEqual(service.decrement(for: habit, on: day), 0)
+        let expectedCommittedSequence = uiStateStore.projectedDayState(
+            habitID: habit.id,
+            day: day,
+            calendar: calendar
+        )?.headSequence ?? 0
         let projected = uiStateStore.projectedDayState(habitID: habit.id, day: day, calendar: calendar)
         XCTAssertEqual(projected?.count, 0)
         XCTAssertEqual(projected?.value, 0)
@@ -158,8 +189,12 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         try await waitUntil {
             let persisted = try self.persistedHabit(id: habit.id, in: persistence.container)
             let count = persisted?.logs.filter { calendar.isDate($0.day, inSameDayAs: day) }.count ?? -1
-            let pending = uiStateStore.pendingMutations(for: habit.id)
-            return count == 0 && pending.isEmpty
+            let committedSequence = uiStateStore.committedDayState(
+                habitID: habit.id,
+                day: day,
+                calendar: calendar
+            )?.committedSequence ?? 0
+            return count == 0 && committedSequence >= expectedCommittedSequence
         }
     }
 
@@ -463,11 +498,13 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         XCTAssertNil(service.computedStateByHabitID[habit.id])
     }
 
-    func testResolvedComputedStateUsesCachedSnapshotWhileMutationPending() throws {
+    func testResolvedComputedStateUsesCachedSnapshotWhileMutationPending() async throws {
         let persistence = try TestPersistence()
         let calendar = TestDateFactory.utcCalendar
         let day = calendar.startOfDay(for: Date())
         let habit = TestHabitFactory.frequency(name: "Pending Computed", target: 1, calendar: calendar)
+        persistence.insert(habit)
+        try persistence.save()
 
         let uiStateStore = HabitUIStateStore()
         let service = HabitLogService(
@@ -476,12 +513,10 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
             uiStateStore: uiStateStore
         )
 
-        let baseline = service.resolvedComputedStateForDisplay(
-            habit: habit,
-            referenceDate: day,
-            weekStartPreference: .system
-        )
-        XCTAssertEqual(baseline.streakState.currentStreak, 0)
+        let seededState = await service.ensureComputedState(for: habit.id, referenceDate: day)
+        let seeded = try XCTUnwrap(seededState)
+        XCTAssertEqual(seeded.streakState.currentStreak, 0)
+        XCTAssertEqual(service.computedStateByHabitID[habit.id]?.streakState.currentStreak, 0)
 
         _ = service.addLog(for: habit, on: day, value: 1)
 
@@ -491,8 +526,12 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
             weekStartPreference: .system
         )
 
-        XCTAssertEqual(resolvedPending.streakState.currentStreak, 0)
-        XCTAssertEqual(service.computedStateByHabitID[habit.id]?.streakState.currentStreak, 0)
+        XCTAssertEqual(resolvedPending.streakState.currentStreak, seeded.streakState.currentStreak)
+        XCTAssertEqual(resolvedPending.consistency.daysCompleted, seeded.consistency.daysCompleted)
+        XCTAssertEqual(
+            service.computedStateByHabitID[habit.id]?.streakState.currentStreak,
+            seeded.streakState.currentStreak
+        )
     }
 
     func testResolvedComputedStateRollsBackAfterFailedPersistence() async throws {
