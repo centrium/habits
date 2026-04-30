@@ -57,7 +57,26 @@ struct HabitComputedState: Equatable {
     let weeklyPattern: WeeklyPattern
 }
 
+struct HabitComputationLog: Equatable {
+    let id: UUID
+    let day: Date
+    let effectiveTimestamp: Date
+    let createdAt: Date
+    let kind: HabitLogKind
+    let numericValue: Double
+    let frequencyContribution: Int
+    let rawTimestamp: Date?
+}
+
 final class HabitComputationEngine {
+    private static let perfTraceEnabled: Bool = {
+#if DEBUG
+        ProcessInfo.processInfo.environment["COMPUTED_STATE_PERF_DEBUG"]?.lowercased() == "1"
+#else
+        false
+#endif
+    }()
+
     private let calendar: Calendar
     private let weekStartPreference: WeekStartPreference
 
@@ -75,9 +94,49 @@ final class HabitComputationEngine {
         globalLogs: [HabitLog] = [],
         now: Date = .now
     ) -> HabitComputedState {
+        let logSnapshots = logs.map { log in
+            HabitComputationLog(
+                id: log.id,
+                day: log.day,
+                effectiveTimestamp: log.effectiveTimestamp,
+                createdAt: log.createdAt,
+                kind: log.kind,
+                numericValue: log.numericValue,
+                frequencyContribution: log.frequencyContribution,
+                rawTimestamp: log.timestamp
+            )
+        }
+        return compute(
+            habit: habit,
+            logSnapshots: logSnapshots,
+            timingLogSnapshots: logSnapshots,
+            timingGlobalLogSnapshots: globalLogs.map { log in
+                HabitComputationLog(
+                    id: log.id,
+                    day: log.day,
+                    effectiveTimestamp: log.effectiveTimestamp,
+                    createdAt: log.createdAt,
+                    kind: log.kind,
+                    numericValue: log.numericValue,
+                    frequencyContribution: log.frequencyContribution,
+                    rawTimestamp: log.timestamp
+                )
+            },
+            now: now
+        )
+    }
+
+    func compute(
+        habit: Habit,
+        logSnapshots: [HabitComputationLog],
+        timingLogSnapshots: [HabitComputationLog],
+        timingGlobalLogSnapshots: [HabitComputationLog] = [],
+        now: Date = .now
+    ) -> HabitComputedState {
+        let startedAt = CFAbsoluteTimeGetCurrent()
         LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
         // 1) Normalise logs
-        let normalizedLogs = normalized(logs: logs, now: now)
+        let normalizedLogs = normalized(logs: logSnapshots, now: now)
 
         // 2) Compute completion per day (goal-aware)
         let completedDays = completedDayStarts(for: habit, logs: normalizedLogs, now: now)
@@ -92,8 +151,8 @@ final class HabitComputationEngine {
 
         // 4) Compute timing (TimeInsightEngine)
         let timingComputation = computeTiming(
-            logs: normalizedLogs,
-            globalLogs: globalLogs,
+            logs: timingLogSnapshots,
+            globalLogs: timingGlobalLogSnapshots,
             habitName: habit.name,
             habitGoalType: habit.goalType,
             now: now
@@ -153,7 +212,7 @@ final class HabitComputationEngine {
         ).identityState
 
         // 7) Assemble snapshot
-        return HabitComputedState(
+        let state = HabitComputedState(
             identityState: gatedIdentity,
             streakState: streakState,
             consistency: consistency,
@@ -162,11 +221,30 @@ final class HabitComputationEngine {
             completionStats: completionStats,
             weeklyPattern: weeklyPattern
         )
+
+        if Self.perfTraceEnabled {
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000
+            print(
+                String(
+                    format: "COMPUTED_STATE_PERF: habit=%@ input=%d normalized=%d completedDays=%d timingHabit=%d timingGlobal=%d elapsedMs=%.1f",
+                    habit.id.uuidString,
+                    logSnapshots.count,
+                    normalizedLogs.count,
+                    completedDays.count,
+                    timingLogSnapshots.count,
+                    timingGlobalLogSnapshots.count,
+                    elapsedMs
+                )
+            )
+        }
+
+        return state
     }
+
 }
 
 private extension HabitComputationEngine {
-    func normalized(logs: [HabitLog], now: Date) -> [HabitLog] {
+    func normalized(logs: [HabitComputationLog], now: Date) -> [HabitComputationLog] {
         let today = calendar.startOfDay(for: now)
         return logs
             .filter { calendar.startOfDay(for: $0.effectiveTimestamp) <= today }
@@ -180,7 +258,7 @@ private extension HabitComputationEngine {
 
     func completedDayStarts(
         for habit: Habit,
-        logs: [HabitLog],
+        logs: [HabitComputationLog],
         now: Date
     ) -> Set<Date> {
         let today = calendar.startOfDay(for: now)
@@ -195,7 +273,7 @@ private extension HabitComputationEngine {
 
     func isDayComplete(
         for habit: Habit,
-        logs: [HabitLog],
+        logs: [HabitComputationLog],
         day: Date
     ) -> Bool {
         let dayStart = calendar.startOfDay(for: day)
@@ -229,7 +307,7 @@ private extension HabitComputationEngine {
 
     func computedStreakState(
         for habit: Habit,
-        logs: [HabitLog],
+        logs: [HabitComputationLog],
         completedDays: Set<Date>,
         now: Date
     ) -> StreakState {
@@ -264,7 +342,7 @@ private extension HabitComputationEngine {
     }
 
     func completionStats(
-        from logs: [HabitLog],
+        from logs: [HabitComputationLog],
         completedDays: Set<Date>,
         timingDiagnostics: TimeInsightDiagnostics,
         now: Date
@@ -303,7 +381,7 @@ private extension HabitComputationEngine {
     }
 
     func computeWeeklyPattern(
-        logs: [HabitLog],
+        logs: [HabitComputationLog],
         goalType: GoalType,
         now: Date
     ) -> WeeklyPattern {
@@ -338,7 +416,7 @@ private extension HabitComputationEngine {
     }
 
     func weekdayStats(
-        from logs: [HabitLog],
+        from logs: [HabitComputationLog],
         goalType: GoalType
     ) -> WeekdayStats {
         let qualifyingLogs = logs.filter { intensityContribution(for: $0, goalType: goalType) > 0 }
@@ -376,7 +454,7 @@ private extension HabitComputationEngine {
     }
 
     func intensityContribution(
-        for log: HabitLog,
+        for log: HabitComputationLog,
         goalType: GoalType
     ) -> Double {
         switch goalType {
@@ -465,19 +543,37 @@ private extension HabitComputationEngine {
     }
 
     func computeTiming(
-        logs: [HabitLog],
-        globalLogs: [HabitLog],
+        logs: [HabitComputationLog],
+        globalLogs: [HabitComputationLog],
         habitName: String,
         habitGoalType: GoalType,
         now: Date
     ) -> TimeInsightComputation {
-        let rawHabitLogs = logs.filter { $0.kind == .entry && $0.timestamp != nil }
-        let rawGlobalLogs = globalLogs.filter { $0.kind == .entry && $0.timestamp != nil }
+        let rawHabitLogs = logs.filter { $0.kind == .entry && $0.rawTimestamp != nil }
+        let rawGlobalLogs = globalLogs.filter { $0.kind == .entry && $0.rawTimestamp != nil }
         let resolvedGlobal = rawGlobalLogs.isEmpty ? rawHabitLogs : rawGlobalLogs
+        let habitTimingLogs = rawHabitLogs.compactMap { snapshot -> HabitLog? in
+            guard let timestamp = snapshot.rawTimestamp else { return nil }
+            return HabitLog(
+                timestamp: timestamp,
+                value: snapshot.numericValue,
+                createdAt: snapshot.createdAt,
+                calendar: calendar
+            )
+        }
+        let globalTimingLogs = resolvedGlobal.compactMap { snapshot -> HabitLog? in
+            guard let timestamp = snapshot.rawTimestamp else { return nil }
+            return HabitLog(
+                timestamp: timestamp,
+                value: snapshot.numericValue,
+                createdAt: snapshot.createdAt,
+                calendar: calendar
+            )
+        }
 
         return TimeInsightEngine.computeDetails(
-            logs: rawHabitLogs,
-            globalLogs: resolvedGlobal,
+            logs: habitTimingLogs,
+            globalLogs: globalTimingLogs,
             allowGlobalBlending: false,
             debugLabel: "\(habitName) | goalType=\(habitGoalType.rawValue)",
             now: now,

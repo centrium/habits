@@ -60,7 +60,7 @@ final class AICoachService {
     private var runOverrideForTesting: (@Sendable (AICoachInput, UInt64) async -> Outcome)?
 #endif
 
-    init(generationTimeout: TimeInterval = 4.0) {
+    init(generationTimeout: TimeInterval = 8.0) {
         self.generationTimeout = generationTimeout
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 struct GlobalInsightsSnapshot: Equatable {
     let hero: GlobalInsightsHero
@@ -101,6 +102,26 @@ struct GlobalInsightsService {
             greig: greig,
             introSummary: introSummary
         )
+    }
+
+    func snapshotAsync(
+        in modelContainer: ModelContainer,
+        habitIDs: [UUID],
+        now: Date = .now
+    ) async -> GlobalInsightsSnapshot? {
+        let uniqueHabitIDs = Set(habitIDs)
+        guard !uniqueHabitIDs.isEmpty else { return nil }
+
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                LoggingPerformanceMonitor.assertHeavyPathOffMainThread(#function)
+                let context = ModelContext(modelContainer)
+                let descriptor = FetchDescriptor<Habit>(sortBy: [SortDescriptor(\Habit.orderIndex)])
+                let habits = (try? context.fetch(descriptor).filter { uniqueHabitIDs.contains($0.id) }) ?? []
+                let snapshot = self.snapshot(for: habits, now: now)
+                continuation.resume(returning: snapshot)
+            }
+        }
     }
 }
 

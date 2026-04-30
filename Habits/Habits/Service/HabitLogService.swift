@@ -197,6 +197,12 @@ final class CueInsightService {
 }
 
 final class HabitLogService: ObservableObject {
+    private enum ComputedStateRefreshTrigger {
+        case optimisticUser
+        case committedSingle
+        case committedBatch
+    }
+
     enum MutationTerminalOutcome: Sendable {
         case committed(referenceDate: Date)
         case failed(errorDescription: String)
@@ -229,11 +235,6 @@ final class HabitLogService: ObservableObject {
         let intensity: Double
     }
 
-    private struct OptimisticComputedDisplayCacheEntry {
-        let projectionVersion: UInt64
-        let state: HabitComputedState
-    }
-
     private let modelContext: ModelContext
     private(set) var calendar: Calendar
     private let lastValueStore: any LastValueStore
@@ -242,11 +243,11 @@ final class HabitLogService: ObservableObject {
     private let hapticCooldown: TimeInterval = 0.1
     private var pendingComputedStateRefreshTasks: [UUID: Task<Void, Never>] = [:]
     private var computedStateRequestSequenceByHabitID: [UUID: UInt64] = [:]
-    private let computedStateRefreshDelayNanoseconds: UInt64 = 120_000_000
+    private let computedStateImmediateRefreshDelayNanoseconds: UInt64 = 0
+    private let computedStateBatchRefreshDelayNanoseconds: UInt64 = 40_000_000
     private var metricsRevisions: [UUID: Int] = [:]
     private var dayMetricsCache: [UUID: CachedDayMetrics] = [:]
     private var pendingDayMetricsByKey: [String: PendingDayMetrics] = [:]
-    private var optimisticComputedDisplayCacheByHabitID: [UUID: OptimisticComputedDisplayCacheEntry] = [:]
     private var mutationSequenceTracker = HabitLogSequenceTracker()
     private var mutationLedger = HabitLogMutationLedger()
     private lazy var sideEffectCoordinator = HabitLogSideEffectCoordinator(
@@ -263,6 +264,7 @@ final class HabitLogService: ObservableObject {
     private let cueInsightService: CueInsightService
     let habitVersionStore: HabitVersionStore
     @Published private(set) var computedStateByHabitID: [UUID: HabitComputedState] = [:]
+    @Published private(set) var lastKnownComputedStateByHabitID: [UUID: HabitComputedState] = [:]
     @Published private(set) var lastLogUserActionAt: Date?
 
     init(
@@ -288,7 +290,6 @@ final class HabitLogService: ObservableObject {
     func updateCalendar(_ calendar: Calendar) {
         self.calendar = calendar
         dayMetricsCache.removeAll()
-        optimisticComputedDisplayCacheByHabitID.removeAll()
         cueInsightService.resetCache()
     }
 
@@ -374,9 +375,11 @@ final class HabitLogService: ObservableObject {
             uiStateStore.applyCommittedMutation(mutation)
             clearPendingDayMetrics(for: mutation.id.habitID, day: mutation.id.dayStart)
             if shouldScheduleComputedStateRefresh(for: .committed(referenceDate: referenceDate)) {
+                let hasActivePending = !activePendingMutations(for: mutation.id.habitID).isEmpty
                 scheduleHabitComputedStateRefresh(
                     for: mutation.id.habitID,
-                    referenceDate: referenceDate
+                    referenceDate: referenceDate,
+                    trigger: hasActivePending ? .committedBatch : .committedSingle
                 )
             }
             LoggingPerformanceMonitor.markPersistCommitted(
@@ -452,7 +455,6 @@ final class HabitLogService: ObservableObject {
         }
         dayMetricsCache.removeValue(forKey: habitID)
         cueInsightService.resetCache()
-        optimisticComputedDisplayCacheByHabitID.removeValue(forKey: habitID)
         // Drop stale cached computed state so UI falls back to optimistic/live state immediately.
         computedStateByHabitID.removeValue(forKey: habitID)
     }
@@ -495,17 +497,34 @@ final class HabitLogService: ObservableObject {
         }
     }
 
-    private func scheduleHabitComputedStateRefresh(for habitID: UUID, referenceDate: Date) {
+    private func refreshDelayNanoseconds(for trigger: ComputedStateRefreshTrigger) -> UInt64 {
+        switch trigger {
+        case .optimisticUser, .committedSingle:
+            return computedStateImmediateRefreshDelayNanoseconds
+        case .committedBatch:
+            return computedStateBatchRefreshDelayNanoseconds
+        }
+    }
+
+    private func scheduleHabitComputedStateRefresh(
+        for habitID: UUID,
+        referenceDate: Date,
+        trigger: ComputedStateRefreshTrigger,
+        projectedPendingMutations: [HabitLogPendingMutation]? = nil
+    ) {
         pendingComputedStateRefreshTasks[habitID]?.cancel()
         let sequence = (computedStateRequestSequenceByHabitID[habitID] ?? 0) + 1
         computedStateRequestSequenceByHabitID[habitID] = sequence
+        let delayNanoseconds = refreshDelayNanoseconds(for: trigger)
         logComputedStateDebug(
-            "schedule habit=\(habitID.uuidString) seq=\(sequence) day=\(referenceDate.timeIntervalSince1970)"
+            "schedule habit=\(habitID.uuidString) seq=\(sequence) trigger=\(String(describing: trigger)) delayNs=\(delayNanoseconds) day=\(referenceDate.timeIntervalSince1970)"
         )
 
         let task = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: computedStateRefreshDelayNanoseconds)
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
             guard !Task.isCancelled else {
                 self.logComputedStateDebug(
                     "cancel-before-compute habit=\(habitID.uuidString) seq=\(sequence)"
@@ -515,7 +534,8 @@ final class HabitLogService: ObservableObject {
 
             let state = await self.computeComputedStateOffMain(
                 habitID: habitID,
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                projectedPendingMutations: projectedPendingMutations
             )
             guard !Task.isCancelled else {
                 self.logComputedStateDebug(
@@ -538,6 +558,7 @@ final class HabitLogService: ObservableObject {
                     return
                 }
                 self.computedStateByHabitID[habitID] = state
+                self.lastKnownComputedStateByHabitID[habitID] = state
                 self.pendingComputedStateRefreshTasks.removeValue(forKey: habitID)
                 self.logComputedStateDebug(
                     "publish habit=\(habitID.uuidString) seq=\(sequence) cacheSize=\(self.computedStateByHabitID.count)"
@@ -550,11 +571,13 @@ final class HabitLogService: ObservableObject {
 
     private func computeComputedStateOffMain(
         habitID: UUID,
-        referenceDate: Date
+        referenceDate: Date,
+        projectedPendingMutations: [HabitLogPendingMutation]? = nil
     ) async -> HabitComputedState? {
         await withCheckedContinuation { continuation in
             let modelContainer = modelContext.container
             let calendar = self.calendar
+            let pendingMutations = projectedPendingMutations ?? []
             DispatchQueue.global(qos: .utility).async {
                 Self.logComputedStateDebug(
                     "compute-start habit=\(habitID.uuidString) day=\(referenceDate.timeIntervalSince1970)"
@@ -569,14 +592,32 @@ final class HabitLogService: ObservableObject {
                     return
                 }
 
-                let logs = habit.logs
+                let baseSnapshots = habit.logs.map { log in
+                    HabitComputationLog(
+                        id: log.id,
+                        day: log.day,
+                        effectiveTimestamp: log.effectiveTimestamp,
+                        createdAt: log.createdAt,
+                        kind: log.kind,
+                        numericValue: log.numericValue,
+                        frequencyContribution: log.frequencyContribution,
+                        rawTimestamp: log.timestamp
+                    )
+                }
+                let resolvedSnapshots = Self.projectedLogSnapshots(
+                    baseSnapshots: baseSnapshots,
+                    habitID: habit.id,
+                    activePendingMutations: pendingMutations,
+                    calendar: calendar
+                )
                 let computed = HabitComputationEngine(
                     calendar: calendar,
                     weekStartPreference: .system
                 ).compute(
                     habit: habit,
-                    logs: logs,
-                    globalLogs: logs,
+                    logSnapshots: resolvedSnapshots,
+                    timingLogSnapshots: resolvedSnapshots,
+                    timingGlobalLogSnapshots: resolvedSnapshots,
                     now: referenceDate
                 )
                 Self.logComputedStateDebug(
@@ -657,50 +698,34 @@ extension HabitLogService {
         referenceDate: Date,
         weekStartPreference: WeekStartPreference
     ) -> HabitComputedState {
-        let projectionVersion = currentProjectionVersion(for: habit.id)
+        _ = referenceDate
+        _ = weekStartPreference
+        logComputedStateDebug("resolve-enter habit=\(habit.id.uuidString)")
         let activePending = activePendingMutations(for: habit.id)
         if !activePending.isEmpty {
-            if let cachedOptimistic = optimisticComputedDisplayCacheByHabitID[habit.id],
-               cachedOptimistic.projectionVersion == projectionVersion {
-                return cachedOptimistic.state
-            }
-
-            let projectedLogs = projectedLogsForDisplay(
-                habit: habit,
-                activePendingMutations: activePending
-            )
-            let optimisticResolved = resolveComputedState(
-                habit: habit,
-                logs: projectedLogs,
-                referenceDate: referenceDate,
-                weekStartPreference: weekStartPreference
-            )
-            optimisticComputedDisplayCacheByHabitID[habit.id] = OptimisticComputedDisplayCacheEntry(
-                projectionVersion: projectionVersion,
-                state: optimisticResolved
-            )
-            return optimisticResolved
+            logComputedStateDebug("resolve-pending habit=\(habit.id.uuidString) pending=\(activePending.count)")
+            return computedStateByHabitID[habit.id]
+                ?? lastKnownComputedStateByHabitID[habit.id]
+                ?? emptyComputedState()
         }
-
-        if let cachedOptimistic = optimisticComputedDisplayCacheByHabitID[habit.id],
-           pendingComputedStateRefreshTasks[habit.id] != nil {
-            return cachedOptimistic.state
-        }
-        optimisticComputedDisplayCacheByHabitID.removeValue(forKey: habit.id)
 
         if let cached = computedStateByHabitID[habit.id] {
             return cached
         }
+        return lastKnownComputedStateByHabitID[habit.id] ?? emptyComputedState()
+    }
 
-        let resolved = resolveComputedState(
+    func resolvedComputedStateForInsights(
+        habit: Habit,
+        referenceDate: Date,
+        weekStartPreference: WeekStartPreference
+    ) async -> HabitComputedState {
+        _ = await ensureComputedState(for: habit.id, referenceDate: referenceDate)
+        return resolvedComputedStateForDisplay(
             habit: habit,
-            logs: habit.logs,
             referenceDate: referenceDate,
             weekStartPreference: weekStartPreference
         )
-
-        computedStateByHabitID[habit.id] = resolved
-        return resolved
     }
 
     private func resolveComputedState(
@@ -723,10 +748,25 @@ extension HabitLogService {
         )
     }
 
-    private func currentProjectionVersion(for habitID: UUID) -> UInt64 {
-        MainActor.assumeIsolated {
-            uiStateStore.projectionVersionByHabitID[habitID] ?? 0
+    private func resolveComputedState(
+        habit: Habit,
+        projectedLogSnapshots: [HabitComputationLog],
+        referenceDate: Date,
+        weekStartPreference: WeekStartPreference
+    ) -> HabitComputedState {
+        if projectedLogSnapshots.isEmpty {
+            return emptyComputedState()
         }
+        return HabitComputationEngine(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).compute(
+            habit: habit,
+            logSnapshots: projectedLogSnapshots,
+            timingLogSnapshots: projectedLogSnapshots,
+            timingGlobalLogSnapshots: projectedLogSnapshots,
+            now: referenceDate
+        )
     }
 
     private func isActivePendingStatus(_ status: HabitLogMutationStatus) -> Bool {
@@ -746,28 +786,132 @@ extension HabitLogService {
         }
     }
 
-    private func projectedLogsForDisplay(
+    private func projectedLogSnapshotsForDisplay(
         habit: Habit,
         activePendingMutations: [HabitLogPendingMutation]
-    ) -> [HabitLog] {
-        guard !activePendingMutations.isEmpty else { return habit.logs }
+    ) -> [HabitComputationLog] {
+        let baseSnapshots = habit.logs.map(computationSnapshot(from:))
+        return Self.projectedLogSnapshots(
+            baseSnapshots: baseSnapshots,
+            habitID: habit.id,
+            activePendingMutations: activePendingMutations,
+            calendar: calendar
+        )
+    }
+
+    private func computationSnapshot(from log: HabitLog) -> HabitComputationLog {
+        HabitComputationLog(
+            id: log.id,
+            day: log.day,
+            effectiveTimestamp: log.effectiveTimestamp,
+            createdAt: log.createdAt,
+            kind: log.kind,
+            numericValue: log.numericValue,
+            frequencyContribution: log.frequencyContribution,
+            rawTimestamp: log.timestamp
+        )
+    }
+
+    private static func projectedLogSnapshots(
+        baseSnapshots: [HabitComputationLog],
+        habitID: UUID,
+        activePendingMutations: [HabitLogPendingMutation],
+        calendar: Calendar
+    ) -> [HabitComputationLog] {
+        guard !activePendingMutations.isEmpty else {
+            return baseSnapshots.sorted { lhs, rhs in
+                if lhs.effectiveTimestamp == rhs.effectiveTimestamp {
+                    if lhs.createdAt == rhs.createdAt {
+                        return lhs.id.uuidString < rhs.id.uuidString
+                    }
+                    return lhs.createdAt < rhs.createdAt
+                }
+                return lhs.effectiveTimestamp < rhs.effectiveTimestamp
+            }
+        }
 
         var projectedByLogID = Dictionary(
-            uniqueKeysWithValues: habit.logs.map { ($0.id, detachedEntryCopy(from: $0)) }
+            uniqueKeysWithValues: baseSnapshots.map { ($0.id, $0) }
         )
         let pendingDays = Set(
             activePendingMutations.map { calendar.startOfDay(for: $0.id.dayStart) }
         )
 
         for day in pendingDays {
-            let dayLogs = logs(for: habit, on: day)
-            for log in dayLogs {
-                projectedByLogID.removeValue(forKey: log.id)
+            let dayKey = HabitLogDayKey.make(habitID: habitID, day: day, calendar: calendar)
+            let dayMutations = activePendingMutations
+                .filter { $0.id.dayKey == dayKey }
+                .sorted { lhs, rhs in
+                    if lhs.id.sequence == rhs.id.sequence {
+                        return lhs.createdAt < rhs.createdAt
+                    }
+                    return lhs.id.sequence < rhs.id.sequence
+                }
+
+            projectedByLogID = projectedByLogID.filter { _, snapshot in
+                calendar.startOfDay(for: snapshot.day) != dayKey.dayStart
             }
 
-            let projectedDayLogs = projectedEntries(for: habit, on: day)
-            for log in projectedDayLogs {
-                projectedByLogID[log.id] = log
+            for mutation in dayMutations {
+                switch mutation.operation {
+                case let .addLog(value, entryTimestamp):
+                    projectedByLogID.removeValue(forKey: mutation.id.nonce)
+                    projectedByLogID[mutation.id.nonce] = HabitComputationLog(
+                        id: mutation.id.nonce,
+                        day: dayKey.dayStart,
+                        effectiveTimestamp: entryTimestamp,
+                        createdAt: mutation.createdAt,
+                        kind: .entry,
+                        numericValue: max(0, value),
+                        frequencyContribution: max(0, value) > 0 ? 1 : 0,
+                        rawTimestamp: entryTimestamp
+                    )
+                case let .deleteEntry(logID):
+                    projectedByLogID.removeValue(forKey: logID)
+                case let .updateEntry(logID, value):
+                    guard var existing = projectedByLogID[logID] else { continue }
+                    let amount = max(0, value)
+                    if amount == 0 {
+                        projectedByLogID.removeValue(forKey: logID)
+                    } else {
+                        existing = HabitComputationLog(
+                            id: existing.id,
+                            day: existing.day,
+                            effectiveTimestamp: existing.effectiveTimestamp,
+                            createdAt: mutation.createdAt,
+                            kind: existing.kind,
+                            numericValue: amount,
+                            frequencyContribution: amount > 0 ? 1 : 0,
+                            rawTimestamp: existing.rawTimestamp
+                        )
+                        projectedByLogID[logID] = existing
+                    }
+                case .clearDay:
+                    projectedByLogID = projectedByLogID.filter { _, snapshot in
+                        calendar.startOfDay(for: snapshot.day) != dayKey.dayStart
+                    }
+                case let .setDayCount(newCount):
+                    projectedByLogID = projectedByLogID.filter { _, snapshot in
+                        calendar.startOfDay(for: snapshot.day) != dayKey.dayStart
+                    }
+                    for offset in 0..<max(0, newCount) {
+                        let timestamp = dayKey.dayStart.addingTimeInterval(TimeInterval(offset))
+                        let logID = HabitLogMutationIdentity.deterministicLogID(
+                            baseNonce: mutation.id.nonce,
+                            index: offset
+                        )
+                        projectedByLogID[logID] = HabitComputationLog(
+                            id: logID,
+                            day: dayKey.dayStart,
+                            effectiveTimestamp: timestamp,
+                            createdAt: mutation.createdAt,
+                            kind: .entry,
+                            numericValue: 1,
+                            frequencyContribution: 1,
+                            rawTimestamp: timestamp
+                        )
+                    }
+                }
             }
         }
 
@@ -780,6 +924,20 @@ extension HabitLogService {
             }
             return lhs.effectiveTimestamp < rhs.effectiveTimestamp
         }
+    }
+
+    private func scheduleOptimisticComputedStateRefresh(
+        habitID: UUID,
+        referenceDate: Date
+    ) {
+        let activePending = activePendingMutations(for: habitID)
+        guard !activePending.isEmpty else { return }
+        scheduleHabitComputedStateRefresh(
+            for: habitID,
+            referenceDate: referenceDate,
+            trigger: .optimisticUser,
+            projectedPendingMutations: activePending
+        )
     }
 
     func ensureComputedState(
@@ -797,6 +955,7 @@ extension HabitLogService {
         }
         await MainActor.run {
             computedStateByHabitID[habitID] = computed
+            lastKnownComputedStateByHabitID[habitID] = computed
             logComputedStateDebug(
                 "warmup-publish habit=\(habitID.uuidString) cacheSize=\(computedStateByHabitID.count)"
             )
@@ -831,6 +990,7 @@ extension HabitLogService {
             await MainActor.run {
                 for (habitID, state) in statesToPublish {
                     computedStateByHabitID[habitID] = state
+                    lastKnownComputedStateByHabitID[habitID] = state
                 }
                 if !statesToPublish.isEmpty {
                     logComputedStateDebug(
@@ -1464,6 +1624,7 @@ extension HabitLogService {
 
     @discardableResult
     func addLog(for habit: Habit, on day: Date, value: Double) -> Double {
+        logComputedStateDebug("add-enter habit=\(habit.id.uuidString)")
         let traceID = UUID()
         LoggingPerformanceMonitor.markTapStart(traceID: traceID, habitID: habit.id)
         lastLogUserActionAt = Date()
@@ -1517,6 +1678,7 @@ extension HabitLogService {
             expectedCompletion: willBeComplete
         )
         mutationLedger.enqueue(pendingMutation)
+        logComputedStateDebug("add-enqueued habit=\(habit.id.uuidString) seq=\(sequence)")
         uiStateStore.seedCommittedAndAppendPending(
             habitID: habit.id,
             day: normalizedDay,
@@ -1538,6 +1700,10 @@ extension HabitLogService {
                 intensity: clamp(projected?.progress ?? newProgress)
             )
         )
+        scheduleOptimisticComputedStateRefresh(
+            habitID: habit.id,
+            referenceDate: normalizedDay
+        )
         LoggingPerformanceMonitor.markOptimisticApplied(traceID: traceID, habitID: habit.id)
         playHaptic(becameComplete: !wasComplete && willBeComplete)
         enqueueMutationPersistence(
@@ -1545,6 +1711,7 @@ extension HabitLogService {
             entryTimestamp: entryTimestamp,
             referenceDate: normalizedDay
         )
+        logComputedStateDebug("add-persist-enqueued habit=\(habit.id.uuidString)")
 
         return newValue
     }
@@ -1619,6 +1786,10 @@ extension HabitLogService {
                 value: expected.value,
                 intensity: clamp(expected.progress)
             )
+        )
+        scheduleOptimisticComputedStateRefresh(
+            habitID: habit.id,
+            referenceDate: normalizedDay
         )
         playHaptic(becameComplete: !wasComplete && expected.isComplete)
         enqueueMutationPersistence(
@@ -1698,6 +1869,10 @@ extension HabitLogService {
                 intensity: clamp(expected.progress)
             )
         )
+        scheduleOptimisticComputedStateRefresh(
+            habitID: habit.id,
+            referenceDate: normalizedDay
+        )
         playHaptic(becameComplete: !wasComplete && expected.isComplete)
         enqueueMutationPersistence(
             mutation: pendingMutation,
@@ -1756,6 +1931,10 @@ extension HabitLogService {
             for: habit.id,
             day: normalizedDay,
             metrics: PendingDayMetrics(count: 0, value: 0, intensity: 0)
+        )
+        scheduleOptimisticComputedStateRefresh(
+            habitID: habit.id,
+            referenceDate: normalizedDay
         )
         playHaptic(becameComplete: false)
         enqueueMutationPersistence(
@@ -1857,6 +2036,10 @@ extension HabitLogService {
                 value: Double(value),
                 intensity: clamp(expectedProgress)
             )
+        )
+        scheduleOptimisticComputedStateRefresh(
+            habitID: habit.id,
+            referenceDate: normalizedDay
         )
         playHaptic(becameComplete: !wasComplete && expectedCompletion)
         enqueueMutationPersistence(
@@ -2141,8 +2324,8 @@ extension HabitLogService {
         metricsRevisions.removeAll()
         mutationLedger = HabitLogMutationLedger()
         mutationSequenceTracker = HabitLogSequenceTracker()
-        optimisticComputedDisplayCacheByHabitID.removeAll()
         computedStateByHabitID.removeAll()
+        lastKnownComputedStateByHabitID.removeAll()
         cueInsightService.resetCache()
     }
 

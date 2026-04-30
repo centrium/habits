@@ -90,6 +90,58 @@ struct StreakStateEngine {
 
     func calculateStreak(
         for habit: Habit,
+        logs: [HabitComputationLog],
+        asOf date: Date,
+        period: DateInterval? = nil
+    ) -> StreakResult {
+        let asOfDay = calendar.startOfDay(for: date)
+        let window = calculationWindow(
+            logs: logs,
+            asOfDay: asOfDay,
+            period: period
+        )
+
+        guard let window else {
+            return StreakResult(
+                current: 0,
+                best: 0,
+                lastCompletedDate: nil,
+                isAtRisk: false,
+                isBroken: true
+            )
+        }
+
+        let summary = successSummary(
+            for: habit,
+            logs: logs,
+            from: window.startDay,
+            through: window.endDay
+        )
+
+        let todaySuccessful = summary.successfulDays.contains(window.endDay)
+        let previousDay = calendar.date(byAdding: .day, value: -1, to: window.endDay)
+        let previousSuccessful = previousDay.map { summary.successfulDays.contains($0) } ?? false
+        let currentStreak: Int = {
+            if summary.current > 0 { return summary.current }
+            guard previousSuccessful, let previousDay else { return 0 }
+            return streakLengthEnding(
+                at: previousDay,
+                startDay: window.startDay,
+                successfulDays: summary.successfulDays
+            )
+        }()
+
+        return StreakResult(
+            current: currentStreak,
+            best: summary.best,
+            lastCompletedDate: summary.lastCompletedDate,
+            isAtRisk: !todaySuccessful && previousSuccessful,
+            isBroken: !todaySuccessful && !previousSuccessful
+        )
+    }
+
+    func calculateStreak(
+        for habit: Habit,
         asOf date: Date,
         period: DateInterval? = nil
     ) -> StreakResult {
@@ -246,6 +298,29 @@ private extension StreakStateEngine {
         return CalculationWindow(startDay: firstLogDay, endDay: asOfDay)
     }
 
+    func calculationWindow(
+        logs: [HabitComputationLog],
+        asOfDay: Date,
+        period: DateInterval?
+    ) -> CalculationWindow? {
+        let firstLogDay = logs
+            .map(\.day)
+            .map { calendar.startOfDay(for: $0) }
+            .min()
+
+        if let period {
+            let periodStartDay = calendar.startOfDay(for: period.start)
+            let periodLastDay = resolvedPeriodLastDay(for: period)
+            guard periodStartDay <= periodLastDay else { return nil }
+            let endDay = min(asOfDay, periodLastDay)
+            guard periodStartDay <= endDay else { return nil }
+            return CalculationWindow(startDay: periodStartDay, endDay: endDay)
+        }
+
+        guard let firstLogDay, firstLogDay <= asOfDay else { return nil }
+        return CalculationWindow(startDay: firstLogDay, endDay: asOfDay)
+    }
+
     func resolvedPeriodLastDay(for period: DateInterval) -> Date {
         let endStartOfDay = calendar.startOfDay(for: period.end)
         let endIsStartOfDay = period.end == endStartOfDay
@@ -288,6 +363,88 @@ private extension StreakStateEngine {
             let isSuccessful: Bool = {
                 if !habit.hasGoal {
                     // Open goals are successful when there is at least one log on that day.
+                    return !(logsByDay[cursor]?.isEmpty ?? true)
+                }
+
+                switch habit.goalType {
+                case .frequency:
+                    return frequencyByDay[cursor, default: 0] >= max(1, frequencyTarget)
+                case .cumulative:
+                    return cumulativeByDay[cursor, default: 0] >= max(0, cumulativeTarget)
+                }
+            }()
+
+            if isSuccessful {
+                successfulDays.insert(cursor)
+            }
+
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+
+        var best = 0
+        var run = 0
+        var lastCompletedDate: Date?
+        cursor = startDay
+        while cursor <= endDay {
+            if successfulDays.contains(cursor) {
+                run += 1
+                best = max(best, run)
+                lastCompletedDate = cursor
+            } else {
+                run = 0
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+
+        var current = 0
+        cursor = endDay
+        while cursor >= startDay, successfulDays.contains(cursor) {
+            current += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+
+        return SuccessSummary(
+            current: current,
+            best: best,
+            lastCompletedDate: lastCompletedDate,
+            successfulDays: successfulDays
+        )
+    }
+
+    func successSummary(
+        for habit: Habit,
+        logs: [HabitComputationLog],
+        from startDay: Date,
+        through endDay: Date
+    ) -> SuccessSummary {
+        var frequencyByDay: [Date: Int] = [:]
+        var cumulativeByDay: [Date: Double] = [:]
+        var logsByDay: [Date: [HabitComputationLog]] = [:]
+
+        for log in logs {
+            let openGoalDay = calendar.startOfDay(for: log.day)
+            if openGoalDay >= startDay, openGoalDay <= endDay {
+                logsByDay[openGoalDay, default: []].append(log)
+            }
+
+            let goalContributionDay = calendar.startOfDay(for: log.day)
+            guard goalContributionDay >= startDay, goalContributionDay <= endDay else { continue }
+
+            frequencyByDay[goalContributionDay, default: 0] += max(0, log.frequencyContribution)
+            cumulativeByDay[goalContributionDay, default: 0] += max(0, log.numericValue)
+        }
+
+        let frequencyTarget = Int(ceil(habit.effectiveTargetValue ?? 1))
+        let cumulativeTarget = habit.targetValue ?? 0
+
+        var successfulDays: Set<Date> = []
+        var cursor = startDay
+        while cursor <= endDay {
+            let isSuccessful: Bool = {
+                if !habit.hasGoal {
                     return !(logsByDay[cursor]?.isEmpty ?? true)
                 }
 

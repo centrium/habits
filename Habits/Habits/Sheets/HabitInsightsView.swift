@@ -11,6 +11,7 @@ struct HabitInsightsView: View {
     }
 
     @EnvironmentObject private var userSettings: UserSettings
+    @EnvironmentObject private var habitLogService: HabitLogService
     @State private var hasAnimatedIn = false
     @State private var insightsViewModel: HabitInsightsViewModel?
     @State private var hasLoadedSnapshot = false
@@ -77,6 +78,7 @@ struct HabitInsightsView: View {
 
     private struct InsightsSnapshotInput {
         let habit: Habit
+        let computedState: HabitComputedState
         let logAnchorDate: Date?
         let globalLogs: [HabitLog]
         let calendar: Calendar
@@ -90,9 +92,10 @@ struct HabitInsightsView: View {
         insightsRefreshTask?.cancel()
         insightsRequestSequence &+= 1
         let requestSequence = insightsRequestSequence
-        let snapshotInput = makeSnapshotInput()
 
         insightsRefreshTask = Task(priority: .userInitiated) {
+            let snapshotInput = await makeSnapshotInput()
+            guard !Task.isCancelled else { return }
             let result = await computeInsightsOffMain(from: snapshotInput)
             guard !Task.isCancelled else { return }
 
@@ -108,20 +111,27 @@ struct HabitInsightsView: View {
         }
     }
 
-    private func makeSnapshotInput() -> InsightsSnapshotInput {
-        var calendar = Calendar.current
+    private func makeSnapshotInput() async -> InsightsSnapshotInput {
+        var calendar = habitLogService.calendar
         let timezone = calendar.timeZone
         calendar.timeZone = timezone
+        let now = Date()
+        let computedState = await habitLogService.resolvedComputedStateForInsights(
+            habit: habit,
+            referenceDate: now,
+            weekStartPreference: userSettings.weekStartPreference
+        )
 
         return InsightsSnapshotInput(
             habit: detachedHabitCopy(from: habit, calendar: calendar),
+            computedState: computedState,
             logAnchorDate: logAnchorDate,
             globalLogs: [],
             calendar: calendar,
             weekStartPreference: userSettings.weekStartPreference,
             greigModeEnabled: userSettings.greigModeEnabled,
             timezone: timezone,
-            now: .now
+            now: now
         )
     }
 
@@ -130,6 +140,7 @@ struct HabitInsightsView: View {
             DispatchQueue.global(qos: .userInitiated).async {
                 let model = HabitInsightsEngine.insights(
                     for: input.habit,
+                    computedState: input.computedState,
                     logAnchorDate: input.logAnchorDate,
                     globalLogs: input.globalLogs,
                     calendar: input.calendar,
@@ -1664,6 +1675,15 @@ private struct HabitInsightsPreviewScenario: Identifiable {
 
                     let model = HabitInsightsEngine.insights(
                         for: scenario.habit,
+                        computedState: HabitComputationEngine(
+                            calendar: calendar,
+                            weekStartPreference: .monday
+                        ).compute(
+                            habit: scenario.habit,
+                            logs: scenario.habit.logs,
+                            globalLogs: scenario.habit.logs,
+                            now: referenceDate
+                        ),
                         logAnchorDate: referenceDate,
                         calendar: calendar,
                         weekStartPreference: .monday,

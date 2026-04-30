@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftData
 import XCTest
@@ -393,10 +394,35 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         XCTAssertEqual(resolved.consistency.daysCompleted, 0)
         XCTAssertEqual(resolved.consistency.daysAvailable, 1)
         XCTAssertEqual(resolved.consistency.windowDays, 7)
-        let cached = try XCTUnwrap(service.computedStateByHabitID[initialHabit.id])
-        XCTAssertEqual(cached.streakState.currentStreak, 0)
-        XCTAssertEqual(cached.streakState.status, .safe)
-        XCTAssertEqual(cached.consistency.percentage, 0)
+        XCTAssertNil(service.computedStateByHabitID[initialHabit.id])
+    }
+
+    func testResolvedComputedStateForDisplayDoesNotPublishComputedCacheChanges() throws {
+        let persistence = try TestPersistence()
+        let calendar = TestDateFactory.utcCalendar
+        let today = calendar.startOfDay(for: Date())
+        let initialHabit = TestHabitFactory.frequency(name: "Pure Resolver", target: 1, calendar: calendar)
+        let service = HabitLogService(
+            modelContext: persistence.context,
+            calendar: calendar,
+            uiStateStore: HabitUIStateStore()
+        )
+
+        var emissionCount = 0
+        var cancellables = Set<AnyCancellable>()
+        service.$computedStateByHabitID
+            .sink { _ in emissionCount += 1 }
+            .store(in: &cancellables)
+
+        let baselineEmissions = emissionCount
+        _ = service.resolvedComputedStateForDisplay(
+            habit: initialHabit,
+            referenceDate: today,
+            weekStartPreference: .system
+        )
+
+        XCTAssertEqual(emissionCount, baselineEmissions)
+        XCTAssertTrue(service.computedStateByHabitID.isEmpty)
     }
 
     func testComputedStateRefreshPolicyMatrix() throws {
@@ -437,7 +463,7 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
         XCTAssertNil(service.computedStateByHabitID[habit.id])
     }
 
-    func testResolvedComputedStateBypassesCommittedCacheWhileMutationPending() throws {
+    func testResolvedComputedStateUsesCachedSnapshotWhileMutationPending() throws {
         let persistence = try TestPersistence()
         let calendar = TestDateFactory.utcCalendar
         let day = calendar.startOfDay(for: Date())
@@ -465,7 +491,7 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
             weekStartPreference: .system
         )
 
-        XCTAssertEqual(resolvedPending.streakState.currentStreak, 1)
+        XCTAssertEqual(resolvedPending.streakState.currentStreak, 0)
         XCTAssertEqual(service.computedStateByHabitID[habit.id]?.streakState.currentStreak, 0)
     }
 
@@ -494,7 +520,7 @@ final class HabitLoggingArchitectureTests: BaseTestCase {
             referenceDate: day,
             weekStartPreference: .system
         )
-        XCTAssertEqual(optimistic.streakState.currentStreak, 1)
+        XCTAssertEqual(optimistic.streakState.currentStreak, 0)
 
         try await waitUntil {
             let pending = uiStateStore.pendingMutations(for: habit.id)

@@ -28,6 +28,7 @@ struct HabitInsightsEngine {
 
     static func insights(
         for habit: Habit,
+        computedState: HabitComputedState,
         logAnchorDate: Date? = nil,
         globalLogs: [HabitLog] = [],
         calendar: Calendar = .current,
@@ -49,15 +50,6 @@ struct HabitInsightsEngine {
             globalLogs: globalLogs,
             calendar: calendar,
             weekStartPreference: weekStartPreference,
-            now: now
-        )
-        let computedState = HabitComputationEngine(
-            calendar: calendar,
-            weekStartPreference: weekStartPreference
-        ).compute(
-            habit: habit,
-            logs: habit.logs,
-            globalLogs: globalLogs.isEmpty ? habit.logs : globalLogs,
             now: now
         )
         StateConsistencyTraceLogger.log(

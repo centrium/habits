@@ -224,7 +224,7 @@ struct HabitDetailSheet: View {
     @State private var aiCoachSectionState: SectionLoadState<GuidanceOutput> = .loading
     @State private var metadataSectionState: SectionLoadState<Void> = .loading
     @State private var prefersIdentityFocusOnEdit = false
-    @State private var coachPresentationState: CoachPresentationState = .fallbackGuidance(SafeMinimalCoaching.line)
+    @State private var coachPresentationState: CoachPresentationState
     @State private var coachingContext: CoachingContext?
     @State private var guidanceCoachText: String = SafeMinimalCoaching.line
     @State private var guidanceUsedSignals: Set<CoachingSignalID> = []
@@ -234,6 +234,7 @@ struct HabitDetailSheet: View {
     @State private var pendingAICandidate: PendingAICandidate?
     @State private var coachRenderUnlockTask: Task<Void, Never>?
     @State private var aiLoadingWatchdogTask: Task<Void, Never>?
+    @State private var isAICoachRequestInFlight = false
     @State private var staleRetryDebounceTask: Task<Void, Never>?
     @State private var staleRetryCount: Int = 0
     @State private var staleRetryCapReached = false
@@ -274,10 +275,15 @@ struct HabitDetailSheet: View {
         initialCalendar: Calendar = .autoupdatingCurrent,
         onDeleted: (() -> Void)? = nil
     ) {
+        let initialCoachState = HabitDetailSheet.initialCoachPresentationState(
+            isAIAvailable: AICoachService.shared.isAppleIntelligenceAvailable(),
+            fallbackMessage: SafeMinimalCoaching.line
+        )
         self.habit = habit
         self.onDeleted = onDeleted
         _selectionState = StateObject(wrappedValue: HabitSelectionState(calendar: initialCalendar))
         _selectedDate = State(initialValue: initialCalendar.startOfDay(for: Date()))
+        _coachPresentationState = State(initialValue: initialCoachState)
     }
 
     var body: some View {
@@ -445,6 +451,10 @@ struct HabitDetailSheet: View {
             metadataSectionState = .loading
             frozenStateModel = nil
             frozenGuidanceOutput = nil
+            coachPresentationState = Self.initialCoachPresentationState(
+                isAIAvailable: aiCoach.isAppleIntelligenceAvailable(),
+                fallbackMessage: guidanceCoachText
+            )
             Task { @MainActor in
                 await bootstrapDetailSections(now: now)
             }
@@ -1834,11 +1844,22 @@ struct HabitDetailSheet: View {
             }
             return .empty
         }()
-        coachPresentationState = aiCoach.isAppleIntelligenceAvailable()
-            ? .loadingAI
-            : .fallbackGuidance(guidanceCoachText)
+        coachPresentationState = Self.initialCoachPresentationState(
+            isAIAvailable: aiCoach.isAppleIntelligenceAvailable(),
+            fallbackMessage: guidanceCoachText
+        )
         detailPerfLog("ai-section-ready")
         regenerateAICoachOnAppear()
+    }
+
+    private static func initialCoachPresentationState(
+        isAIAvailable: Bool,
+        fallbackMessage: String
+    ) -> CoachPresentationState {
+        if isAIAvailable {
+            return .loadingAI
+        }
+        return .fallbackGuidance(fallbackMessage)
     }
 
     private var aiCoachSectionPhase: Int {
@@ -1961,6 +1982,7 @@ struct HabitDetailSheet: View {
         )
 
         guard aiCoach.isAppleIntelligenceAvailable() else {
+            isAICoachRequestInFlight = false
             cancelAILoadingWatchdog()
             coachPresentationState = .fallbackGuidance(guidanceCoachText)
             return
@@ -1971,6 +1993,7 @@ struct HabitDetailSheet: View {
             fingerprint: context.aiFingerprint,
             depth: context.depth
         ) {
+            isAICoachRequestInFlight = false
             cancelAILoadingWatchdog()
             applyAICandidate(
                 PendingAICandidate(
@@ -1988,6 +2011,7 @@ struct HabitDetailSheet: View {
             coachPresentationState = .loadingAI
             startAILoadingWatchdog()
         }
+        isAICoachRequestInFlight = true
         aiCoach.generate(
             habitID: habit.id,
             input: input,
@@ -1998,6 +2022,7 @@ struct HabitDetailSheet: View {
                 return self.coachingContext?.aiFingerprint == requestFingerprint
             }
         ) { outcome in
+            self.isAICoachRequestInFlight = false
             self.cancelAILoadingWatchdog()
             switch outcome {
             case .success(let finalText):
@@ -2026,7 +2051,9 @@ struct HabitDetailSheet: View {
 
         pendingAICandidate = nil
         refreshCoachingContextAndGuidance(now: appTime.now)
-        coachPresentationState = .fallbackGuidance(guidanceCoachText)
+        if !isAICoachRequestInFlight {
+            coachPresentationState = .loadingAI
+        }
 
         guard let context = coachingContext else { return }
         guard context.aiFingerprint != previousFingerprint else { return }
@@ -2057,6 +2084,7 @@ struct HabitDetailSheet: View {
         guidanceUsedSignals = []
         aiUsedSignals = []
         pendingAICandidate = nil
+        isAICoachRequestInFlight = false
         cancelAILoadingWatchdog()
         staleRetryDebounceTask?.cancel()
         staleRetryDebounceTask = nil
@@ -2362,7 +2390,7 @@ struct HabitDetailSheet: View {
         let text = normalizeAICoachMessage(candidate.text).trimmingCharacters(in: .whitespacesAndNewlines)
         let isUsable = !text.isEmpty && text.wordCount >= 8 && genericityScore(text) == 0
         guard isUsable else {
-            if case .loadingAI = coachPresentationState {
+            if !isAICoachRequestInFlight, case .loadingAI = coachPresentationState {
                 coachPresentationState = .fallbackGuidance(guidanceCoachText)
             }
             return
@@ -2396,9 +2424,10 @@ struct HabitDetailSheet: View {
     private func startAILoadingWatchdog() {
         aiLoadingWatchdogTask?.cancel()
         aiLoadingWatchdogTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: 9_000_000_000)
             guard !Task.isCancelled else { return }
             guard viewModel.isActive else { return }
+            guard isAICoachRequestInFlight else { return }
             guard case .loadingAI = coachPresentationState else { return }
             refreshCoachingContextAndGuidance(now: appTime.now)
             coachPresentationState = .fallbackGuidance(guidanceCoachText)
@@ -2430,7 +2459,12 @@ struct HabitDetailSheet: View {
 
             guard staleRetryCount < 2 else {
                 staleRetryCapReached = true
-                coachPresentationState = .fallbackGuidance(guidanceCoachText)
+                let finalRetryKey = "stale-final-\(habit.id.uuidString)-\(currentFingerprint)-\(Date().timeIntervalSince1970)"
+                regenerateAICoach(
+                    requestKey: finalRetryKey,
+                    trigger: .automaticEvent,
+                    isBackgroundRetry: false
+                )
                 return
             }
 

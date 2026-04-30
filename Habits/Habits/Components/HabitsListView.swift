@@ -709,11 +709,15 @@ struct HabitsListView: View {
         let requestSequence = globalInsightsRequestSequence + 1
         globalInsightsRequestSequence = requestSequence
         let now = appTime.now
-
-        let snapshot = GlobalInsightsService(
+        let habitIDs = habits.map(\.id)
+        let snapshot = await GlobalInsightsService(
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
-        ).snapshot(for: habits, now: now)
+        ).snapshotAsync(
+            in: modelContext.container,
+            habitIDs: habitIDs,
+            now: now
+        )
 
         guard !Task.isCancelled, globalInsightsRequestSequence == requestSequence else { return }
         globalInsightsSnapshot = snapshot
