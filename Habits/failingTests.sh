@@ -26,9 +26,7 @@ run_suite () {
   grep -E "Test Case|error:|failed|crash|Assertion" "logs_$SUITE.txt" || true
 }
 
-# run_suite "WidgetHabitIdentityStateTests"
-# run_suite "WidgetHabitSelectionTests"
-run_suite "HabitLoggingArchitectureTests"
+run_suite "WidgetHabitIdentityStateTests"
 
 echo ""
 echo "----------------------------------------"

@@ -7,30 +7,33 @@ final class WidgetHabitSelectionTests: BaseTestCase {
     private let calendar = TestDateFactory.utcCalendar
     private var referenceDate: Date { calendar.startOfDay(for: Date()) }
 
-    func testSelectTopWidgetHabitsPrioritizesAttentionBuckets() async throws {
-        let completed = try await makeHabit(
+    func testSelectTopWidgetHabitsPrioritizesAttentionBuckets() {
+        let completed = makeWidgetHabit(
             name: "Completed",
             goalType: .goal,
             isCompleteToday: true,
             streak: 10,
-            progress: 1
+            progress: 1,
+            hasActivityToday: true
         )
-        let openEndedNoActivity = try await makeHabit(
+        let openEndedNoActivity = makeWidgetHabit(
             name: "Journal",
             goalType: .openEnded,
             streak: 2,
             hasActivityToday: false
         )
-        let binaryIncomplete = try await makeHabit(
+        let binaryIncomplete = makeWidgetHabit(
             name: "Walk",
             goalType: .binary,
-            streak: 8
+            streak: 8,
+            hasActivityToday: false
         )
-        let partialGoal = try await makeHabit(
+        let partialGoal = makeWidgetHabit(
             name: "Read",
             goalType: .goal,
             streak: 3,
-            progress: 0.6
+            progress: 0.6,
+            hasActivityToday: true
         )
 
         let selected = selectTopWidgetHabits([
@@ -43,10 +46,28 @@ final class WidgetHabitSelectionTests: BaseTestCase {
         XCTAssertEqual(selected.map { $0.name }, ["Read", "Walk", "Journal"])
     }
 
-    func testSelectTopWidgetHabitsSortsPartialGoalHabitsByHighestProgressFirst() async throws {
-        let highestProgress = try await makeHabit(name: "A", goalType: .goal, streak: 1, progress: 0.85)
-        let mediumProgress = try await makeHabit(name: "B", goalType: .goal, streak: 5, progress: 0.5)
-        let lowProgress = try await makeHabit(name: "C", goalType: .goal, streak: 10, progress: 0.2)
+    func testSelectTopWidgetHabitsSortsPartialGoalHabitsByHighestProgressFirst() {
+        let highestProgress = makeWidgetHabit(
+            name: "A",
+            goalType: .goal,
+            streak: 1,
+            progress: 0.85,
+            hasActivityToday: true
+        )
+        let mediumProgress = makeWidgetHabit(
+            name: "B",
+            goalType: .goal,
+            streak: 5,
+            progress: 0.5,
+            hasActivityToday: true
+        )
+        let lowProgress = makeWidgetHabit(
+            name: "C",
+            goalType: .goal,
+            streak: 10,
+            progress: 0.2,
+            hasActivityToday: true
+        )
 
         let selected = selectTopWidgetHabits([
             mediumProgress,
@@ -57,21 +78,28 @@ final class WidgetHabitSelectionTests: BaseTestCase {
         XCTAssertEqual(selected.map { $0.name }, ["A", "B", "C"])
     }
 
-    func testSelectTopWidgetHabitsUsesCompletedHabitsOnlyWhenNeeded() async throws {
-        let incomplete = try await makeHabit(name: "Walk", goalType: .binary, streak: 4)
-        let completedHighStreak = try await makeHabit(
+    func testSelectTopWidgetHabitsUsesCompletedHabitsOnlyWhenNeeded() {
+        let incomplete = makeWidgetHabit(
+            name: "Walk",
+            goalType: .binary,
+            streak: 4,
+            hasActivityToday: false
+        )
+        let completedHighStreak = makeWidgetHabit(
             name: "Meditate",
             goalType: .goal,
             isCompleteToday: true,
             streak: 9,
-            progress: 1
+            progress: 1,
+            hasActivityToday: true
         )
-        let completedLowStreak = try await makeHabit(
+        let completedLowStreak = makeWidgetHabit(
             name: "Stretch",
             goalType: .goal,
             isCompleteToday: true,
             streak: 2,
-            progress: 1
+            progress: 1,
+            hasActivityToday: true
         )
 
         let selected = selectTopWidgetHabits([
@@ -90,10 +118,26 @@ final class WidgetHabitSelectionTests: BaseTestCase {
         XCTAssertEqual(habit.goalProgress, 0)
     }
 
-    func testSelectFocusWidgetHabitPrioritizesHighestStreakWithoutActivityToday() async throws {
-        let lowStreak = try await makeHabit(name: "Journal", goalType: .openEnded, streak: 2, hasActivityToday: false)
-        let highStreak = try await makeHabit(name: "Read", goalType: .binary, streak: 8, hasActivityToday: false)
-        let inProgress = try await makeHabit(name: "Hydrate", goalType: .goal, streak: 6, progress: 0.4, hasActivityToday: true)
+    func testSelectFocusWidgetHabitPrioritizesHighestStreakWithoutActivityToday() {
+        let lowStreak = makeWidgetHabit(
+            name: "Journal",
+            goalType: .openEnded,
+            streak: 2,
+            hasActivityToday: false
+        )
+        let highStreak = makeWidgetHabit(
+            name: "Read",
+            goalType: .binary,
+            streak: 8,
+            hasActivityToday: false
+        )
+        let inProgress = makeWidgetHabit(
+            name: "Hydrate",
+            goalType: .goal,
+            streak: 6,
+            progress: 0.4,
+            hasActivityToday: true
+        )
 
         let selected = selectFocusWidgetHabit([lowStreak, inProgress, highStreak])
 
@@ -261,6 +305,27 @@ final class WidgetHabitSelectionTests: BaseTestCase {
         ).first
 
         return try XCTUnwrap(widgetHabit)
+    }
+
+    private func makeWidgetHabit(
+        name: String,
+        goalType: WidgetGoalType,
+        isCompleteToday: Bool = false,
+        streak: Int = 0,
+        progress: Double? = nil,
+        hasActivityToday: Bool = false
+    ) -> WidgetHabit {
+        WidgetHabit(
+            id: UUID(),
+            name: name,
+            isCompleteToday: isCompleteToday,
+            streak: streak,
+            goalType: goalType,
+            progress: progress,
+            hasActivityToday: hasActivityToday,
+            iconName: nil,
+            colorHex: nil
+        )
     }
 
     private func completedValue(
