@@ -103,7 +103,7 @@ private struct CoachingContext {
 }
 
 private struct PendingAICandidate {
-    let text: String
+    let result: AICoachResult
     let usedSignals: Set<CoachingSignalID>
     let aiFingerprint: String
     let trigger: AICoachRequestTrigger
@@ -111,7 +111,7 @@ private struct PendingAICandidate {
 
 private enum CoachPresentationState: Equatable {
     case loadingAI
-    case ai(String)
+    case ai(AICoachResult)
     case fallbackGuidance(String)
 }
 
@@ -427,7 +427,7 @@ struct HabitDetailSheet: View {
 
             case .aiCoachDetail:
                 AICoachDetailSheet(
-                    title: coachCardLabel,
+                    title: aiCoachDetailTitle,
                     message: aiCoachDetailMessage,
                     isLoading: isAICoachThinking,
                     loadingText: aiCoach.loadingText
@@ -784,6 +784,7 @@ struct HabitDetailSheet: View {
                         accent: accent,
                         variant: GuidanceEngine.visualVariant(for: output),
                         label: coachCardLabel,
+                        titleOverride: resolvedCoachTitle(for: output),
                         guidanceText: resolvedCoachMessage(for: output),
                         isLoading: isAICoachThinking,
                         loadingText: aiCoach.loadingText
@@ -1997,7 +1998,7 @@ struct HabitDetailSheet: View {
             cancelAILoadingWatchdog()
             applyAICandidate(
                 PendingAICandidate(
-                    text: cached,
+                    result: cached,
                     usedSignals: expectedSignals,
                     aiFingerprint: context.aiFingerprint,
                     trigger: trigger
@@ -2025,10 +2026,10 @@ struct HabitDetailSheet: View {
             self.isAICoachRequestInFlight = false
             self.cancelAILoadingWatchdog()
             switch outcome {
-            case .success(let finalText):
+            case .success(let finalResult):
                 self.applyAICandidate(
                     PendingAICandidate(
-                        text: finalText,
+                        result: finalResult,
                         usedSignals: expectedSignals,
                         aiFingerprint: context.aiFingerprint,
                         trigger: trigger
@@ -2199,8 +2200,8 @@ struct HabitDetailSheet: View {
         switch coachPresentationState {
         case .loadingAI:
             return aiCoach.loadingText
-        case .ai(let message):
-            let trimmed = normalizeAICoachMessage(message).trimmingCharacters(in: .whitespacesAndNewlines)
+        case .ai(let result):
+            let trimmed = normalizeAICoachMessage(result.body).trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? SafeMinimalCoaching.line : trimmed
         case .fallbackGuidance(let message):
             let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2209,6 +2210,18 @@ struct HabitDetailSheet: View {
             }
             let outputText = output.action.trimmingCharacters(in: .whitespacesAndNewlines)
             return outputText.isEmpty ? SafeMinimalCoaching.line : outputText
+        }
+    }
+
+    private func resolvedCoachTitle(for output: GuidanceOutput) -> String? {
+        switch coachPresentationState {
+        case .loadingAI:
+            return nil
+        case .ai(let result):
+            let trimmed = result.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? output.title : trimmed
+        case .fallbackGuidance:
+            return output.title
         }
     }
 
@@ -2226,12 +2239,16 @@ struct HabitDetailSheet: View {
     }
 
     private var aiCoachDetailMessage: String {
-        switch aiCoachSectionState {
-        case .loaded(let output):
-            return resolvedCoachMessage(for: output)
-        case .loading:
-            return SafeMinimalCoaching.line
-        case .empty:
+        switch coachPresentationState {
+        case .loadingAI:
+            return aiCoach.loadingText
+        case .ai(let result):
+            let trimmed = normalizeAICoachMessage(result.body).trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? SafeMinimalCoaching.line : trimmed
+        case .fallbackGuidance:
+            if case .loaded(let output) = aiCoachSectionState {
+                return resolvedCoachMessage(for: output)
+            }
             return SafeMinimalCoaching.line
         }
     }
@@ -2240,6 +2257,18 @@ struct HabitDetailSheet: View {
         switch coachPresentationState {
         case .loadingAI, .ai:
             return "AI Coach"
+        case .fallbackGuidance:
+            return "Guidance"
+        }
+    }
+
+    private var aiCoachDetailTitle: String {
+        switch coachPresentationState {
+        case .loadingAI:
+            return "AI Coach"
+        case .ai(let result):
+            let trimmed = result.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "AI Coach" : trimmed
         case .fallbackGuidance:
             return "Guidance"
         }
@@ -2259,7 +2288,7 @@ struct HabitDetailSheet: View {
             weekStartPreference: userSettings.weekStartPreference
         )
         let resolvedIdentityState = computedState.identityState.habitState
-        let strongestWindow = computedState.timingInsight.map { humanTime(for: $0.peakHour) }
+        let strongestWindow = computedState.timingInsight.map { timeWindowLabel(for: $0.peakHour) }
         let timingConfidence = frozenStateModel?.timingConfidence ?? .low
         let streakLabel = streakDescription(streakState)
         let consistency = computedState.consistency.percentage
@@ -2387,8 +2416,9 @@ struct HabitDetailSheet: View {
             return
         }
 
-        let text = normalizeAICoachMessage(candidate.text).trimmingCharacters(in: .whitespacesAndNewlines)
-        let isUsable = !text.isEmpty && text.wordCount >= 8 && genericityScore(text) == 0
+        let title = candidate.result.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = normalizeAICoachMessage(candidate.result.body).trimmingCharacters(in: .whitespacesAndNewlines)
+        let isUsable = !title.isEmpty && !body.isEmpty && body.wordCount >= 8 && genericityScore(body) == 0
         guard isUsable else {
             if !isAICoachRequestInFlight, case .loadingAI = coachPresentationState {
                 coachPresentationState = .fallbackGuidance(guidanceCoachText)
@@ -2398,7 +2428,7 @@ struct HabitDetailSheet: View {
 
         let guidanceText = guidanceCoachText.trimmingCharacters(in: .whitespacesAndNewlines)
         _ = guidanceText
-        coachPresentationState = .ai(text)
+        coachPresentationState = .ai(AICoachResult(title: title, body: body))
         aiUsedSignals = candidate.usedSignals
         lockCoachRenderWindow()
     }

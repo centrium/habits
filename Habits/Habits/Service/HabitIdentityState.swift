@@ -406,7 +406,7 @@ enum HabitStateResolver {
             uniqueEventCount: timingSummary?.uniqueEventCount ?? 0,
             uniqueActiveDays: timingSummary?.uniqueActiveDays ?? 0
         )
-        let strongestTime = timingSummary.map { humanTime(for: $0.peakHour) }
+        let strongestTime = timingSummary.map { timeWindowLabel(for: $0.peakHour) }
         let eligibility = IdentityStateEngine.identityEligibility(
             for: habit,
             calendar: calendar,

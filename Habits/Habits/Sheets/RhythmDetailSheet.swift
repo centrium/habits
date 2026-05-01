@@ -130,10 +130,10 @@ struct RhythmDetailSheet: View {
     }
 
     private var peakSummaryLine: AttributedString {
-        var line = AttributedString("Peak around ")
+        var line = AttributedString("Peak window ")
         line.foregroundColor = CadenceTokens.Color.Text.secondary
 
-        var value = AttributedString(formattedTime(insight.peakHour))
+        var value = AttributedString(formattedWindow(insight.peakHour))
         value.foregroundColor = semanticAccent.cadenceAccentPrimary
         line += value
 
@@ -169,6 +169,10 @@ struct RhythmDetailSheet: View {
 
     private func formattedTime(_ hour: Int) -> String {
         humanTime(for: hour)
+    }
+
+    private func formattedWindow(_ hour: Int) -> String {
+        timeWindowLabel(for: hour)
     }
 
     private func highlightedTimesBySentence(in text: String) -> AttributedString {

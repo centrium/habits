@@ -191,6 +191,17 @@ final class TimeOfDayPerformanceServiceTests: BaseTestCase {
         XCTAssertEqual(humanTime(for: 9), "9AM")
     }
 
+    func testTimeWindowLabelUsesSharedSemanticBoundaries() {
+        XCTAssertEqual(timeWindowLabel(for: 10), "morning")
+        XCTAssertEqual(timeWindowLabel(for: 11), "midday")
+        XCTAssertEqual(timeWindowLabel(for: 14), "midday")
+        XCTAssertEqual(timeWindowLabel(for: 15), "afternoon")
+        XCTAssertEqual(timeWindowLabel(for: 18), "afternoon")
+        XCTAssertEqual(timeWindowLabel(for: 19), "evening")
+        XCTAssertEqual(timeWindowLabel(for: 22), "evening")
+        XCTAssertEqual(timeWindowLabel(for: 23), "night")
+    }
+
     func testBestTimeRecommendationUsesTodayWhenFutureSlotIsStrong() {
         var scores = Array(repeating: 0.1, count: 24)
         scores[11] = 1.0

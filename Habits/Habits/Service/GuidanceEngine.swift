@@ -1110,9 +1110,8 @@ enum GuidanceEngine {
     }
 
     private static func strongestWindowLabel(expectedHour: Int?) -> String {
-        guard let expectedHour else { return "--:--" }
-        let normalizedHour = ((expectedHour % 24) + 24) % 24
-        return String(format: "%02d:00", normalizedHour)
+        guard let expectedHour else { return "--" }
+        return timeWindowLabel(for: expectedHour)
     }
 
     private static func nowTemplates(for state: GuidanceNowState) -> [GuidanceTemplate] {
@@ -1332,10 +1331,10 @@ enum GuidanceEngine {
                 identityFragments.allSatisfy({ !lowercased.contains($0) }) else {
             let fallbackPayload = GuidancePayload(
                 state: .forming,
-                strongestWindow: "--:--",
+                strongestWindow: "--",
                 confidence: .low,
                 guidance: "Keep this check-in simple. A short session now keeps this on track",
-                explanation: "State FORMING, confidence LOW, strongest window --:--"
+                explanation: "State FORMING, confidence LOW, strongest window --"
             )
             return GuidanceOutput(
                 id: "fallback-safe",
@@ -1541,11 +1540,11 @@ enum GuidanceEngine {
             return .earlyMorning
         case 8..<11:
             return .morning
-        case 11..<14:
+        case 11..<15:
             return .midday
-        case 14..<17:
+        case 15..<19:
             return .afternoon
-        case 17..<21:
+        case 19..<23:
             return .evening
         default:
             return .night

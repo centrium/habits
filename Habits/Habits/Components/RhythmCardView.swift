@@ -100,7 +100,7 @@ struct RhythmCardView: View {
         var text = AttributedString("Strongest window: ")
         text.foregroundColor = CadenceTokens.Color.Text.secondary
 
-        var peak = AttributedString(formattedTime(resolvedInsight.peakHour))
+        var peak = AttributedString(formattedWindow(resolvedInsight.peakHour))
         peak.foregroundColor = semanticAccent.cadenceAccentPrimary.opacity(colorScheme == .dark ? 0.72 : 0.64)
         text += peak
 
@@ -256,6 +256,10 @@ struct RhythmCardView: View {
 
     private func formattedTime(_ hour: Int) -> String {
         humanTime(for: hour)
+    }
+
+    private func formattedWindow(_ hour: Int) -> String {
+        timeWindowLabel(for: hour)
     }
 
     private func logTimingTrace() {

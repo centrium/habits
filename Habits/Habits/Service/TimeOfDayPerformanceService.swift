@@ -142,7 +142,7 @@ nonisolated func generateRhythmInsight(from insight: TimeInsightResult) -> Rhyth
     }
 
     let dip = lowestSustainedRange(from: insight.hourlyScores)
-    let peakLabel = humanTime(for: insight.peakHour)
+    let peakLabel = timeWindowLabel(for: insight.peakHour)
     let dipStart = humanTime(for: dip.0)
     let dipEnd = humanTime(for: dip.1)
 
@@ -160,6 +160,22 @@ nonisolated func humanTime(for hour: Int) -> String {
     case 12: return "Noon"
     case 1..<12: return "\(normalized)AM"
     default: return "\(normalized - 12)PM"
+    }
+}
+
+nonisolated func timeWindowLabel(for hour: Int) -> String {
+    let normalized = ((hour % 24) + 24) % 24
+    switch normalized {
+    case 5..<11:
+        return "morning"
+    case 11..<15:
+        return "midday"
+    case 15..<19:
+        return "afternoon"
+    case 19..<23:
+        return "evening"
+    default:
+        return "night"
     }
 }
 

@@ -23,7 +23,7 @@ final class AICoachServiceTests: XCTestCase {
 
         service.updateCacheForTesting(
             habitID: habitID,
-            text: "Cached guidance",
+            result: makeResult(body: "Cached guidance"),
             generatedAt: now.addingTimeInterval(-3_599)
         )
 
@@ -32,7 +32,7 @@ final class AICoachServiceTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(cached, "Cached guidance")
+        XCTAssertEqual(cached, makeResult(body: "Cached guidance"))
     }
 
     func testCachedTextReturnsMissAfterOneHour() {
@@ -41,7 +41,7 @@ final class AICoachServiceTests: XCTestCase {
 
         service.updateCacheForTesting(
             habitID: habitID,
-            text: "Expired guidance",
+            result: makeResult(body: "Expired guidance"),
             generatedAt: now.addingTimeInterval(-3_601)
         )
 
@@ -58,7 +58,7 @@ final class AICoachServiceTests: XCTestCase {
         let habitID = UUID()
         service.updateCacheForTesting(
             habitID: habitID,
-            text: "Cached guidance",
+            result: makeResult(body: "Cached guidance"),
             generatedAt: now.addingTimeInterval(-1_800)
         )
 
@@ -67,7 +67,7 @@ final class AICoachServiceTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(cached, "Cached guidance")
+        XCTAssertEqual(cached, makeResult(body: "Cached guidance"))
     }
 
     func testCachedTextIsHabitSpecific() {
@@ -77,7 +77,7 @@ final class AICoachServiceTests: XCTestCase {
 
         service.updateCacheForTesting(
             habitID: sourceHabitID,
-            text: "Habit one guidance",
+            result: makeResult(body: "Habit one guidance"),
             generatedAt: now.addingTimeInterval(-600)
         )
 
@@ -95,7 +95,7 @@ final class AICoachServiceTests: XCTestCase {
 
         service.updateCacheForTesting(
             habitID: habitID,
-            text: "Fingerprint scoped guidance",
+            result: makeResult(body: "Fingerprint scoped guidance"),
             fingerprint: "fingerprint-a",
             depth: .basic,
             generatedAt: now.addingTimeInterval(-300)
@@ -117,7 +117,7 @@ final class AICoachServiceTests: XCTestCase {
 
         service.updateCacheForTesting(
             habitID: habitID,
-            text: "Premium guidance",
+            result: makeResult(body: "Premium guidance"),
             fingerprint: "fingerprint-a",
             depth: .premium,
             generatedAt: now.addingTimeInterval(-300)
@@ -139,7 +139,7 @@ final class AICoachServiceTests: XCTestCase {
 
         service.updateCacheForTesting(
             habitID: habitID,
-            text: "Matching cache",
+            result: makeResult(body: "Matching cache"),
             fingerprint: "fingerprint-a",
             depth: .premium,
             generatedAt: now.addingTimeInterval(-300)
@@ -152,7 +152,7 @@ final class AICoachServiceTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(cached, "Matching cache")
+        XCTAssertEqual(cached, makeResult(body: "Matching cache"))
     }
 
     func testCoachingFingerprintChangesWhenVersionChanges() {
@@ -245,6 +245,16 @@ final class AICoachServiceTests: XCTestCase {
         XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
     }
 
+    func testSignalFamilyValidationRejectsMixedTimeWindowAndExactTime() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        let output = "You tend to follow through in the evening around 1PM. Use that today."
+
+        XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
     func testSignalFamilyValidationRejectsGenericOutput() {
         let input = makeAICoachInput(
             selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: .consistency)
@@ -274,13 +284,13 @@ final class AICoachServiceTests: XCTestCase {
         XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
     }
 
-    func testSignalFamilyValidationPremiumAllowsOneMiss() {
+    func testSignalFamilyValidationPremiumRejectsOneMiss() {
         let input = makeAICoachInput(
             selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: .timeOfDayInsights),
             depth: .premium
         )
-        let output = "Your routine has been reliable this week. Use the same window again today."
-        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+        let output = "Your routine has been reliable this week. Repeat the smallest next step today."
+        XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
     }
 
     func testSignalFamilyValidationPremiumFailsWhenAllSelectedSignalsMissing() {
@@ -308,6 +318,95 @@ final class AICoachServiceTests: XCTestCase {
         )
         let output = "Your routine has been reliable this week."
         XCTAssertFalse(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testSignalFamilyValidationAcceptsStreakStateTokens() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .streakState, secondary: nil)
+        )
+        let output = "This is building after 4 periods, so keep the next step small today."
+
+        XCTAssertTrue(service.outputReferencesSelectedSignalsForTesting(output, input: input))
+    }
+
+    func testParseResultAcceptsValidJSON() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+        let raw = """
+        {"title":"Midday is becoming natural","body":"Walk is strongest in midday. Use that window today before the day gets noisy."}
+        """
+
+        XCTAssertEqual(
+            service.parseResultForTesting(raw, input: input),
+            AICoachResult(
+                title: "Midday is becoming natural",
+                body: "Walk is strongest in midday. Use that window today before the day gets noisy."
+            )
+        )
+    }
+
+    func testParseResultExtractsEmbeddedJSON() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .streakState, secondary: nil)
+        )
+        let raw = """
+        Here is the result:
+        {"title":"Momentum is building quietly","body":"Your 4-period streak is building. Protect Walk today with one short version."}
+        """
+
+        XCTAssertEqual(
+            service.parseResultForTesting(raw, input: input),
+            AICoachResult(
+                title: "Momentum is building quietly",
+                body: "Your 4-period streak is building. Protect Walk today with one short version."
+            )
+        )
+    }
+
+    func testParseResultRejectsMalformedJSON() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        XCTAssertNil(service.parseResultForTesting("title: Midday body: Walk is strongest in midday", input: input))
+    }
+
+    func testParseResultRejectsMissingBody() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        XCTAssertNil(service.parseResultForTesting(#"{"title":"Midday is becoming natural"}"#, input: input))
+    }
+
+    func testTitleValidationRejectsGenericTitle() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .consistency, secondary: nil)
+        )
+
+        XCTAssertFalse(service.titleIsValidForTesting("Consistency grows", input: input))
+    }
+
+    func testTitleValidationRejectsTitlesOutsideWordLimit() {
+        let input = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+
+        XCTAssertFalse(service.titleIsValidForTesting("Midday", input: input))
+        XCTAssertFalse(service.titleIsValidForTesting("Midday is becoming the most natural place", input: input))
+    }
+
+    func testTitleValidationAcceptsPrimarySignalSpecificTitles() {
+        let timingInput = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
+        )
+        let streakInput = makeAICoachInput(
+            selectedSignals: SelectedCoachingSignals(primary: .streakState, secondary: nil)
+        )
+
+        XCTAssertTrue(service.titleIsValidForTesting("Midday is becoming natural", input: timingInput))
+        XCTAssertTrue(service.titleIsValidForTesting("Momentum is building quietly", input: streakInput))
     }
 
     func testGenerateReturnsFailureWhenRunReturnsEmptyResult() async {
@@ -348,7 +447,7 @@ final class AICoachServiceTests: XCTestCase {
 
         localService.setRunOverrideForTesting { _, _ in
             try? await Task.sleep(nanoseconds: 500_000_000)
-            return .success("Late AI text that should not win before timeout")
+            return .success(makeResult(body: "Late AI text that should not win before timeout"))
         }
 
         let completionExpectation = expectation(description: "terminal called on timeout")
@@ -378,9 +477,9 @@ final class AICoachServiceTests: XCTestCase {
         localService.setRunOverrideForTesting { _, sequence in
             if sequence == 1 {
                 try? await Task.sleep(nanoseconds: 200_000_000)
-                return .success("old-result")
+                return .success(makeResult(body: "old-result"))
             }
-            return .success("new-result")
+            return .success(makeResult(body: "new-result"))
         }
 
         let newRequestExpectation = expectation(description: "new request completes")
@@ -407,7 +506,7 @@ final class AICoachServiceTests: XCTestCase {
         }
 
         await fulfillment(of: [newRequestExpectation], timeout: 1.0)
-        XCTAssertEqual(newRequestOutcome, .success("new-result"))
+        XCTAssertEqual(newRequestOutcome, .success(makeResult(body: "new-result")))
         XCTAssertEqual(oldRequestOutcome, .discarded(.stale))
     }
 
@@ -421,7 +520,7 @@ final class AICoachServiceTests: XCTestCase {
         )
 
         localService.setRunOverrideForTesting { _, _ in
-            .success("stale-result")
+            .success(makeResult(body: "stale-result"))
         }
 
         let staleDiscarded = expectation(description: "stale result discarded")
@@ -460,7 +559,7 @@ final class AICoachServiceTests: XCTestCase {
         )
 
         localService.setRunOverrideForTesting { _, _ in
-            .success("fresh-result")
+            .success(makeResult(body: "fresh-result"))
         }
 
         let completionExpectation = expectation(description: "completion called")
@@ -477,14 +576,14 @@ final class AICoachServiceTests: XCTestCase {
         }
 
         await fulfillment(of: [completionExpectation], timeout: 1.0)
-        XCTAssertEqual(received, .success("fresh-result"))
+        XCTAssertEqual(received, .success(makeResult(body: "fresh-result")))
         XCTAssertEqual(
             localService.cachedTextIfFresh(
                 habitID: habitID,
                 fingerprint: "fp-fresh",
                 depth: input.depth
             ),
-            "fresh-result"
+            makeResult(body: "fresh-result")
         )
     }
 
@@ -495,7 +594,7 @@ final class AICoachServiceTests: XCTestCase {
             selectedSignals: SelectedCoachingSignals(primary: .timeOfDayInsights, secondary: nil)
         )
         service.setRunOverrideForTesting { _, _ in
-            .success("first")
+            .success(makeResult(body: "first"))
         }
 
         let firstDone = expectation(description: "first done")
@@ -559,4 +658,11 @@ final class AICoachServiceTests: XCTestCase {
         )
     }
 
+}
+
+private func makeResult(
+    title: String = "Midday is becoming natural",
+    body: String
+) -> AICoachResult {
+    AICoachResult(title: title, body: body)
 }

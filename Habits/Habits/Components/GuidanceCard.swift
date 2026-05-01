@@ -8,6 +8,7 @@ struct GuidanceCard: View {
     let accent: CadenceAccentTokens
     var variant: GuidanceVisualVariant = .focus
     var label: String = "NOW"
+    var titleOverride: String? = nil
     var guidanceText: String? = nil
     var isLoading: Bool = false
     var loadingText: String = "Thinking…"
@@ -15,6 +16,7 @@ struct GuidanceCard: View {
     var body: some View {
         let hasCustomGuidance = guidanceText?.isEmpty == false
         let resolvedGuidanceText = hasCustomGuidance ? (guidanceText ?? output.action) : output.action
+        let resolvedTitle = titleOverride ?? output.title
 
         VStack(alignment: .leading, spacing: InsightCardHeader.contentSpacing) {
             InsightCardHeader(title: label)
@@ -25,11 +27,13 @@ struct GuidanceCard: View {
                     .frame(width: 3)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(output.title)
-                        .font(.system(size: titleSize, weight: .medium))
-                        .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.98))
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !isLoading {
+                        Text(resolvedTitle)
+                            .font(.system(size: titleSize, weight: .medium))
+                            .foregroundStyle(CadenceTokens.Color.Text.primary.opacity(0.98))
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     if isLoading {
                         Text(loadingText)
@@ -87,7 +91,7 @@ struct GuidanceCard: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([output.title, output.action].joined(separator: ". "))
+        .accessibilityLabel(isLoading ? "\(label). \(loadingText)" : [resolvedTitle, resolvedGuidanceText].joined(separator: ". "))
         .onAppear {
             updatePulseAnimation()
         }
