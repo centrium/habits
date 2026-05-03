@@ -17,6 +17,7 @@ enum RuntimeEnvironment {
 enum StartupProfiler {
     nonisolated static let launchStartTime = CFAbsoluteTimeGetCurrent()
     @MainActor private static var hasLoggedFirstInteractiveRender = false
+    @MainActor private static var loggedMilestones: Set<String> = []
 
     @MainActor
     static func logFirstInteractiveRender() {
@@ -25,6 +26,15 @@ enum StartupProfiler {
 
         let elapsed = CFAbsoluteTimeGetCurrent() - launchStartTime
         print("Startup time to first interactive screen: \(elapsed)s")
+        logStartupPhase("today_rendered")
+    }
+
+    @MainActor
+    static func logStartupPhase(_ phase: String) {
+        guard !loggedMilestones.contains(phase) else { return }
+        loggedMilestones.insert(phase)
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - launchStartTime) * 1000)
+        print("STARTUP: \(phase) (\(elapsedMs) ms)")
     }
 }
 
@@ -46,29 +56,29 @@ struct RootView: View {
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var userSettings: UserSettings
     @State private var hasCompletedInitialWidgetSync = false
+    @State private var hasActivatedHydratedData = false
 
     var body: some View {
         Group {
-            switch purchaseService.premiumStatus {
-            case .unknown:
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .free, .premium:
-                switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
-                case .habitsList:
-                    HabitsListView()
-                        .environmentObject(userSettings)
-                        .environmentObject(deepLinkManager)
-                case .onboarding:
-                    OnboardingView()
-                        .environmentObject(userSettings)
-                        .environmentObject(deepLinkManager)
-                }
+            switch RootViewRouter.destination(hasCompletedOnboarding: userSettings.hasCompletedOnboarding) {
+            case .habitsList:
+                HabitsListView(hasActivatedData: hasActivatedHydratedData)
+                    .environmentObject(userSettings)
+                    .environmentObject(deepLinkManager)
+            case .onboarding:
+                OnboardingView()
+                    .environmentObject(userSettings)
+                    .environmentObject(deepLinkManager)
             }
         }
         .onAppear {
             guard !RuntimeEnvironment.isRunningTests else { return }
             deepLinkManager.processPendingHabitIfNeeded()
+            if hasActivatedHydratedData == false {
+                DispatchQueue.main.async {
+                    hasActivatedHydratedData = true
+                }
+            }
             Task { @MainActor in
                 await Task.yield()
                 StartupProfiler.logFirstInteractiveRender()
@@ -150,8 +160,14 @@ struct HabitsApp: App {
             }
             .task {
                 guard !RuntimeEnvironment.isRunningTests else { return }
+                await MainActor.run {
+                    StartupProfiler.logStartupPhase("app_launch")
+                }
                 await prepareContainerIfNeeded()
                 if let container {
+                    await MainActor.run {
+                        StartupProfiler.logStartupPhase("swiftdata_loaded")
+                    }
                     configureRuntimeServicesIfNeeded(using: container)
                 }
             }

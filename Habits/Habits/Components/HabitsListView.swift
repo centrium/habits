@@ -41,6 +41,11 @@ private enum TodayLayoutSpacing {
     static let growthPlanBottomInternal: CGFloat = 2
 }
 
+private enum HabitListSource {
+    case snapshot([StartupHabit])
+    case live([Habit])
+}
+
 struct HabitsListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -50,8 +55,8 @@ struct HabitsListView: View {
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var habitLogService: HabitLogService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
-    @Query(sort: \Habit.orderIndex) private var habits: [Habit]
     @ObservedObject private var appTime = AppTime.shared
+    let hasActivatedData: Bool
 
     @State private var activeSheet: ActiveSheet?
     @State private var selectedHabitID: Habit.ID?
@@ -81,8 +86,32 @@ struct HabitsListView: View {
     @State private var didLogTodayHeaderFirstPaint: Bool = false
     @State private var didLogGrowthPlanInjection: Bool = false
     @State private var didLogCoachingInjection: Bool = false
+    @State private var startupPhase: StartupPhase = .immediateUI
+    @State private var cachedTodaySnapshot: TodayStartupSnapshot?
+    @State private var hasHydratedFromSnapshot = false
+    @State private var hasLoggedSnapshotLoad = false
+    @State private var listSource: HabitListSource = .snapshot([])
+    @State private var hasReconciledLiveList = false
+    @State private var queuedSnapshotSelectionID: Habit.ID?
+    @State private var hasLoggedSnapshotListRendered = false
+    @State private var hasLoggedLiveListReconciled = false
+    @State private var liveHabits: [Habit] = []
+    @State private var hasStartedActivatedWork = false
 
-    init() {}
+    init(hasActivatedData: Bool = false) {
+        self.hasActivatedData = hasActivatedData
+    }
+
+    private enum StartupPhase: Int, Comparable {
+        case immediateUI
+        case fastFollowData
+        case deferredInsights
+        case backgroundSync
+
+        static func < (lhs: StartupPhase, rhs: StartupPhase) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
 
     private var globalSemanticAccent: CadenceSemanticAccentTokens {
         CadenceTokens.Color.globalSemanticAccent(colorScheme: colorScheme)
@@ -230,6 +259,9 @@ struct HabitsListView: View {
             habitLogService.updateCalendar(calculationCalendar)
             appTime.refreshIfNeeded()
             presentHabitDetailForDeepLinkIfNeeded()
+            if hasActivatedData {
+                activateDataIfNeeded()
+            }
         }
         .onChange(of: userSettings.weekStartPreference) { _, _ in
             habitLogService.updateCalendar(calculationCalendar)
@@ -237,8 +269,9 @@ struct HabitsListView: View {
         .onChange(of: deepLinkManager.selectedHabitID) { _, _ in
             presentHabitDetailForDeepLinkIfNeeded()
         }
-        .onChange(of: habits.map(\.id)) { _, _ in
-            presentHabitDetailForDeepLinkIfNeeded()
+        .onChange(of: hasActivatedData) { _, isActive in
+            guard isActive else { return }
+            activateDataIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
@@ -246,15 +279,23 @@ struct HabitsListView: View {
             presentHabitDetailForDeepLinkIfNeeded()
         }
         .task(id: insightSelectionTaskKey) {
+            guard hasActivatedData else { return }
+            guard startupPhase >= .deferredInsights else { return }
             await refreshTodayInsightSelection()
         }
         .task(id: rhythmTaskKey) {
+            guard hasActivatedData else { return }
+            guard startupPhase >= .deferredInsights else { return }
             await refreshRhythmData()
         }
         .task(id: rhythmPrefetchTaskKey) {
+            guard hasActivatedData else { return }
+            guard startupPhase >= .deferredInsights else { return }
             await prefetchRhythmDataForVisibleHabits()
         }
         .task(id: globalInsightsTaskKey) {
+            guard hasActivatedData else { return }
+            guard startupPhase >= .deferredInsights else { return }
             scheduleGlobalInsightsSummaryRefresh()
         }
         .onDisappear {
@@ -262,8 +303,10 @@ struct HabitsListView: View {
             flushPendingReorderPersistence()
         }
         .task {
+            guard hasActivatedData else { return }
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled else { return }
+            guard startupPhase >= .backgroundSync else { return }
             if userSettings.eveningReflectionEnabled {
                 await NotificationService.shared.scheduleEveningReflection(
                     hour: userSettings.eveningReflectionHour,
@@ -271,6 +314,16 @@ struct HabitsListView: View {
                 )
             } else {
                 NotificationService.shared.removeEveningReflection()
+            }
+        }
+        .background {
+            if hasActivatedData {
+                LiveHabitsQueryBridge { resolvedHabits in
+                    liveHabits = resolvedHabits
+                    presentHabitDetailForDeepLinkIfNeeded()
+                    reconcileListSourceIfNeeded()
+                    resolveQueuedSelectionIfPossible()
+                }
             }
         }
     }
@@ -285,7 +338,7 @@ struct HabitsListView: View {
         }
 
         return HabitLimitPolicy(
-            habitCount: habits.count,
+            habitCount: liveHabits.count,
             hasUnlimitedHabitsAccess: hasUnlimitedHabitsAccess
         )
     }
@@ -304,8 +357,19 @@ struct HabitsListView: View {
                 .onAppear(perform: markTodayHeaderFirstPaintIfNeeded)
 
                 LazyVStack(spacing: cardToCardSpacing) {
-                    ForEach(visibleHabits) { habit in
-                        habitRow(for: habit)
+                    if hasActivatedData {
+                        switch listSource {
+                        case .snapshot(let rows):
+                            ForEach(rows) { row in
+                                snapshotHabitRow(for: row)
+                            }
+                        case .live(let resolvedLiveHabits):
+                            ForEach(resolvedLiveHabits) { habit in
+                                habitRow(for: habit)
+                            }
+                        }
+                    } else {
+                        EmptyHabitListContainer()
                     }
                 }
                 .padding(.top, headerToFirstCardSpacing)
@@ -320,7 +384,7 @@ struct HabitsListView: View {
                     lockedHabitSlot
                 }
 
-                if habits.isEmpty {
+                if shouldShowEmptyState {
                     EmptyState()
                 }
             }
@@ -411,6 +475,30 @@ struct HabitsListView: View {
             .tint(.red)
         }
     }
+
+    @ViewBuilder
+    private func snapshotHabitRow(for row: StartupHabit) -> some View {
+        SnapshotHabitRow(
+            row: row,
+            onTap: {
+                queuedSnapshotSelectionID = row.id
+                resolveQueuedSelectionIfPossible()
+            }
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, isReordering ? 2 : 0)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        frames[row.id] = geo.frame(in: .named("container"))
+                    }
+                    .onChange(of: geo.frame(in: .named("container"))) { _, newFrame in
+                        frames[row.id] = newFrame
+                    }
+            }
+        )
+    }
     
     private func openGlobalInsights() {
         switch purchaseService.premiumStatus {
@@ -435,7 +523,8 @@ struct HabitsListView: View {
     }
 
     private var greetingPresentation: TodayGreetingPresentation {
-        let hour = calculationCalendar.component(.hour, from: appTime.now)
+        let resolvedNow = cachedTodaySnapshot?.date ?? appTime.now
+        let hour = calculationCalendar.component(.hour, from: resolvedNow)
 
         switch hour {
         case 5..<12:
@@ -480,7 +569,7 @@ struct HabitsListView: View {
 
     private var globalInsightsTaskKey: String {
         let currentHour = calculationCalendar.component(.hour, from: appTime.now)
-        let parts = habits.map(\.id.uuidString)
+        let parts = liveHabits.map(\.id.uuidString)
         return "\(currentHour)-\(parts.joined(separator: "|"))"
     }
 
@@ -496,7 +585,7 @@ struct HabitsListView: View {
     private func reorderHabit(from source: Int, to destination: Int) {
         guard source != destination else { return }
 
-        var reordered = habits
+        var reordered = liveHabits
         reordered.move(
             fromOffsets: IndexSet(integer: source),
             toOffset: destination
@@ -593,11 +682,11 @@ struct HabitsListView: View {
 
         let locationY = initialFrame.midY + translation.height
 
-        guard let currentIndex = habits.firstIndex(where: { $0.id == activeItem.id }) else {
+        guard let currentIndex = liveHabits.firstIndex(where: { $0.id == activeItem.id }) else {
             return
         }
 
-        for (index, habit) in habits.enumerated() {
+        for (index, habit) in liveHabits.enumerated() {
             guard habit.id != activeItem.id,
                   let frame = frames[habit.id] else { continue }
 
@@ -626,7 +715,7 @@ struct HabitsListView: View {
         case .premium:
             activeSheet = .addHabit
         case .free:
-            if habits.count >= HabitLimitPolicy.freeHabitLimit {
+            if liveHabits.count >= HabitLimitPolicy.freeHabitLimit {
                 showPaywall(feature: .unlimitedHabits)
             } else {
                 activeSheet = .addHabit
@@ -699,7 +788,7 @@ struct HabitsListView: View {
     }
 
     private func refreshGlobalInsightsSummary() async {
-        guard !habits.isEmpty else {
+        guard !liveHabits.isEmpty else {
             globalInsightsSnapshot = nil
             coachingInsight = nil
             hasResolvedInitialCoachingInsight = true
@@ -709,7 +798,7 @@ struct HabitsListView: View {
         let requestSequence = globalInsightsRequestSequence + 1
         globalInsightsRequestSequence = requestSequence
         let now = appTime.now
-        let habitIDs = habits.map(\.id)
+        let habitIDs = liveHabits.map(\.id)
         let snapshot = await GlobalInsightsService(
             calendar: calculationCalendar,
             weekStartPreference: userSettings.weekStartPreference
@@ -857,11 +946,35 @@ struct HabitsListView: View {
 
     private var selectedHabitForDetail: Habit? {
         guard let selectedHabitID else { return nil }
-        return habits.first(where: { $0.id == selectedHabitID })
+        return liveHabits.first(where: { $0.id == selectedHabitID })
     }
 
     private var visibleHabits: [Habit] {
-        habits
+        switch listSource {
+        case .snapshot:
+            return hasReconciledLiveList ? liveHabits : []
+        case .live(let liveHabits):
+            return liveHabits
+        }
+    }
+
+    private var startupSnapshotRows: [StartupHabit] {
+        switch listSource {
+        case .snapshot(let rows):
+            return rows
+        case .live:
+            return []
+        }
+    }
+
+    private var shouldShowEmptyState: Bool {
+        guard hasActivatedData else { return false }
+        switch listSource {
+        case .snapshot(let rows):
+            return rows.isEmpty && liveHabits.isEmpty
+        case .live(let liveHabits):
+            return liveHabits.isEmpty
+        }
     }
 
     private var cardToCardSpacing: CGFloat {
@@ -874,10 +987,10 @@ struct HabitsListView: View {
 
     private var todayHeaderRenderState: TodayHeaderRenderState {
         TodayHeaderRenderState(
-            hasVisibleHabits: !visibleHabits.isEmpty,
+            hasVisibleHabits: !visibleHabits.isEmpty || !startupSnapshotRows.isEmpty || !hasActivatedData,
             isIntroExpanded: isIntroExpanded,
-            hasResolvedInitialCoachingInsight: hasResolvedInitialCoachingInsight,
-            hasResolvedInitialTodayInsight: hasResolvedInitialTodayInsight,
+            hasResolvedInitialCoachingInsight: hasResolvedInitialCoachingInsight || cachedTodaySnapshot != nil,
+            hasResolvedInitialTodayInsight: hasResolvedInitialTodayInsight || cachedTodaySnapshot != nil,
             coachingParagraph: coachingParagraph,
             growthPlanLines: growthPlanLines
         )
@@ -1016,6 +1129,12 @@ struct HabitsListView: View {
     }
 
     private var coachingParagraph: AttributedString? {
+        if startupPhase < .deferredInsights, let snapshot = cachedTodaySnapshot {
+            var message = AttributedString(snapshot.greeting)
+            message.foregroundColor = CadenceTokens.Color.Text.primary
+            return message
+        }
+
         guard let coachingInsight else {
             return nil
         }
@@ -1108,7 +1227,7 @@ struct HabitsListView: View {
 
     private func presentHabitDetailForDeepLinkIfNeeded() {
         guard let deepLinkedHabitID = deepLinkManager.selectedHabitID else { return }
-        guard habits.contains(where: { $0.id == deepLinkedHabitID }) else { return }
+        guard liveHabits.contains(where: { $0.id == deepLinkedHabitID }) else { return }
 
         selectedHabitID = deepLinkedHabitID
 
@@ -1117,6 +1236,144 @@ struct HabitsListView: View {
         }
     }
 
+    private func startAsyncSnapshotHydrationIfNeeded() {
+        guard !hasHydratedFromSnapshot else { return }
+        guard hasReconciledLiveList == false else { return }
+        hasHydratedFromSnapshot = true
+        Task.detached(priority: .userInitiated) {
+            let snapshot = TodaySnapshotStore.shared.loadSyncLightweight()
+            await MainActor.run {
+                guard self.hasReconciledLiveList == false else { return }
+                self.cachedTodaySnapshot = snapshot
+                if let snapshot {
+                    self.listSource = .snapshot(snapshot.habits)
+                    if self.hasLoggedSnapshotListRendered == false {
+                        self.hasLoggedSnapshotListRendered = true
+                        StartupProfiler.logStartupPhase("list_snapshot_rendered")
+                    }
+                }
+                if self.hasLoggedSnapshotLoad == false {
+                    self.hasLoggedSnapshotLoad = true
+                    StartupProfiler.logStartupPhase("snapshot_loaded")
+                }
+            }
+        }
+    }
+
+    private func reconcileListSourceIfNeeded(force: Bool = false) {
+        guard force || !liveHabits.isEmpty || startupSnapshotRows.isEmpty else { return }
+        if hasReconciledLiveList == false {
+            withTransaction(Transaction(animation: nil)) {
+                listSource = .live(liveHabits)
+            }
+            hasReconciledLiveList = true
+            if hasLoggedLiveListReconciled == false {
+                hasLoggedLiveListReconciled = true
+                StartupProfiler.logStartupPhase("list_live_reconciled")
+            }
+        } else {
+            listSource = .live(liveHabits)
+        }
+    }
+
+    private func resolveQueuedSelectionIfPossible() {
+        guard let queuedID = queuedSnapshotSelectionID else { return }
+        guard let resolved = liveHabits.first(where: { $0.id == queuedID }) else { return }
+        selectedHabitID = resolved.id
+        queuedSnapshotSelectionID = nil
+    }
+
+    private func persistTodaySnapshotIfPossible() {
+        guard !visibleHabits.isEmpty else { return }
+
+        let now = appTime.now
+        let summaries = liveHabits.prefix(20).map { habit in
+            let dayState = habitLogService.dayStateIfAvailable(for: habit, on: now)
+            return StartupHabit(
+                id: habit.id,
+                name: habit.name,
+                progress: dayState?.progress ?? 0
+            )
+        }
+
+        let snapshot = TodayStartupSnapshot(
+            date: now,
+            habits: summaries,
+            greeting: String((coachingParagraph ?? AttributedString(greetingLine)).characters)
+        )
+        TodaySnapshotStore.shared.saveLightweight(snapshot)
+    }
+
+    private func runStartupPhases() async {
+        startupPhase = .immediateUI
+
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        guard !Task.isCancelled else { return }
+        startupPhase = .fastFollowData
+
+        try? await Task.sleep(nanoseconds: 220_000_000)
+        guard !Task.isCancelled else { return }
+        startupPhase = .deferredInsights
+        reconcileListSourceIfNeeded(force: true)
+        resolveQueuedSelectionIfPossible()
+        await refreshTodayInsightSelection()
+        await refreshRhythmData()
+        await prefetchRhythmDataForVisibleHabits()
+        scheduleGlobalInsightsSummaryRefresh()
+        await MainActor.run {
+            StartupProfiler.logStartupPhase("insights_ready")
+        }
+        persistTodaySnapshotIfPossible()
+
+        try? await Task.sleep(nanoseconds: 1_700_000_000)
+        guard !Task.isCancelled else { return }
+        startupPhase = .backgroundSync
+    }
+
+    private func activateDataIfNeeded() {
+        guard hasStartedActivatedWork == false else { return }
+        hasStartedActivatedWork = true
+        startAsyncSnapshotHydrationIfNeeded()
+        Task {
+            await runStartupPhases()
+        }
+    }
+
+}
+
+private struct LiveHabitsQueryBridge: View {
+    @Query(sort: \Habit.orderIndex) private var habits: [Habit]
+    let onUpdate: ([Habit]) -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                onUpdate(habits)
+            }
+            .onChange(of: habits.map(\.id)) { _, _ in
+                onUpdate(habits)
+            }
+    }
+}
+
+private struct EmptyHabitListContainer: View {
+    private let rowCount = 4
+
+    var body: some View {
+        ForEach(0..<rowCount, id: \.self) { _ in
+            HStack {
+                Text("Preparing your habits…")
+                    .font(CadenceTokens.Typography.body)
+                    .foregroundStyle(CadenceTokens.Color.Text.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, HabitRowGrid.contentLeading)
+            .padding(.vertical, CadenceTokens.Space.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+        }
+    }
 }
 
 private struct DraggableHabitRow: View {
@@ -1140,6 +1397,55 @@ private struct DraggableHabitRow: View {
             .zIndex(isDragging ? 1 : 0)
             .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDragging)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)
+    }
+}
+
+private struct SnapshotHabitRow: View {
+    let row: StartupHabit
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: HabitRowGrid.contentSpacing) {
+            HStack(alignment: .top, spacing: HabitRowGrid.iconToTitleSpacing) {
+                HabitBadge(
+                    iconName: nil,
+                    accent: HabitColor.default.variants.base,
+                    habitName: row.name,
+                    size: HabitRowGrid.iconSize
+                )
+                .frame(width: HabitRowGrid.iconSize, height: HabitRowGrid.iconSize, alignment: .top)
+
+                VStack(alignment: .leading, spacing: HabitRowGrid.titleToMetaSpacing) {
+                    Text(row.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(CadenceTokens.Color.Text.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(height: HabitRowGrid.titleRowHeight, alignment: .topLeading)
+
+                    Text("Opening detail when live data is ready")
+                        .font(.system(size: 13))
+                        .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.74))
+                        .lineLimit(1)
+                    .frame(height: HabitRowGrid.metaRowHeight, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: HabitRowGrid.headerContentHeight, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Circle()
+                .fill(CadenceTokens.Color.accent(from: HabitColor.default.hex).primary.opacity(max(0.2, min(1, row.progress))))
+                .frame(width: 10, height: 10)
+                .frame(width: 34, height: 34, alignment: .center)
+        }
+        .padding(.horizontal, HabitRowGrid.contentLeading)
+        .padding(.vertical, CadenceTokens.Space.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cadenceSurface(cornerRadius: CadenceTokens.Surface.cardCornerRadius)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+        .accessibilityLabel(row.name)
     }
 }
 
