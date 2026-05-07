@@ -12,6 +12,7 @@ struct HabitInsightsView: View {
 
     @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var habitLogService: HabitLogService
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @State private var hasAnimatedIn = false
     @State private var insightsViewModel: HabitInsightsViewModel?
     @State private var hasLoadedSnapshot = false
@@ -73,6 +74,14 @@ struct HabitInsightsView: View {
             hasLoadedSnapshot = false
             insightsRefreshTask?.cancel()
             insightsRefreshTask = nil
+        }
+        .onChange(of: userSettings.weekStartPreference) { _, _ in
+            guard isViewActive else { return }
+            refreshInsightsSnapshot()
+        }
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
+            guard isViewActive else { return }
+            refreshInsightsSnapshot()
         }
     }
 

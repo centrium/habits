@@ -317,15 +317,92 @@ final class HabitLogService: ObservableObject {
         entryTimestamp: Date,
         referenceDate: Date
     ) {
-        Task {
-            await persistenceCoordinator.enqueue(
-                HabitLogWritePayload(
+        Task { @MainActor in
+            handlePersistenceEvent(.writing(mutation))
+            do {
+                let committed = try persistMutationImmediately(
                     mutation: mutation,
-                    entryTimestamp: entryTimestamp,
-                    referenceDate: referenceDate
+                    entryTimestamp: entryTimestamp
                 )
-            )
+                if committed {
+                    handlePersistenceEvent(.committed(mutation, referenceDate))
+                } else {
+                    handlePersistenceEvent(.failed(mutation, "Habit not found during persistence"))
+                }
+            } catch {
+                handlePersistenceEvent(.failed(mutation, error.localizedDescription))
+            }
         }
+    }
+
+    @MainActor
+    private func persistMutationImmediately(
+        mutation: HabitLogPendingMutation,
+        entryTimestamp: Date
+    ) throws -> Bool {
+        let descriptor = FetchDescriptor<Habit>()
+        guard let habit = try modelContext.fetch(descriptor).first(where: { $0.id == mutation.id.habitID }) else {
+            return false
+        }
+
+        switch mutation.operation {
+        case .addLog:
+            if !habit.logs.contains(where: { $0.id == mutation.id.nonce }) {
+                let log = HabitLog(
+                    timestamp: entryTimestamp,
+                    value: mutation.valueDelta,
+                    createdAt: mutation.createdAt
+                )
+                log.id = mutation.id.nonce
+                log.day = mutation.id.dayStart
+                habit.logs.append(log)
+            }
+        case .clearDay:
+            habit.logs.removeAll { $0.day == mutation.id.dayStart }
+        case let .setDayCount(newCount):
+            habit.logs.removeAll { $0.day == mutation.id.dayStart }
+            for offset in 0..<max(0, newCount) {
+                let timestamp = mutation.id.dayStart.addingTimeInterval(TimeInterval(offset))
+                let logID = HabitLogMutationIdentity.deterministicLogID(
+                    baseNonce: mutation.id.nonce,
+                    index: offset
+                )
+                guard !habit.logs.contains(where: { $0.id == logID }) else { continue }
+                let log = HabitLog(
+                    timestamp: timestamp,
+                    value: 1,
+                    createdAt: mutation.createdAt
+                )
+                log.id = logID
+                log.day = mutation.id.dayStart
+                habit.logs.append(log)
+            }
+        case let .deleteEntry(logID):
+            habit.logs.removeAll { $0.id == logID }
+        case let .updateEntry(logID, value):
+            let amount = max(0, value)
+            guard let logIndex = habit.logs.firstIndex(where: { $0.id == logID }) else {
+                break
+            }
+            if amount == 0 {
+                habit.logs.remove(at: logIndex)
+            } else if habit.logs[logIndex].kind == .entry {
+                habit.logs[logIndex].value = amount
+                habit.logs[logIndex].createdAt = mutation.createdAt
+            } else {
+                let legacyLog = habit.logs.remove(at: logIndex)
+                habit.logs.append(
+                    HabitLog(
+                        timestamp: legacyLog.effectiveTimestamp,
+                        value: amount,
+                        createdAt: mutation.createdAt
+                    )
+                )
+            }
+        }
+
+        try modelContext.save()
+        return true
     }
 
     @MainActor
@@ -680,6 +757,69 @@ extension HabitLogService {
         HabitValueFormatter.string(
             for: value,
             context: valueFormattingContext(for: habit, locale: locale)
+        )
+    }
+
+    func evaluatedState(
+        for habit: Habit,
+        asOfDate: Date,
+        selectedDateContext: Date? = nil,
+        weekStartPreference: WeekStartPreference = .system
+    ) -> EvaluatedHabitState? {
+        HabitEvaluator(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).evaluate(
+            habit: habit,
+            asOfDate: asOfDate,
+            selectedDateContext: selectedDateContext
+        )
+    }
+
+    func hasActivity(
+        for habit: Habit,
+        on date: Date
+    ) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        return count(for: habit, on: day) > 0 || value(for: habit, on: day) > 0
+    }
+
+    func recentActivity(
+        for habit: Habit,
+        asOfDate: Date
+    ) -> RecentActivity {
+        let asOfDay = calendar.startOfDay(for: asOfDate)
+        var latest: Date?
+
+        for log in habit.logs {
+            let day = calendar.startOfDay(for: log.day)
+            guard day <= asOfDay else { continue }
+            guard log.frequencyContribution > 0 || log.numericValue > 0 else { continue }
+            if let latest, day <= latest { continue }
+            latest = day
+        }
+
+        let projectedStates = MainActor.assumeIsolated {
+            uiStateStore.projectedDayStates(for: habit.id)
+        }
+        for (dayRaw, state) in projectedStates {
+            let day = calendar.startOfDay(for: dayRaw)
+            guard day <= asOfDay else { continue }
+            guard state.count > 0 || state.value > 0 else { continue }
+            if let latest, day <= latest { continue }
+            latest = day
+        }
+
+        let daysSince: Int? = {
+            guard let latest else { return nil }
+            return max(0, calendar.dateComponents([.day], from: latest, to: asOfDay).day ?? 0)
+        }()
+
+        return RecentActivity(
+            lastActiveDate: latest,
+            daysSinceLastActive: daysSince,
+            isActiveToday: hasActivity(for: habit, on: asOfDay),
+            isActiveRecently: (daysSince ?? Int.max) <= 2
         )
     }
 
@@ -1351,6 +1491,39 @@ extension HabitLogService {
                 result[day] = projected
             }
         }
+    }
+
+    func durableHistoryDayStatesForDisplay(
+        for habit: Habit,
+        weekStartPreference: WeekStartPreference
+    ) -> [Date: HabitProjectedDayState] {
+        normalizeLogsIfNeeded(for: habit)
+        let grouped = Dictionary(grouping: habit.logs) { calendar.startOfDay(for: $0.day) }
+        var result: [Date: HabitProjectedDayState] = [:]
+        result.reserveCapacity(grouped.count)
+        for (day, logs) in grouped {
+            let count = max(0, logs.reduce(0) { $0 + $1.frequencyContribution })
+            let value = max(0, logs.reduce(0) { $0 + $1.numericValue })
+            let evaluated = evaluatedState(
+                for: habit,
+                asOfDate: day,
+                selectedDateContext: day,
+                weekStartPreference: weekStartPreference
+            )
+            let progress: Double = {
+                guard let evaluated else { return count > 0 || value > 0 ? 1 : 0 }
+                guard evaluated.target > 0 else { return 0 }
+                return min(max(evaluated.progress / evaluated.target, 0), 1)
+            }()
+            result[day] = HabitProjectedDayState(
+                count: count,
+                value: value,
+                progress: progress,
+                isComplete: evaluated?.status == .met,
+                headSequence: 0
+            )
+        }
+        return result
     }
 
     private func recentEntryLogs(for habit: Habit) -> [HabitLog] {

@@ -25,8 +25,155 @@ struct AICoachResult: Equatable, Sendable, Codable {
     let body: String
 }
 
+private struct AICoachValidationReport: Sendable {
+    let isStructurallyValid: Bool
+    let primaryMatched: Bool
+    let matchedSignals: Set<CoachingSignalID>
+    let missingSignals: Set<CoachingSignalID>
+    let failureReason: String?
+
+    var missingSecondarySignals: Set<CoachingSignalID> {
+        missingSignals.filter { $0 != primarySignal }
+    }
+
+    private let primarySignal: CoachingSignalID
+
+    init(
+        isStructurallyValid: Bool,
+        primarySignal: CoachingSignalID,
+        primaryMatched: Bool,
+        matchedSignals: Set<CoachingSignalID>,
+        missingSignals: Set<CoachingSignalID>,
+        failureReason: String? = nil
+    ) {
+        self.isStructurallyValid = isStructurallyValid
+        self.primarySignal = primarySignal
+        self.primaryMatched = primaryMatched
+        self.matchedSignals = matchedSignals
+        self.missingSignals = missingSignals
+        self.failureReason = failureReason
+    }
+}
+
+private enum AICoachRepairEngine {
+    static func repair(
+        result: AICoachResult,
+        report: AICoachValidationReport,
+        input: AICoachInput
+    ) -> AICoachResult {
+        let additions = report.missingSecondarySignals
+            .sorted { $0.rawValue < $1.rawValue }
+            .compactMap { sentence(for: $0, input: input) }
+            .filter { !result.body.localizedCaseInsensitiveContains($0) }
+
+        guard !additions.isEmpty else { return result }
+        let repairedBody = ([result.body] + additions)
+            .joined(separator: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return AICoachResult(title: result.title, body: repairedBody)
+    }
+
+    private static func sentence(for signal: CoachingSignalID, input: AICoachInput) -> String? {
+        switch signal {
+        case .consistency:
+            return "Your consistency is beginning to stabilize."
+        case .timeOfDayInsights:
+            if let strongest = input.coachingInput.timeOfDayInsights.strongestWindow,
+               !strongest.isEmpty {
+                return "That \(strongest.lowercased()) window is worth protecting today."
+            }
+            return "The timing pattern is worth protecting today."
+        case .streakState:
+            return "Keep the streak protected with the smallest useful version today."
+        case .identityState:
+            switch input.coachingInput.identityState {
+            case .start:
+                return "This identity is still taking shape."
+            case .build:
+                return "The identity is beginning to build."
+            case .steady, .strong:
+                return "This identity is becoming stable."
+            case .slip:
+                return "This is a useful point to re-engage."
+            case .rebuild:
+                return "This is a chance to rebuild the identity."
+            }
+        case .recentBehaviourSummary:
+            return "Recent behaviour points to keeping the next step small."
+        case .todayStatus:
+            return "Use today's next check-in as the anchor."
+        }
+    }
+}
+
+private actor AICoachRawResultCache {
+    private struct Entry {
+        let rawOutput: String
+        let generatedAt: Date
+    }
+
+    private var entries: [String: Entry] = [:]
+    private let ttl: TimeInterval = 60 * 60
+
+    func rawOutput(for fingerprint: String, now: Date = .now) -> String? {
+        guard let entry = entries[fingerprint] else { return nil }
+        if now.timeIntervalSince(entry.generatedAt) >= ttl {
+            entries.removeValue(forKey: fingerprint)
+            return nil
+        }
+        return entry.rawOutput
+    }
+
+    func store(_ rawOutput: String, fingerprint: String, generatedAt: Date = .now) {
+        entries[fingerprint] = Entry(rawOutput: rawOutput, generatedAt: generatedAt)
+    }
+
+    func removeAll() {
+        entries.removeAll()
+    }
+}
+
+private actor AICoachRequestCoordinator {
+    private var inFlight: [String: Task<AICoachService.Outcome, Never>] = [:]
+    private var generationCounts: [String: Int] = [:]
+
+    func result(
+        for fingerprint: String,
+        operation: @escaping @Sendable () async -> AICoachService.Outcome
+    ) async -> AICoachService.Outcome {
+        if let existing = inFlight[fingerprint] {
+            #if DEBUG
+            print("AI Coach Diagnostics duplicate request suppressed fingerprint=\(fingerprint)")
+            #endif
+            return await existing.value
+        }
+
+        let count = (generationCounts[fingerprint] ?? 0) + 1
+        generationCounts[fingerprint] = count
+        #if DEBUG
+        print("AI Coach Diagnostics generation count fingerprint=\(fingerprint) count=\(count)")
+        #endif
+
+        let task = Task {
+            await operation()
+        }
+        inFlight[fingerprint] = task
+        let outcome = await task.value
+        inFlight[fingerprint] = nil
+        return outcome
+    }
+
+    func removeAll() {
+        inFlight.values.forEach { $0.cancel() }
+        inFlight.removeAll()
+        generationCounts.removeAll()
+    }
+}
+
 final class AICoachService {
-    enum FailureReason: Equatable {
+    enum FailureReason: Equatable, Sendable {
         case timeout
         case unavailable
         case emptyResult
@@ -35,11 +182,11 @@ final class AICoachService {
         case internalError
     }
 
-    enum DiscardReason: Equatable {
+    enum DiscardReason: Equatable, Sendable {
         case stale
     }
 
-    enum Outcome: Equatable {
+    enum Outcome: Equatable, Sendable {
         case success(AICoachResult)
         case failure(FailureReason)
         case discarded(DiscardReason)
@@ -57,10 +204,15 @@ final class AICoachService {
     let loadingText = "Thinking…"
     private let generationTimeout: TimeInterval
     private let cacheTTL: TimeInterval = 60 * 60
+    private let rawResultCache = AICoachRawResultCache()
+    private let requestCoordinator = AICoachRequestCoordinator()
     private var generationTask: Task<Void, Never>?
     private var requestSequence: UInt64 = 0
+    private var currentRequestFingerprint: String?
     private var lastRequestKey: String?
     private var cacheByHabitID: [UUID: AICoachCache] = [:]
+    private var publishCountByFingerprint: [String: Int] = [:]
+    private var acceptedResultFingerprints: Set<String> = []
 #if DEBUG
     private var runOverrideForTesting: (@Sendable (AICoachInput, UInt64) async -> Outcome)?
 #endif
@@ -94,10 +246,13 @@ final class AICoachService {
             return
         }
 
-        print("AI: publish start at \(Date())")
+        let publishStartedAt = Date()
+        print("AI: publish start at \(publishStartedAt)")
 
-        generationTask?.cancel()
-        requestSequence &+= 1
+        if currentRequestFingerprint != fingerprint {
+            requestSequence &+= 1
+            currentRequestFingerprint = fingerprint
+        }
         let sequence = requestSequence
 
         generationTask = Task.detached(priority: .background) { [weak self] in
@@ -107,9 +262,12 @@ final class AICoachService {
                 }
                 return
             }
-            let outcome = await self.resolveWithTimeout(clean, sequence: sequence)
+            let outcome = await self.requestCoordinator.result(for: fingerprint) {
+                await self.resolveWithTimeout(clean, fingerprint: fingerprint, sequence: sequence)
+            }
             print("AI: main actor hop at \(Date())")
             await MainActor.run {
+                let mainPublishStartedAt = Date()
                 guard sequence == self.requestSequence else {
                     onTerminal(.discarded(.stale))
                     return
@@ -126,6 +284,19 @@ final class AICoachService {
                         depth: input.depth,
                         generatedAt: .now
                     )
+                    let isFirstAcceptedResult = self.acceptedResultFingerprints.insert(fingerprint).inserted
+                    let publishCount = isFirstAcceptedResult
+                        ? (self.publishCountByFingerprint[fingerprint] ?? 0) + 1
+                        : (self.publishCountByFingerprint[fingerprint] ?? 0)
+                    if isFirstAcceptedResult {
+                        self.publishCountByFingerprint[fingerprint] = publishCount
+                    }
+                    #if DEBUG
+                    let publishDuration = Date().timeIntervalSince(mainPublishStartedAt)
+                    let totalDuration = Date().timeIntervalSince(publishStartedAt)
+                    let duplicateSuffix = isFirstAcceptedResult ? "" : " duplicateCompletion=true"
+                    print("AI Coach Diagnostics publish count fingerprint=\(fingerprint) count=\(publishCount) mainPublish=\(String(format: "%.3f", publishDuration))s total=\(String(format: "%.3f", totalDuration))s\(duplicateSuffix)")
+                    #endif
                 }
                 print("AI: publish end at \(Date())")
                 onTerminal(outcome)
@@ -191,7 +362,14 @@ final class AICoachService {
         generationTask?.cancel()
         generationTask = nil
         requestSequence = 0
+        currentRequestFingerprint = nil
         lastRequestKey = nil
+        publishCountByFingerprint.removeAll()
+        acceptedResultFingerprints.removeAll()
+        Task {
+            await rawResultCache.removeAll()
+            await requestCoordinator.removeAll()
+        }
 #if DEBUG
         runOverrideForTesting = nil
 #endif
@@ -249,9 +427,13 @@ final class AICoachService {
 #endif
 
     private func parseResult(_ rawOutput: String, input: AICoachInput) -> AICoachResult? {
+        let validationStartedAt = Date()
         guard let json = extractJSONObject(from: rawOutput),
               let data = json.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(AICoachResult.self, from: data) else {
+            #if DEBUG
+            print("AI Coach Diagnostics validation rejected reason=malformed duration=\(String(format: "%.3f", Date().timeIntervalSince(validationStartedAt)))s")
+            #endif
             return nil
         }
 
@@ -261,8 +443,24 @@ final class AICoachService {
             body = tightenPremiumPhrasing(body)
         }
         let result = AICoachResult(title: title, body: body)
-        guard resultIsValid(result, input: input) else { return nil }
-        return result
+        let report = validationReport(for: result, input: input)
+        guard report.isStructurallyValid, report.primaryMatched else {
+            #if DEBUG
+            let reason = report.failureReason ?? "primary signal missing"
+            print("AI Coach Diagnostics validation rejected reason=\(reason) duration=\(String(format: "%.3f", Date().timeIntervalSince(validationStartedAt)))s")
+            #endif
+            return nil
+        }
+
+        let repaired = AICoachRepairEngine.repair(result: result, report: report, input: input)
+        #if DEBUG
+        if repaired != result {
+            let missing = report.missingSecondarySignals.map(\.rawValue).sorted().joined(separator: ",")
+            print("AI Coach Diagnostics repair applied missingSecondary=\(missing)")
+        }
+        print("AI Coach Diagnostics validation accepted primaryMatched=\(report.primaryMatched) matched=\(report.matchedSignals.count) missing=\(report.missingSignals.count) duration=\(String(format: "%.3f", Date().timeIntervalSince(validationStartedAt)))s")
+        #endif
+        return repaired
     }
 
     private func extractJSONObject(from rawOutput: String) -> String? {
@@ -279,10 +477,8 @@ final class AICoachService {
     }
 
     private func resultIsValid(_ result: AICoachResult, input: AICoachInput) -> Bool {
-        !result.title.isEmpty
-            && !result.body.isEmpty
-            && titleIsValid(result.title, input: input)
-            && outputReferencesSelectedSignals(result.body, input: input)
+        let report = validationReport(for: result, input: input)
+        return report.isStructurallyValid && report.primaryMatched
     }
 
     private func titleIsValid(_ title: String, input: AICoachInput) -> Bool {
@@ -445,7 +641,7 @@ final class AICoachService {
         """
     }
 
-    private func run(_ input: AICoachInput, sequence: UInt64) async -> Outcome {
+    private func run(_ input: AICoachInput, fingerprint: String, sequence: UInt64) async -> Outcome {
         try? await Task.sleep(nanoseconds: 250_000_000)
         guard !Task.isCancelled else {
             if await isCurrent(sequence: sequence) {
@@ -454,12 +650,26 @@ final class AICoachService {
             return .discarded(.stale)
         }
 
-        print("AI: start at \(Date())")
+        let generationStartedAt = Date()
+        print("AI: start at \(generationStartedAt)")
+
+        if let cachedRaw = await rawResultCache.rawOutput(for: fingerprint) {
+            #if DEBUG
+            print("AI Coach Diagnostics raw cache hit fingerprint=\(fingerprint)")
+            #endif
+            if let parsed = parseResult(cachedRaw, input: input) {
+                print("AI: end at \(Date())")
+                return .success(parsed)
+            }
+            print("AI: end at \(Date())")
+            return .failure(.emptyResult)
+        }
 
         let prompt = Self.buildPrompt(from: input)
 
         do {
-            var result = try await generateFromAppleIntelligence(prompt: prompt)
+            let result = try await generateFromAppleIntelligence(prompt: prompt)
+            await rawResultCache.store(result, fingerprint: fingerprint)
             guard !Task.isCancelled else {
                 if await isCurrent(sequence: sequence) {
                     return .failure(.cancelled)
@@ -468,28 +678,17 @@ final class AICoachService {
             }
             guard await isCurrent(sequence: sequence) else { return .discarded(.stale) }
             if let parsed = parseResult(result, input: input) {
+                #if DEBUG
+                print("AI Coach Diagnostics generation duration fingerprint=\(fingerprint) duration=\(String(format: "%.3f", Date().timeIntervalSince(generationStartedAt)))s")
+                #endif
                 print("AI: end at \(Date())")
                 return .success(parsed)
             } else {
-                let retryPrompt = """
-                \(prompt)
-
-                Reminder: return valid JSON with "title" and "body", include both selected signals explicitly in the body, and make the title specific to the primary signal.
-                """
-                result = try await generateFromAppleIntelligence(prompt: retryPrompt)
-                guard !Task.isCancelled else {
-                    if await isCurrent(sequence: sequence) {
-                        return .failure(.cancelled)
-                    }
-                    return .discarded(.stale)
-                }
-                guard await isCurrent(sequence: sequence) else { return .discarded(.stale) }
-                guard let parsed = parseResult(result, input: input) else {
-                    print("AI: end at \(Date())")
-                    return .failure(.emptyResult)
-                }
+                #if DEBUG
+                print("AI Coach Diagnostics generation rejected without retry fingerprint=\(fingerprint) duration=\(String(format: "%.3f", Date().timeIntervalSince(generationStartedAt)))s")
+                #endif
                 print("AI: end at \(Date())")
-                return .success(parsed)
+                return .failure(.emptyResult)
             }
         } catch {
             guard !Task.isCancelled else {
@@ -499,6 +698,9 @@ final class AICoachService {
                 return .discarded(.stale)
             }
             guard await isCurrent(sequence: sequence) else { return .discarded(.stale) }
+            #if DEBUG
+            print("AI Coach Diagnostics generation duration fingerprint=\(fingerprint) duration=\(String(format: "%.3f", Date().timeIntervalSince(generationStartedAt)))s")
+            #endif
             print("AI: end at \(Date())")
             if let aiError = error as? AICoachError, case .unavailable = aiError {
                 return .failure(.unavailable)
@@ -507,7 +709,7 @@ final class AICoachService {
         }
     }
 
-    private func resolveWithTimeout(_ input: AICoachInput, sequence: UInt64) async -> Outcome {
+    private func resolveWithTimeout(_ input: AICoachInput, fingerprint: String, sequence: UInt64) async -> Outcome {
         await withTaskGroup(of: Outcome.self) { group in
             group.addTask { [weak self] in
                 guard let self else { return .failure(.serviceDeallocated) }
@@ -516,7 +718,7 @@ final class AICoachService {
                     return await override(input, sequence)
                 }
 #endif
-                return await self.run(input, sequence: sequence)
+                return await self.run(input, fingerprint: fingerprint, sequence: sequence)
             }
             group.addTask { [weak self] in
                 guard let self else { return .failure(.serviceDeallocated) }
@@ -624,6 +826,45 @@ final class AICoachService {
 #endif
 
     private func outputReferencesSelectedSignals(_ output: String, input: AICoachInput) -> Bool {
+        let report = bodyValidationReport(output, input: input)
+        return report.isStructurallyValid && report.primaryMatched
+    }
+
+    private func validationReport(for result: AICoachResult, input: AICoachInput) -> AICoachValidationReport {
+        guard !result.title.isEmpty else {
+            return AICoachValidationReport(
+                isStructurallyValid: false,
+                primarySignal: input.selectedSignals.primary,
+                primaryMatched: false,
+                matchedSignals: [],
+                missingSignals: Set(input.selectedSignals.all),
+                failureReason: "empty title"
+            )
+        }
+        guard !result.body.isEmpty else {
+            return AICoachValidationReport(
+                isStructurallyValid: false,
+                primarySignal: input.selectedSignals.primary,
+                primaryMatched: false,
+                matchedSignals: [],
+                missingSignals: Set(input.selectedSignals.all),
+                failureReason: "empty body"
+            )
+        }
+        guard titleIsValid(result.title, input: input) else {
+            return AICoachValidationReport(
+                isStructurallyValid: false,
+                primarySignal: input.selectedSignals.primary,
+                primaryMatched: false,
+                matchedSignals: [],
+                missingSignals: Set(input.selectedSignals.all),
+                failureReason: "title validation failed"
+            )
+        }
+        return bodyValidationReport(result.body, input: input)
+    }
+
+    private func bodyValidationReport(_ output: String, input: AICoachInput) -> AICoachValidationReport {
         if containsGenericMotivationalPhrase(output) {
             #if DEBUG
             print(
@@ -634,7 +875,14 @@ final class AICoachService {
                 """
             )
             #endif
-            return false
+            return AICoachValidationReport(
+                isStructurallyValid: false,
+                primarySignal: input.selectedSignals.primary,
+                primaryMatched: false,
+                matchedSignals: [],
+                missingSignals: Set(input.selectedSignals.all),
+                failureReason: "generic motivational phrasing"
+            )
         }
 
         if containsMixedTimeRepresentations(output) {
@@ -647,7 +895,14 @@ final class AICoachService {
                 """
             )
             #endif
-            return false
+            return AICoachValidationReport(
+                isStructurallyValid: false,
+                primarySignal: input.selectedSignals.primary,
+                primaryMatched: false,
+                matchedSignals: [],
+                missingSignals: Set(input.selectedSignals.all),
+                failureReason: "mixed time window and exact time"
+            )
         }
 
         let normalized = normalizedText(output)
@@ -664,12 +919,8 @@ final class AICoachService {
         let total = selectedSignals.count
         let matched = total - missingSignals.count
         let matchedSignals = selectedSignals.subtracting(missingSignals)
-        let requiresTimingAndConsistency = selectedSignals.contains(.timeOfDayInsights)
-            && selectedSignals.contains(.consistency)
-        let hasTimingAndConsistency = matchedSignals.contains(.timeOfDayInsights)
-            && matchedSignals.contains(.consistency)
-        let passesAdherence = missingSignals.isEmpty
-            && (!requiresTimingAndConsistency || hasTimingAndConsistency)
+        let primaryMatched = matchedSignals.contains(input.selectedSignals.primary)
+        let passesAdherence = primaryMatched
         #if DEBUG
         if !passesAdherence {
             let joinedMissing = missingSignals.map(\.rawValue).sorted().joined(separator: ",")
@@ -685,9 +936,29 @@ final class AICoachService {
                 Depth: \(input.depth.rawValue)
                 """
             )
+        } else if !missingSignals.isEmpty {
+            let joinedMissing = missingSignals.map(\.rawValue).sorted().joined(separator: ",")
+            let joinedMatched = matchedSignals.map(\.rawValue).sorted().joined(separator: ",")
+            print(
+                """
+                AI Coach Validation Repairable
+                Missing secondary: \(joinedMissing)
+                Matched: \(joinedMatched)
+                Output: \(output)
+                Matched: \(matched)/\(total)
+                Depth: \(input.depth.rawValue)
+                """
+            )
         }
         #endif
-        return passesAdherence
+        return AICoachValidationReport(
+            isStructurallyValid: true,
+            primarySignal: input.selectedSignals.primary,
+            primaryMatched: primaryMatched,
+            matchedSignals: matchedSignals,
+            missingSignals: Set(missingSignals),
+            failureReason: primaryMatched ? nil : "primary signal missing"
+        )
     }
 
     private func signalFamilyMatch(

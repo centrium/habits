@@ -10,6 +10,7 @@ struct TodayStartupSnapshot: Codable, Equatable {
     let date: Date
     let habits: [StartupHabit]
     let greeting: String
+    let growthPlanMessages: [String]?
 }
 
 protocol TodayStartupSnapshotStoring {
@@ -47,7 +48,8 @@ final class TodaySnapshotStore: TodayStartupSnapshotStoring {
         let compact = TodayStartupSnapshot(
             date: snapshot.date,
             habits: cappedHabits,
-            greeting: snapshot.greeting
+            greeting: snapshot.greeting,
+            growthPlanMessages: snapshot.growthPlanMessages
         )
         guard let data = try? PropertyListEncoder().encode(compact) else { return }
         defaults.set(data, forKey: Keys.snapshot)

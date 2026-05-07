@@ -138,14 +138,13 @@ final class HabitComputationEngine {
         // 1) Normalise logs
         let normalizedLogs = normalized(logs: logSnapshots, now: now)
 
-        // 2) Compute completion per day (goal-aware)
-        let completedDays = completedDayStarts(for: habit, logs: normalizedLogs, now: now)
+        // 2) Compute evaluator-driven successful days
+        let successfulDays = successfulDayStarts(for: habit, logs: normalizedLogs, now: now)
 
         // 3) Compute streak (goal-aware)
         let streakState = computedStreakState(
             for: habit,
-            logs: normalizedLogs,
-            completedDays: completedDays,
+            successfulDays: successfulDays,
             now: now
         )
 
@@ -160,12 +159,12 @@ final class HabitComputationEngine {
 
         let completionStats = completionStats(
             from: normalizedLogs,
-            completedDays: completedDays,
+            successfulDays: successfulDays,
             timingDiagnostics: timingComputation.diagnostics,
             now: now
         )
         let consistency = computedConsistency(
-            completedDays: completedDays,
+            successfulDays: successfulDays,
             createdAt: habit.createdAt,
             now: now
         )
@@ -199,7 +198,7 @@ final class HabitComputationEngine {
 
         // 5) Compute raw identity
         let rawIdentity = rawIdentityState(
-            completedDays: completedDays,
+            successfulDays: successfulDays,
             now: now
         )
 
@@ -230,7 +229,7 @@ final class HabitComputationEngine {
                     habit.id.uuidString,
                     logSnapshots.count,
                     normalizedLogs.count,
-                    completedDays.count,
+                    successfulDays.count,
                     timingLogSnapshots.count,
                     timingGlobalLogSnapshots.count,
                     elapsedMs
@@ -256,111 +255,115 @@ private extension HabitComputationEngine {
             }
     }
 
-    func completedDayStarts(
+    func successfulDayStarts(
         for habit: Habit,
         logs: [HabitComputationLog],
         now: Date
     ) -> Set<Date> {
         let today = calendar.startOfDay(for: now)
-        let days = Set(logs.map { calendar.startOfDay(for: $0.day) })
+        let firstLogDay = logs.map { calendar.startOfDay(for: $0.day) }.min()
+        let startDay = min(calendar.startOfDay(for: habit.createdAt), firstLogDay ?? today)
+        guard startDay <= today else { return [] }
 
-        // Completion invariant: only goal-satisfied days count.
-        return Set(days.filter { day in
-            guard day <= today else { return false }
-            return isDayComplete(for: habit, logs: logs, day: day)
-        })
-    }
+        let evaluator = HabitEvaluator(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        )
+        let dayActivity = Set(logs.map { calendar.startOfDay(for: $0.day) })
 
-    func isDayComplete(
-        for habit: Habit,
-        logs: [HabitComputationLog],
-        day: Date
-    ) -> Bool {
-        let dayStart = calendar.startOfDay(for: day)
-        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
-        let dayLogs = logs.filter { log in
-            let logDay = calendar.startOfDay(for: log.day)
-            return logDay >= dayStart && logDay < dayEnd
-        }
-
-        if !habit.hasGoal {
-            return !dayLogs.isEmpty
-        }
-
-        guard let target = habit.effectiveTargetValue else {
-            return false
-        }
-
-        switch habit.goalType {
-        case .frequency:
-            let count = dayLogs.reduce(0.0) { total, log in
-                total + Double(max(0, log.frequencyContribution))
+        var successful: Set<Date> = []
+        var cursor = startDay
+        while cursor <= today {
+            let isSuccessful: Bool
+            if habit.hasGoal {
+                let hasMeaningfulActivity = dayActivity.contains(cursor)
+                isSuccessful = evaluatorStatus(
+                    evaluator: evaluator,
+                    habit: habit,
+                    day: cursor
+                ) != .broken && hasMeaningfulActivity
+            } else {
+                isSuccessful = dayActivity.contains(cursor)
             }
-            return count >= target
-        case .cumulative:
-            let value = dayLogs.reduce(0.0) { total, log in
-                total + max(0, log.numericValue)
+
+            if isSuccessful {
+                successful.insert(cursor)
             }
-            return value >= target
+
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
         }
+
+        return successful
     }
 
     func computedStreakState(
         for habit: Habit,
-        logs: [HabitComputationLog],
-        completedDays: Set<Date>,
+        successfulDays: Set<Date>,
         now: Date
     ) -> StreakState {
-        let engine = StreakStateEngine(
+        let evaluator = HabitEvaluator(
             calendar: calendar,
             weekStartPreference: weekStartPreference
         )
-        let result = engine.calculateStreak(
-            for: habit,
-            logs: logs,
-            asOf: now,
-            period: nil
+        let today = calendar.startOfDay(for: now)
+        let metToday = successfulDays.contains(today)
+        let todayStatus = evaluatorStatus(
+            evaluator: evaluator,
+            habit: habit,
+            day: today
         )
 
-        let today = calendar.startOfDay(for: now)
-        let metToday = completedDays.contains(today)
+        let currentStreak = streakLengthEnding(
+            at: today,
+            successfulDays: successfulDays
+        )
+        let longestStreak = longestRunLength(in: successfulDays)
+
         let status: StreakStatus = {
-            if metToday { return .safe }
-            if result.isAtRisk { return .atRisk }
-            return .broken
+            switch todayStatus {
+            case .met:
+                return .safe
+            case .atRisk:
+                return .atRisk
+            case .broken:
+                return .broken
+            case .none:
+                return metToday ? .safe : .broken
+            }
         }()
 
         return StreakState(
-            currentStreak: result.current,
-            longestStreak: result.best,
+            currentStreak: currentStreak,
+            longestStreak: longestStreak,
             hasMetRequirementToday: metToday,
             isRequiredToday: !metToday,
-            isAtRisk: result.isAtRisk,
-            isBroken: result.isBroken,
+            isAtRisk: status == .atRisk,
+            isBroken: status == .broken,
             status: status
         )
     }
 
     func completionStats(
         from logs: [HabitComputationLog],
-        completedDays: Set<Date>,
+        successfulDays: Set<Date>,
         timingDiagnostics: TimeInsightDiagnostics,
         now: Date
     ) -> CompletionStats {
         let today = calendar.startOfDay(for: now)
         let earliestLast14 = calendar.date(byAdding: .day, value: -13, to: today) ?? today
-        let recentActiveDays = completedDays.filter { $0 >= earliestLast14 && $0 <= today }.count
+        let recentActiveDays = successfulDays.filter { $0 >= earliestLast14 && $0 <= today }.count
 
         return CompletionStats(
             totalLogs: logs.count,
-            uniqueCompletedDays: completedDays.count,
+            uniqueCompletedDays: successfulDays.count,
             recentActiveDays: recentActiveDays,
             validTimingSamples: timingDiagnostics.uniqueEventCount
         )
     }
 
     func computedConsistency(
-        completedDays: Set<Date>,
+        successfulDays: Set<Date>,
         createdAt: Date,
         now: Date
     ) -> HabitComputedConsistency {
@@ -370,7 +373,7 @@ private extension HabitComputationEngine {
         let trackingStart = min(calendar.startOfDay(for: createdAt), today)
         let effectiveStart = max(windowStart, trackingStart)
         let daysAvailable = daySpan(start: effectiveStart, end: today)
-        let daysCompleted = completedDays.filter { $0 >= effectiveStart && $0 <= today }.count
+        let daysCompleted = successfulDays.filter { $0 >= effectiveStart && $0 <= today }.count
         let adherenceRate = Double(daysCompleted) / Double(max(1, daysAvailable))
         return HabitComputedConsistency(
             percentage: Int((min(max(adherenceRate, 0), 1) * 100).rounded()),
@@ -512,22 +515,22 @@ private extension HabitComputationEngine {
     }
 
     func rawIdentityState(
-        completedDays: Set<Date>,
+        successfulDays: Set<Date>,
         now: Date
     ) -> HabitState {
         let today = calendar.startOfDay(for: now)
         let earliestLast14 = calendar.date(byAdding: .day, value: -13, to: today) ?? today
-        let recentActive = completedDays.filter { $0 >= earliestLast14 && $0 <= today }.count
+        let recentActive = successfulDays.filter { $0 >= earliestLast14 && $0 <= today }.count
         let consistency = Int((Double(recentActive) / 14.0) * 100.0)
 
-        let lastCompletedDay = completedDays.max()
+        let lastCompletedDay = successfulDays.max()
         let inactivityDays: Int = {
             guard let lastCompletedDay else { return 0 }
             return max(calendar.dateComponents([.day], from: lastCompletedDay, to: today).day ?? 0, 0)
         }()
 
         let risk: Double = {
-            if completedDays.isEmpty { return 0.2 }
+            if successfulDays.isEmpty { return 0.2 }
             if inactivityDays >= 14 { return 0.85 }
             if inactivityDays >= 7 { return 0.65 }
             if recentActive <= 1 { return 0.5 }
@@ -540,6 +543,55 @@ private extension HabitComputationEngine {
             risk: risk,
             streakState: "derived"
         )
+    }
+
+    func evaluatorStatus(
+        evaluator: HabitEvaluator,
+        habit: Habit,
+        day: Date
+    ) -> EvaluatedHabitStatus? {
+        let dayStart = calendar.startOfDay(for: day)
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        let endOfDay = nextDay.addingTimeInterval(-1)
+        return evaluator.evaluate(
+            habit: habit,
+            asOfDate: endOfDay,
+            selectedDateContext: dayStart
+        )?.status
+    }
+
+    func streakLengthEnding(
+        at endDay: Date,
+        successfulDays: Set<Date>
+    ) -> Int {
+        var cursor = endDay
+        var length = 0
+        while successfulDays.contains(cursor) {
+            length += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+        return length
+    }
+
+    func longestRunLength(in successfulDays: Set<Date>) -> Int {
+        let ordered = successfulDays.sorted()
+        guard !ordered.isEmpty else { return 0 }
+        var best = 0
+        var run = 0
+        var previous: Date?
+        for day in ordered {
+            if let previous,
+               let expected = calendar.date(byAdding: .day, value: 1, to: previous),
+               calendar.isDate(day, inSameDayAs: expected) {
+                run += 1
+            } else {
+                run = 1
+            }
+            best = max(best, run)
+            previous = day
+        }
+        return best
     }
 
     func computeTiming(

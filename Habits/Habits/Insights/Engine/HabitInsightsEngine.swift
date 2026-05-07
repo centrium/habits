@@ -83,27 +83,45 @@ struct HabitInsightsEngine {
             streakState: streakState
         )
 
+        let evaluatedState = HabitEvaluator(
+            calendar: calendar,
+            weekStartPreference: weekStartPreference
+        ).evaluate(
+            habit: habit,
+            asOfDate: now,
+            selectedDateContext: logAnchorDate ?? now
+        )
+
         let isOpenEnded = foundation.achievement.target == nil
 
         let progressText: String = {
-            if let target = foundation.achievement.target {
-                return "\(habit.formatProgressValue(foundation.achievement.progressClamped)) / \(habit.formatProgressValue(target))"
+            if let evaluatedState {
+                let clamped = min(evaluatedState.progress, evaluatedState.target)
+                return "\(habit.formatProgressValue(clamped)) / \(habit.formatProgressValue(evaluatedState.target))"
             }
             return habit.formatProgressValue(foundation.achievement.progress)
         }()
 
         let statusText: String = achievementSupportingText(
             habit: habit,
-            foundation: foundation,
+            evaluatedState: evaluatedState,
             now: now
         )
 
         let overflowText: String? = {
-            guard foundation.achievement.surplus > 0 else { return nil }
-            if habit.goalType == .frequency {
-                return "+\(Int(foundation.achievement.surplus.rounded())) extra"
+            guard let evaluatedState else {
+                guard foundation.achievement.surplus > 0 else { return nil }
+                if habit.goalType == .frequency {
+                    return "+\(Int(foundation.achievement.surplus.rounded())) extra"
+                }
+                return "+\(habit.formatProgressValue(foundation.achievement.surplus)) extra"
             }
-            return "+\(habit.formatProgressValue(foundation.achievement.surplus)) extra"
+            let surplus = max(evaluatedState.progress - evaluatedState.target, 0)
+            guard surplus > 0 else { return nil }
+            if habit.goalType == .frequency {
+                return "+\(Int(surplus.rounded())) extra"
+            }
+            return "+\(habit.formatProgressValue(surplus)) extra"
         }()
 
         let trendPoints: [HabitInsightsTrendPoint] = foundation.trend.months.map { month in
@@ -123,6 +141,7 @@ struct HabitInsightsEngine {
         let goalPaceBlock = goalPaceBlock(
             for: habit,
             foundation: foundation,
+            evaluatedState: evaluatedState,
             statusText: statusText,
             now: now
         )
@@ -197,7 +216,14 @@ struct HabitInsightsEngine {
                         progressText: progressText,
                         statusText: statusText,
                         overflowText: overflowText,
-                        progressRatio: metrics.completionRatio ?? 0
+                        progressRatio: {
+                            if let evaluatedState {
+                                return evaluatedState.target > 0
+                                    ? min(max(evaluatedState.progress / evaluatedState.target, 0), 1)
+                                    : 0
+                            }
+                            return metrics.completionRatio ?? 0
+                        }()
                     )
                 )
             )
@@ -521,37 +547,30 @@ struct HabitInsightsEngine {
 
     private static func achievementSupportingText(
         habit: Habit,
-        foundation: HabitInsightSnapshot,
+        evaluatedState: EvaluatedHabitState?,
         now: Date
     ) -> String {
-        guard let target = foundation.achievement.target else { return "In progress" }
+        _ = now
+        guard let evaluatedState else { return "In progress" }
 
-        if foundation.achievement.isComplete {
-            if now < foundation.currentPeriodEnd {
-                return "🎉 You hit your goal early this \(habit.goalPeriod.unit)"
-            }
+        if evaluatedState.status == .met {
             return "🎉 Goal achieved"
         }
 
         if habit.goalType == .frequency {
-            let remaining = max(Int(ceil(target - foundation.achievement.progress)), 1)
+            let remaining = max(Int(ceil(evaluatedState.remaining)), 1)
             if remaining == 1 {
                 return "One remaining this \(habit.goalPeriod.unit)"
             }
             return "\(remaining) remaining this \(habit.goalPeriod.unit)"
         }
 
-        let remainingValue = max(target - foundation.achievement.progress, 0)
-        if remainingValue > 0 {
-            let remainingText = habit.formatProgressValue(remainingValue)
-            if let unit = habit.trimmedUnit {
-                return "\(remainingText) \(unit) remaining"
-            }
-            return "\(remainingText) remaining"
+        let remainingValue = max(evaluatedState.remaining, 0)
+        let remainingText = habit.formatProgressValue(remainingValue)
+        if let unit = habit.trimmedUnit {
+            return "\(remainingText) \(unit) remaining"
         }
-
-        let percent = Int(((foundation.achievement.progress / target) * 100).rounded())
-        return "\(percent)% complete"
+        return "\(remainingText) remaining"
     }
 
     private static func milestoneMessage(
@@ -720,6 +739,7 @@ struct HabitInsightsEngine {
     private static func goalPaceBlock(
         for habit: Habit,
         foundation: HabitInsightSnapshot,
+        evaluatedState: EvaluatedHabitState?,
         statusText: String,
         now: Date
     ) -> HabitInsightsGoalPaceBlock? {
@@ -752,7 +772,7 @@ struct HabitInsightsEngine {
             let x = min(max(log.effectiveTimestamp.timeIntervalSince(periodStart) / periodLength, 0), 1)
             actualLine.append(HabitInsightsChartPoint(x: x, y: running))
         }
-        let actualNow = foundation.achievement.progress
+        let actualNow = evaluatedState?.progress ?? foundation.achievement.progress
         actualLine.append(HabitInsightsChartPoint(x: nowRatio, y: actualNow))
 
         let projectedTotal = foundation.pace?.projectedTotal ?? actualNow

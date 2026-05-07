@@ -44,8 +44,8 @@ enum HabitRowGrid {
 }
 
 struct HabitHeader: View {
-    @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @EnvironmentObject private var habitLogService: HabitLogService
+    @EnvironmentObject private var uiStateStore: HabitUIStateStore
 
     let habit: Habit
     let selectedDate: Date
@@ -59,6 +59,7 @@ struct HabitHeader: View {
     let trailingAccessory: AnyView?
     let onQuickLog: (Date) -> Void
     let onQuickLogLongPress: ((Date) -> Void)?
+    @State private var projectionVersion: UInt64 = 0
 
     init(
         habit: Habit,
@@ -104,22 +105,23 @@ struct HabitHeader: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private var evaluatedState: EvaluatedHabitState? {
+        habitLogService.evaluatedState(
+            for: habit,
+            asOfDate: selectedDate,
+            selectedDateContext: selectedDate,
+            weekStartPreference: weekStartPreference
+        )
+    }
+
     private var goalProgressFraction: Double {
-        let normalizedDay = calendar.startOfDay(for: selectedDate)
-        return uiStateStore.projectedDayState(
-            habitID: habit.id,
-            day: normalizedDay,
-            calendar: calendar
-        )?.progress ?? 0
+        guard let evaluatedState else { return 0 }
+        guard evaluatedState.target > 0 else { return 0 }
+        return min(max(evaluatedState.progress / evaluatedState.target, 0), 1)
     }
 
     private var isComplete: Bool {
-        let normalizedDay = calendar.startOfDay(for: selectedDate)
-        return uiStateStore.projectedDayState(
-            habitID: habit.id,
-            day: normalizedDay,
-            calendar: calendar
-        )?.isComplete ?? false
+        evaluatedState?.status == .met
     }
 
     private var quickLogAccessibilityLabel: String {
@@ -156,7 +158,7 @@ struct HabitHeader: View {
     }
 
     private var subtitleLineLimit: Int {
-        showsStreak ? 1 : 2
+        showsStatusBadge ? 1 : 2
     }
 
     private func normalizedSubtitleText(_ text: String?) -> String? {
@@ -181,8 +183,17 @@ struct HabitHeader: View {
         streakContext?.showBadge == true
     }
 
+    private var showsGoalMetBadge: Bool {
+        guard habit.hasGoal else { return false }
+        return evaluatedState?.status == .met
+    }
+
+    private var showsStatusBadge: Bool {
+        showsGoalMetBadge || showsStreak
+    }
+
     private var hasMetadataContent: Bool {
-        hasSubtitle || showsStreak
+        hasSubtitle || showsStatusBadge
     }
 
     @ViewBuilder
@@ -196,6 +207,10 @@ struct HabitHeader: View {
                 .lineSpacing(0)
         }
 
+        if showsGoalMetBadge {
+            HabitGoalMetIndicator(label: evaluatedState?.periodLabel)
+        }
+
         if showsStreak, let streakContext {
             HabitUnifiedStreakIndicator(
                 context: streakContext,
@@ -205,6 +220,7 @@ struct HabitHeader: View {
     }
 
     var body: some View {
+        let _ = projectionVersion
         HStack(alignment: .top, spacing: HabitRowGrid.contentSpacing) {
             HStack(alignment: .top, spacing: HabitRowGrid.iconToTitleSpacing) {
                 HabitBadge(
@@ -230,7 +246,7 @@ struct HabitHeader: View {
                     if hasMetadataContent {
                         VStack(
                             alignment: .leading,
-                            spacing: hasSubtitle && showsStreak
+                            spacing: hasSubtitle && showsStatusBadge
                                 ? HabitRowGrid.subtitleToStreakSpacing
                                 : 0
                         ) {
@@ -276,6 +292,36 @@ struct HabitHeader: View {
             .frame(height: HabitRowGrid.titleRowHeight, alignment: .center)
             .animation(.spring(response: 0.28, dampingFraction: 0.85), value: isReordering)
         }
+        .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { version in
+            projectionVersion = version
+        }
+    }
+}
+
+private struct HabitGoalMetIndicator: View {
+    let label: String?
+
+    private var statusText: String {
+        guard let label, !label.isEmpty else { return "Goal met" }
+        return "Goal met \(label)"
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: HabitRowGrid.streakIconToValueSpacing) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.green)
+                .accessibilityHidden(true)
+
+            Text(statusText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(CadenceTokens.Color.Text.secondary.opacity(0.92))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(height: 18, alignment: .center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(statusText)
     }
 }
 

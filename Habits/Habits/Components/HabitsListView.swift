@@ -278,6 +278,21 @@ struct HabitsListView: View {
             appTime.refreshIfNeeded()
             presentHabitDetailForDeepLinkIfNeeded()
         }
+        .onChange(of: isReordering) { _, isReordering in
+            if isReordering == false {
+                frames.removeAll(keepingCapacity: true)
+            }
+        }
+        .onChange(of: uiStateStore.projectionVersionByHabitID) { _, _ in
+            guard hasActivatedData else { return }
+            persistTodaySnapshotIfPossible()
+            guard startupPhase >= .deferredInsights else { return }
+            Task {
+                await refreshTodayInsightSelection()
+                await refreshRhythmData()
+                scheduleGlobalInsightsSummaryRefresh()
+            }
+        }
         .task(id: insightSelectionTaskKey) {
             guard hasActivatedData else { return }
             guard startupPhase >= .deferredInsights else { return }
@@ -456,14 +471,18 @@ struct HabitsListView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, isReordering ? 2 : 0)
         .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        frames[habit.id] = geo.frame(in: .named("container"))
+            Group {
+                if isReordering {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                frames[habit.id] = geo.frame(in: .named("container"))
+                            }
+                            .onChange(of: geo.frame(in: .named("container"))) { _, newFrame in
+                                frames[habit.id] = newFrame
+                            }
                     }
-                    .onChange(of: geo.frame(in: .named("container"))) { _, newFrame in
-                        frames[habit.id] = newFrame
-                    }
+                }
             }
         )
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -488,14 +507,18 @@ struct HabitsListView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, isReordering ? 2 : 0)
         .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        frames[row.id] = geo.frame(in: .named("container"))
+            Group {
+                if isReordering {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                frames[row.id] = geo.frame(in: .named("container"))
+                            }
+                            .onChange(of: geo.frame(in: .named("container"))) { _, newFrame in
+                                frames[row.id] = newFrame
+                            }
                     }
-                    .onChange(of: geo.frame(in: .named("container"))) { _, newFrame in
-                        frames[row.id] = newFrame
-                    }
+                }
             }
         )
     }
@@ -857,17 +880,18 @@ struct HabitsListView: View {
                 habitID: habit.id,
                 state: computedState
             )
-            let projectedToday = uiStateStore.projectedDayState(
-                habitID: habit.id,
-                day: today,
-                calendar: calendar
+            let evaluatedState = habitLogService.evaluatedState(
+                for: habit,
+                asOfDate: today,
+                selectedDateContext: today,
+                weekStartPreference: userSettings.weekStartPreference
             )
 
             return TodayInsightCandidate(
                 habit: habit,
                 computedState: computedState,
                 rhythm: TimeOfDayPerformanceService.shared.cachedRhythm(for: habit, isPremium: isPremium),
-                isCompletedToday: projectedToday?.isComplete ?? false,
+                isCompletedToday: evaluatedState?.status == .met,
                 lastCompletedDate: TimeOfDayPerformanceService.shared.cachedLastCompletedDate(
                     for: habit,
                     isPremium: isPremium
@@ -990,13 +1014,29 @@ struct HabitsListView: View {
             hasVisibleHabits: !visibleHabits.isEmpty || !startupSnapshotRows.isEmpty || !hasActivatedData,
             isIntroExpanded: isIntroExpanded,
             hasResolvedInitialCoachingInsight: hasResolvedInitialCoachingInsight || cachedTodaySnapshot != nil,
-            hasResolvedInitialTodayInsight: hasResolvedInitialTodayInsight || cachedTodaySnapshot != nil,
+            hasResolvedInitialTodayInsight: hasResolvedInitialTodayInsight || hasCachedGrowthPlanSnapshot,
             coachingParagraph: coachingParagraph,
             growthPlanLines: growthPlanLines
         )
     }
 
+    private var hasCachedGrowthPlanSnapshot: Bool {
+        cachedTodaySnapshot?.growthPlanMessages?.contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        } == true
+    }
+
     private var growthPlanLines: [AttributedString] {
+        if todayInsight == nil,
+           let cachedMessages = cachedTodaySnapshot?.growthPlanMessages,
+           cachedMessages.isEmpty == false {
+            return cachedMessages.prefix(TodayHeaderRenderState.growthPlanLineCount).map { message in
+                var line = AttributedString(message)
+                line.foregroundColor = CadenceTokens.Color.Text.secondary.opacity(0.92)
+                return line
+            }
+        }
+
         guard let todayInsight else {
             return []
         }
@@ -1129,7 +1169,7 @@ struct HabitsListView: View {
     }
 
     private var coachingParagraph: AttributedString? {
-        if startupPhase < .deferredInsights, let snapshot = cachedTodaySnapshot {
+        if coachingInsight == nil, let snapshot = cachedTodaySnapshot {
             var message = AttributedString(snapshot.greeting)
             message.foregroundColor = CadenceTokens.Color.Text.primary
             return message
@@ -1240,22 +1280,20 @@ struct HabitsListView: View {
         guard !hasHydratedFromSnapshot else { return }
         guard hasReconciledLiveList == false else { return }
         hasHydratedFromSnapshot = true
-        Task.detached(priority: .userInitiated) {
+        Task(priority: .userInitiated) {
             let snapshot = TodaySnapshotStore.shared.loadSyncLightweight()
-            await MainActor.run {
-                guard self.hasReconciledLiveList == false else { return }
-                self.cachedTodaySnapshot = snapshot
-                if let snapshot {
-                    self.listSource = .snapshot(snapshot.habits)
-                    if self.hasLoggedSnapshotListRendered == false {
-                        self.hasLoggedSnapshotListRendered = true
-                        StartupProfiler.logStartupPhase("list_snapshot_rendered")
-                    }
+            guard self.hasReconciledLiveList == false else { return }
+            self.cachedTodaySnapshot = snapshot
+            if let snapshot {
+                self.listSource = .snapshot(snapshot.habits)
+                if self.hasLoggedSnapshotListRendered == false {
+                    self.hasLoggedSnapshotListRendered = true
+                    StartupProfiler.logStartupPhase("list_snapshot_rendered")
                 }
-                if self.hasLoggedSnapshotLoad == false {
-                    self.hasLoggedSnapshotLoad = true
-                    StartupProfiler.logStartupPhase("snapshot_loaded")
-                }
+            }
+            if self.hasLoggedSnapshotLoad == false {
+                self.hasLoggedSnapshotLoad = true
+                StartupProfiler.logStartupPhase("snapshot_loaded")
             }
         }
     }
@@ -1299,7 +1337,8 @@ struct HabitsListView: View {
         let snapshot = TodayStartupSnapshot(
             date: now,
             habits: summaries,
-            greeting: String((coachingParagraph ?? AttributedString(greetingLine)).characters)
+            greeting: String((coachingParagraph ?? AttributedString(greetingLine)).characters),
+            growthPlanMessages: growthPlanSnapshotMessages()
         )
         TodaySnapshotStore.shared.saveLightweight(snapshot)
     }
@@ -1307,11 +1346,11 @@ struct HabitsListView: View {
     private func runStartupPhases() async {
         startupPhase = .immediateUI
 
-        try? await Task.sleep(nanoseconds: 120_000_000)
+        try? await Task.sleep(nanoseconds: 80_000_000)
         guard !Task.isCancelled else { return }
         startupPhase = .fastFollowData
 
-        try? await Task.sleep(nanoseconds: 220_000_000)
+        try? await Task.sleep(nanoseconds: 80_000_000)
         guard !Task.isCancelled else { return }
         startupPhase = .deferredInsights
         reconcileListSourceIfNeeded(force: true)
@@ -1337,6 +1376,13 @@ struct HabitsListView: View {
         Task {
             await runStartupPhases()
         }
+    }
+
+    private func growthPlanSnapshotMessages() -> [String] {
+        growthPlanLines
+            .prefix(TodayHeaderRenderState.growthPlanLineCount)
+            .map { String($0.characters) }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
 }

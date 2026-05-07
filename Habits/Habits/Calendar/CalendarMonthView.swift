@@ -13,6 +13,18 @@ struct CalendarMonthView: View {
         let date: Date
     }
 
+    private struct DayRenderModel: Identifiable, Equatable {
+        let id: Date
+        let date: Date
+        let count: Int
+        let indicatorText: String?
+        let isInDisplayedMonth: Bool
+        let isDisabled: Bool
+        let isLocked: Bool
+        let isSelected: Bool
+        let isToday: Bool
+    }
+
     @Binding var month: Date
     let habit: Habit
     let service: HabitLogService
@@ -70,7 +82,7 @@ struct CalendarMonthView: View {
     }
 
     var body: some View {
-        let days = CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
+        let dayModels = calendarDayRenderModels
 
         let columns = Array(
             repeating: GridItem(.flexible(), spacing: horizontalSpacing),
@@ -93,46 +105,37 @@ struct CalendarMonthView: View {
                     .frame(height: weekdayRowHeight)
 
                     LazyVGrid(columns: columns, spacing: verticalSpacing) {
-                        ForEach(days, id: \.self) { day in
-                            let normalizedDay = calendar.startOfDay(for: day)
-                            let isInDisplayedMonth = isDisplayedMonth(day)
-                            let isDisabledDay = isFutureDate(day)
-                            let isLockedDay = premiumHistoryGate.isLocked(date: day)
-                            let projected = projectedDayStatesByDate[normalizedDay]
-                            let count = isLockedDay ? 0 : max(0, projected?.count ?? 0)
-                            let displayedValue = projected?.value ?? 0
-                            let indicatorText = isLockedDay || habit.goalType != .cumulative || displayedValue <= 0
-                                ? nil
-                                : service.formatValue(displayedValue, for: habit)
-
-                            CalendarDayCell(
-                                date: day,
-                                count: count,
-                                indicatorText: indicatorText,
-                                habitColor: habit.curatedColor,
-                                selectedAccent: habit.curatedColorVariants.strong,
-                                isInDisplayedMonth: isInDisplayedMonth,
-                                isDisabled: isDisabledDay,
-                                isLocked: isLockedDay,
-                                isSelected: !isDisabledDay && !isLockedDay && calendar.isDate(day, inSameDayAs: selectedDate),
-                                isToday: calendar.isDateInToday(day),
-                                calendar: calendar,
-                                onTap: {
-                                    if isLockedDay {
-                                        onTapLockedDay(day)
-                                    } else if isTapToLogEnabled {
-                                        tapDay(day)
-                                    } else {
-                                        selectDay(day)
+                        ForEach(dayModels) { model in
+                            EquatableView(
+                                content: CalendarDayCell(
+                                    date: model.date,
+                                    count: model.count,
+                                    indicatorText: model.indicatorText,
+                                    habitColor: habit.curatedColor,
+                                    selectedAccent: habit.curatedColorVariants.strong,
+                                    isInDisplayedMonth: model.isInDisplayedMonth,
+                                    isDisabled: model.isDisabled,
+                                    isLocked: model.isLocked,
+                                    isSelected: model.isSelected,
+                                    isToday: model.isToday,
+                                    calendar: calendar,
+                                    onTap: {
+                                        if model.isLocked {
+                                            onTapLockedDay(model.date)
+                                        } else if isTapToLogEnabled {
+                                            tapDay(model.date)
+                                        } else {
+                                            selectDay(model.date)
+                                        }
+                                    },
+                                    onLongPress: {
+                                        if model.isLocked {
+                                            onTapLockedDay(model.date)
+                                        } else {
+                                            openDayActions(for: model.date)
+                                        }
                                     }
-                                },
-                                onLongPress: {
-                                    if isLockedDay {
-                                        onTapLockedDay(day)
-                                    } else {
-                                        openDayActions(for: day)
-                                    }
-                                }
+                                )
                             )
                         }
                     }
@@ -163,6 +166,33 @@ struct CalendarMonthView: View {
             .simultaneousGesture(monthSwipeGesture)
         }
         .padding(.horizontal, edgePadding)
+    }
+
+    private var calendarDayRenderModels: [DayRenderModel] {
+        CalendarGridHelper.daysForMonth(displayedMonth, calendarProvider: calendarProvider)
+            .map { day in
+                let normalizedDay = calendar.startOfDay(for: day)
+                let isInDisplayedMonth = isDisplayedMonth(day)
+                let isDisabledDay = isFutureDate(day)
+                let isLockedDay = premiumHistoryGate.isLocked(date: day)
+                let projected = projectedDayStatesByDate[normalizedDay]
+                let displayedValue = projected?.value ?? 0
+                let indicatorText = isLockedDay || habit.goalType != .cumulative || displayedValue <= 0
+                    ? nil
+                    : service.formatValue(displayedValue, for: habit)
+
+                return DayRenderModel(
+                    id: normalizedDay,
+                    date: normalizedDay,
+                    count: isLockedDay ? 0 : max(0, projected?.count ?? 0),
+                    indicatorText: indicatorText,
+                    isInDisplayedMonth: isInDisplayedMonth,
+                    isDisabled: isDisabledDay,
+                    isLocked: isLockedDay,
+                    isSelected: !isDisabledDay && !isLockedDay && calendar.isDate(normalizedDay, inSameDayAs: selectedDate),
+                    isToday: calendar.isDateInToday(normalizedDay)
+                )
+            }
     }
 
     private var header: some View {

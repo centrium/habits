@@ -13,6 +13,7 @@ enum ActivityStripStyle {
 }
 
 struct HabitHeatmap: View {
+    @EnvironmentObject private var userSettings: UserSettings
     @EnvironmentObject private var purchaseService: PurchaseService
     @EnvironmentObject private var uiStateStore: HabitUIStateStore
     @State private var cache = HeatmapMetricsCache()
@@ -22,6 +23,7 @@ struct HabitHeatmap: View {
     @State private var identitySnapshotTask: Task<Void, Never>?
     @State private var identitySnapshotRequestSequence: UInt64 = 0
     @State private var identitySnapshotRequestKey: HeatmapIdentitySnapshotRequestKey?
+    @State private var compactRenderSnapshot: CompactRenderSnapshot?
 
     let habit: Habit
     let service: HabitLogService
@@ -100,13 +102,25 @@ struct HabitHeatmap: View {
         static let noData = HeatmapIdentityRenderSnapshot(
             identityState: nil,
             tone: .noData,
-            label: "No activity yet"
+            label: ""
         )
     }
 
     private struct HeatmapIdentitySnapshotRequestKey: Equatable {
         let habitID: UUID
         let projectionVersion: Int
+    }
+
+    private struct CompactRenderDay: Equatable {
+        let date: Date
+        let count: Int
+        let isToday: Bool
+    }
+
+    private struct CompactRenderSnapshot: Equatable {
+        let id: Int
+        let firstWeek: [CompactRenderDay]
+        let secondWeek: [CompactRenderDay]
     }
 
     private enum MomentumRowMetrics {
@@ -167,6 +181,7 @@ struct HabitHeatmap: View {
             }
         }
         .onAppear {
+            refreshCompactRenderSnapshot()
             scheduleIdentitySnapshotRefresh()
             seedProjectionFromCommittedIfNeeded()
         }
@@ -183,11 +198,16 @@ struct HabitHeatmap: View {
             GraphRecomputeCoordinator.shared.schedule(for: habit.id, version: Int(newVersion))
         }
         .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
+            refreshCompactRenderSnapshot()
             scheduleIdentitySnapshotRefresh()
         }
         .onChange(of: service.metricsRevision(for: habit.id)) { _, newVersion in
+            refreshCompactRenderSnapshot()
             guard usesGraphRecomputeCoordinator else { return }
             GraphRecomputeCoordinator.shared.schedule(for: habit.id, version: newVersion)
+        }
+        .onChange(of: dailyCountsOverride) { _, _ in
+            refreshCompactRenderSnapshot()
         }
     }
 
@@ -288,64 +308,41 @@ struct HabitHeatmap: View {
     }
 
     private var compactHeatmap: some View {
-        let revision = service.metricsRevision(for: habit.id)
-
-        let calendar = calendarProvider.calendar
-        let today = calendar.startOfDay(for: Date())
-
-        let days: [Date] = (0..<14).compactMap {
-            calendar.date(byAdding: .day, value: -$0, to: today)
-        }.reversed()
-
-        let dayCountMap = Dictionary(uniqueKeysWithValues: days.map { day in
-            let count: Int
-            if let dailyCountsOverride {
-                count = dailyCountsOverride[day] ?? 0
-            } else {
-                count = projectedCount(for: day, calendar: calendar)
-            }
-            return (day, count)
-        })
+        let snapshot = compactRenderSnapshot ?? makeCompactRenderSnapshot()
 
         return HStack(spacing: compactCellSpacing) {
             weekGrid(
-                days: Array(days.prefix(7)),
-                dayCountMap: dayCountMap
+                days: snapshot.firstWeek
             )
 
             weekGrid(
-                days: Array(days.suffix(7)),
-                dayCountMap: dayCountMap
+                days: snapshot.secondWeek
             )
         }
-        .id(revision)
+        .id(snapshot.id)
         .padding(.top, compactTopPadding)
         .padding(.bottom, compactBottomPadding)
         .frame(height: compactHeight)
     }
     
     private func weekGrid(
-        days: [Date],
-        dayCountMap: [Date: Int]
+        days: [CompactRenderDay]
     ) -> some View {
-        let calendar = calendarProvider.calendar
         let columns = Array(repeating: GridItem(.flexible(), spacing: compactCellSpacing), count: 7)
 
         return LazyVGrid(columns: columns, spacing: compactCellSpacing) {
-            ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                let count = dayCountMap[day] ?? 0
-
+            ForEach(days, id: \.date) { day in
                 HeatmapCellView(
-                    date: day,
+                    date: day.date,
                     isSelected: false,
-                    logCount: count,
+                    logCount: day.count,
                     habitColor: habit.curatedColor,
                     selectionAccent: accent,
                     activityStripStyle: activityStripStyle
                 )
                     .frame(height: activityStripStyle == .subtle ? 9 : 10)
                     .overlay {
-                        if activityStripStyle == .primary, calendar.isDateInToday(day) {
+                        if activityStripStyle == .primary, day.isToday {
                             RoundedRectangle(cornerRadius: 2)
                                 .stroke(
                                     Color.primary.opacity(0.35),
@@ -355,6 +352,40 @@ struct HabitHeatmap: View {
                     }
             }
         }
+    }
+
+    private func refreshCompactRenderSnapshot() {
+        guard isCompact else { return }
+        compactRenderSnapshot = makeCompactRenderSnapshot()
+    }
+
+    private func makeCompactRenderSnapshot() -> CompactRenderSnapshot {
+        let calendar = calendarProvider.calendar
+        let today = calendar.startOfDay(for: Date())
+        let dates: [Date] = (0..<14).compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: today)
+        }.reversed()
+
+        let days = dates.map { day in
+            let normalizedDay = calendar.startOfDay(for: day)
+            let count: Int
+            if let dailyCountsOverride {
+                count = dailyCountsOverride[normalizedDay] ?? 0
+            } else {
+                count = projectedCount(for: normalizedDay, calendar: calendar)
+            }
+            return CompactRenderDay(
+                date: normalizedDay,
+                count: count,
+                isToday: normalizedDay == today
+            )
+        }
+
+        return CompactRenderSnapshot(
+            id: service.metricsRevision(for: habit.id) ^ effectiveProjectionVersion,
+            firstWeek: Array(days.prefix(7)),
+            secondWeek: Array(days.suffix(7))
+        )
     }
 
     private var compactCellSpacing: CGFloat {
@@ -440,13 +471,12 @@ struct HabitHeatmap: View {
             hasActivity: summary.activeDays > 0,
             state: summary.state
         )
-        let label: String
-        switch tone {
-        case .noData:
-            label = "No activity yet"
-        case .strong, .building, .slipping, .atRisk:
-            label = CadenceLanguage.shortLabel(for: summary.state)
-        }
+        let label = HabitSecondaryMetricFormatter.text(
+            habit: habit,
+            service: service,
+            asOf: Date(),
+            weekStartPreference: userSettings.weekStartPreference
+        )
 
         return HeatmapIdentityRenderSnapshot(
             identityState: summary.state,

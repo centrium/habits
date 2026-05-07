@@ -107,6 +107,27 @@ struct CoachingInput: Sendable, Equatable {
         coachingStableHashHex("\(coreMeaningFingerprint(selectedSignals: selectedSignals))|\(depth.rawValue)|v\(version)")
     }
 
+    func stableAIFingerprint(depth: CoachingDepth, selectedSignals: SelectedCoachingSignals) -> String {
+        let consistencyBucket = max(0, min(100, Int((Double(consistency) / 5.0).rounded()) * 5))
+        let windowDaysBucket = max(1, min(90, windowDays))
+        return coachingStableHashHex([
+            "v\(version)",
+            "depth:\(depth.rawValue)",
+            "day:\(dayOrdinal)",
+            identityState.rawValue,
+            streakState,
+            "consistency:\(consistencyBucket)",
+            timeOfDayInsights.strongestWindow ?? "none",
+            timeOfDayInsights.confidence.rawValue,
+            recentBehaviourSummary,
+            todayStatus,
+            "window:\(windowDaysBucket)",
+            selectedSignals.all.map(\.rawValue).sorted().joined(separator: ",")
+        ]
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        .joined(separator: "|"))
+    }
+
     func guidanceVariationKey(selectedSignals: SelectedCoachingSignals) -> String {
         coachingStableHashHex("\(coreMeaningFingerprint(selectedSignals: selectedSignals))|day:\(dayBucket)")
     }

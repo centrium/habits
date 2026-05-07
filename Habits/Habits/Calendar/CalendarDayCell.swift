@@ -8,7 +8,7 @@
 
 import SwiftUI
 
-struct CalendarDayCell: View {
+struct CalendarDayCell: View, Equatable {
     @Environment(\.colorScheme) private var colorScheme
 
     private enum Layout {
@@ -63,6 +63,21 @@ struct CalendarDayCell: View {
     let calendar: Calendar
     let onTap: () -> Void
     let onLongPress: () -> Void
+
+    static func == (lhs: CalendarDayCell, rhs: CalendarDayCell) -> Bool {
+        lhs.date == rhs.date &&
+        lhs.count == rhs.count &&
+        lhs.indicatorText == rhs.indicatorText &&
+        lhs.habitColor == rhs.habitColor &&
+        lhs.isInDisplayedMonth == rhs.isInDisplayedMonth &&
+        lhs.isDisabled == rhs.isDisabled &&
+        lhs.isLocked == rhs.isLocked &&
+        lhs.isSelected == rhs.isSelected &&
+        lhs.isToday == rhs.isToday &&
+        lhs.calendar.identifier == rhs.calendar.identifier &&
+        lhs.calendar.timeZone == rhs.calendar.timeZone &&
+        lhs.calendar.firstWeekday == rhs.calendar.firstWeekday
+    }
 
     private var intensityVisual: IntensityVisualStyle {
         IntensityColorEngine.style(

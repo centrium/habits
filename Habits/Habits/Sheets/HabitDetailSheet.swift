@@ -94,12 +94,39 @@ private struct DetailScrollOffsetPreferenceKey: PreferenceKey {
     }
 }
 
-private struct CoachingContext {
+private struct CoachingContext: Sendable {
     let input: CoachingInput
     let depth: CoachingDepth
     let selectedSignals: SelectedCoachingSignals
     let coreMeaningFingerprint: String
     let aiFingerprint: String
+}
+
+private struct FrozenCoachingSnapshot: Sendable {
+    let fingerprint: String
+    let input: AICoachInput
+    let coachingInput: CoachingInput
+    let depth: CoachingDepth
+    let selectedSignals: SelectedCoachingSignals
+    let timingInsights: CoachingTimeOfDayInsights
+    let streakState: String
+    let consistency: Int
+    let behaviourSummary: String
+    let generatedAt: Date
+
+    var diagnosticFields: [String: String] {
+        [
+            "consistency": "\(consistency)",
+            "strongestWindow": timingInsights.strongestWindow ?? "none",
+            "timingConfidence": timingInsights.confidence.rawValue,
+            "streakState": streakState,
+            "behaviourSummary": behaviourSummary,
+            "todayStatus": coachingInput.todayStatus,
+            "windowDays": "\(coachingInput.windowDays)",
+            "depth": depth.rawValue,
+            "selectedSignals": selectedSignals.all.map(\.rawValue).sorted().joined(separator: ",")
+        ]
+    }
 }
 
 private struct PendingAICandidate {
@@ -160,9 +187,13 @@ private final class HabitDetailViewModel: ObservableObject {
                     dailyValues[day] = max(0, state.value)
                 }
 
-                let activeOrdinals = countsByOrdinal
-                    .filter { $0.value > 0 }
-                    .map(\.key)
+                let activeOrdinals = dayByOrdinal.keys
+                    .filter { ordinality in
+                        let count = countsByOrdinal[ordinality] ?? 0
+                        let day = dayByOrdinal[ordinality]
+                        let value = day.flatMap { dailyValues[$0] } ?? 0
+                        return count > 0 || value > 0
+                    }
                     .sorted()
 
                 var longestRun = 0
@@ -239,13 +270,22 @@ struct HabitDetailSheet: View {
     @State private var staleRetryCount: Int = 0
     @State private var staleRetryCapReached = false
     @State private var pendingStaleRetryFingerprint: String?
+    @State private var lastPublishedAIFingerprint: String?
+    @State private var aiSnapshotStabilizationTask: Task<Void, Never>?
+    @State private var lastCoachingSnapshotCandidate: FrozenCoachingSnapshot?
+    @State private var authoritativeRequestFingerprint: String?
+    @State private var authoritativeSnapshot: FrozenCoachingSnapshot?
+    @State private var aiCoachAppearanceSequence = 0
+    @State private var aiLaunchCountForAppearance = 0
+    @State private var aiPublishCountForAppearance = 0
+    @State private var aiVisibleRequestStartedAt: Date?
     @State private var frozenGuidanceOutput: GuidanceOutput?
     @State private var frozenStateModel: HabitStateModel?
     @State private var lastReconcileProbeKey: String?
     @State private var shouldAnimateGoalProgress = false
     @State private var goalProgressAnimationResetTask: Task<Void, Never>?
     @State private var cueRefreshTask: Task<Void, Never>?
-    @State private var historyProjectedDayStates: [Date: HabitProjectedDayState] = [:]
+    @State private var historyEvaluatedDayStates: [Date: HabitProjectedDayState] = [:]
     @State private var cueRequestSequence: UInt64 = 0
     @State private var currentRhythmRequestID: UUID?
     @State private var detailAppearStartedAt: Date?
@@ -261,8 +301,11 @@ struct HabitDetailSheet: View {
     )
     @State private var cachedTodayGoalProgress: TodayGoalProgressPresentation?
     @State private var isDetailScrollActive = false
+    @State private var isHistoryScrollActive = false
     @State private var lastObservedDetailScrollOffset: CGFloat?
+    @State private var lastObservedHistoryScrollOffset: CGFloat?
     @State private var detailScrollIdleTask: Task<Void, Never>?
+    @State private var historyScrollIdleTask: Task<Void, Never>?
     @State private var deferredRefreshQueue = DetailDeferredRefreshQueue()
     @StateObject private var viewModel = HabitDetailViewModel()
     private let onDeleted: (() -> Void)?
@@ -480,6 +523,7 @@ struct HabitDetailSheet: View {
             goalProgressAnimationResetTask?.cancel()
             cueRefreshTask?.cancel()
             detailScrollIdleTask?.cancel()
+            historyScrollIdleTask?.cancel()
             deferredRefreshQueue = DetailDeferredRefreshQueue()
             freezeDetailState()
         }
@@ -515,12 +559,14 @@ struct HabitDetailSheet: View {
         }
         .onChange(of: progressRevision) { _, _ in
             requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
+            refreshTodayGoalProgressPresentation()
             guard viewModel.isActive, !isHistoryPresented else { return }
             requestProgressSnapshotRefresh()
             requestCueInsightRefresh()
         }
         .onReceive(uiStateStore.projectionPublisher(for: habit.id)) { _ in
             requestHistoryProjectionSnapshotRefresh()
+            refreshTodayGoalProgressPresentation()
             guard viewModel.isActive, !isHistoryPresented else { return }
             recordUIReconcileProbe(stage: "projection")
             requestProgressSnapshotRefresh()
@@ -530,11 +576,16 @@ struct HabitDetailSheet: View {
         .onChange(of: isHistoryPresented) { _, presented in
             if presented {
                 viewModel.deactivate()
+                isHistoryScrollActive = false
+                lastObservedHistoryScrollOffset = nil
                 freezeDetailState(resetCueInsight: false)
                 return
             }
 
             viewModel.activate()
+            historyScrollIdleTask?.cancel()
+            isHistoryScrollActive = false
+            lastObservedHistoryScrollOffset = nil
             frozenStateModel = nil
             frozenGuidanceOutput = nil
             requestHistoryProjectionSnapshotRefresh(seedFromCommitted: false)
@@ -552,6 +603,7 @@ struct HabitDetailSheet: View {
             coachPresentationState = aiCoach.isAppleIntelligenceAvailable()
                 ? .loadingAI
                 : .fallbackGuidance(guidanceCoachText)
+            beginAICoachAppearanceCycle()
             requestAICoachRegeneration(
                 requestKey: "history-return-\(habit.id.uuidString)-\(Date().timeIntervalSince1970)",
                 trigger: .userEvent
@@ -572,7 +624,7 @@ struct HabitDetailSheet: View {
         .navigationDestination(isPresented: $isHistoryPresented) {
             let liveHistorySnapshot = viewModel.historySnapshot
             let historyDailyCounts = Dictionary(
-                uniqueKeysWithValues: historyProjectedDayStates.map { ($0.key, $0.value.count) }
+                uniqueKeysWithValues: historyEvaluatedDayStates.map { ($0.key, $0.value.count) }
             )
             ZStack(alignment: .top) {
                 backgroundColor
@@ -586,7 +638,7 @@ struct HabitDetailSheet: View {
                     progressRevision: progressRevision,
                     habitVersion: habitVersion,
                     snapshot: liveHistorySnapshot,
-                    historyProjectedDayStates: historyProjectedDayStates,
+                    historyProjectedDayStates: historyEvaluatedDayStates,
                     historyDailyCounts: historyDailyCounts,
                     calendarMonthSummaryText: calendarMonthSummaryText,
                     earliestCalendarDate: earliestCalendarDate,
@@ -612,7 +664,7 @@ struct HabitDetailSheet: View {
                     .accessibilityLabel("Insights")
 
                     Button {
-                        quickLogFromCalendarDay(selectedDate)
+                        quickLogForCurrentDayAction()
                     } label: {
                         Image(systemName: "plus")
                             .font(CadenceTokens.Typography.sectionHeader.weight(.semibold))
@@ -636,6 +688,7 @@ struct HabitDetailSheet: View {
         progressRevision: Int,
         earliestCalendarDate: Date?
     ) -> some View {
+        let now = Date()
         let sectionPadding = CadenceTokens.Space.lg
         let accent = CadenceTokens.Color.accent(for: habit)
         let stateModel = frozenStateModel
@@ -645,14 +698,12 @@ struct HabitDetailSheet: View {
         let isLowDataActivityState = logCount == 0
         let isCumulativeGoal = habit.goalType == .cumulative
         let showsInsightsSection = hasInsightsInlineAction
-        let metaLines = MetaDisplayFormatter.format(
+        let primaryMetaLine = HabitSecondaryMetricFormatter.text(
             habit: habit,
-            streakState: streakState,
-            weeklyActiveDays: identityState.activeDays,
-            isGoalMet: isCompleteForSelectedDate
+            service: habitLogService,
+            asOf: now,
+            weekStartPreference: userSettings.weekStartPreference
         )
-        let primaryMetaLine = metaLines.first?.text ?? "Getting started this week"
-        let secondaryMetaLine = metaLines.dropFirst().first?.text
         let identityText = userDefinedIdentityText
         let identityStatText = identityText == nil
             ? nil
@@ -705,13 +756,6 @@ struct HabitDetailSheet: View {
                     }
                     .buttonStyle(.plain)
 
-                    if let secondaryMetaLine {
-                        Text(secondaryMetaLine)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
                 }
                 .padding(.horizontal, sectionPadding)
                 .padding(.top, CadenceTokens.Space.sm)
@@ -737,13 +781,13 @@ struct HabitDetailSheet: View {
 
                     KeyActionsSection(
                         isCumulativeGoal: isCumulativeGoal,
-                        isCompleteToday: isCompleteForSelectedDate,
+                        isCompleteToday: isCompleteForCurrentDay,
                         accentHex: habit.colorHex,
                         onQuickLog: {
-                            quickLogFromCalendarDay(selectedDate)
+                            quickLogForCurrentDayAction()
                         },
                         onManualEntry: {
-                            presentManualEntry(for: selectedDate)
+                            presentManualEntryForCurrentDayAction()
                         }
                     )
                 }
@@ -990,7 +1034,10 @@ struct HabitDetailSheet: View {
 
                     Divider().opacity(0.08)
 
-                    HistoryInsightSummarySection(summary: historyInsight)
+                    HistoryInsightSummarySection(
+                        goalType: habit.goalType,
+                        summary: historyInsight
+                    )
                         .padding(.top, CadenceTokens.Space.md)
 
                     Divider().opacity(0.08)
@@ -1043,7 +1090,19 @@ struct HabitDetailSheet: View {
                     .frame(height: 72)
                     .allowsHitTesting(false)
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DetailScrollOffsetPreferenceKey.self,
+                        value: proxy.frame(in: .named("history-scroll-space")).minY
+                    )
+                }
+            )
             .padding(.bottom, CadenceTokens.Space.lg)
+        }
+        .coordinateSpace(name: "history-scroll-space")
+        .onPreferenceChange(DetailScrollOffsetPreferenceKey.self) { offset in
+            handleHistoryScrollOffsetChange(offset)
         }
         .scrollContentBackground(.hidden)
     }
@@ -1087,14 +1146,7 @@ struct HabitDetailSheet: View {
 
     private func hasActivityToday() -> Bool {
         let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-        let projected = uiStateStore.projectedDayState(
-            habitID: habit.id,
-            day: today,
-            calendar: calculationCalendar
-        )
-        return (projected?.progress ?? 0) > 0
-            || (projected?.count ?? 0) > 0
-            || (projected?.value ?? 0) > 0
+        return habitLogService.hasActivity(for: habit, on: today)
     }
 
     private func currentStreakState(now: Date) -> StreakState {
@@ -1182,13 +1234,23 @@ struct HabitDetailSheet: View {
         _ = habitLogService.quickLog(for: habit, on: resolvedDay)
     }
 
+    private func quickLogForCurrentDayAction() {
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        quickLogFromCalendarDay(today)
+    }
+
+    private func presentManualEntryForCurrentDayAction() {
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        presentManualEntry(for: today)
+    }
+
     private func refreshHistoryProjectionState(seedFromCommitted: Bool = false) {
-        if seedFromCommitted {
+        if seedFromCommitted || uiStateStore.projectedDayStates(for: habit.id).isEmpty {
             _ = habitLogService.projectedHistoryDayStates(for: habit)
         }
         let updatedStates = uiStateStore.projectedDayStates(for: habit.id)
-        guard updatedStates != historyProjectedDayStates else { return }
-        historyProjectedDayStates = updatedStates
+        guard updatedStates != historyEvaluatedDayStates else { return }
+        historyEvaluatedDayStates = updatedStates
         refreshIdentitySnapshotCache()
         refreshTodayGoalProgressPresentation()
     }
@@ -1222,26 +1284,25 @@ struct HabitDetailSheet: View {
     }
 
     private func refreshTodayGoalProgressPresentation() {
-        guard habit.hasGoal,
-              let targetValue = habit.effectiveTargetValue,
-              targetValue > 0 else {
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        guard let evaluated = habitLogService.evaluatedState(
+            for: habit,
+            asOfDate: today,
+            selectedDateContext: today,
+            weekStartPreference: userSettings.weekStartPreference
+        ) else {
             cachedTodayGoalProgress = nil
             return
         }
 
-        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
-        let currentValue: Double
-        switch habit.goalType {
-        case .frequency:
-            currentValue = Double(habitLogService.count(for: habit, on: today))
-        case .cumulative:
-            currentValue = habitLogService.value(for: habit, on: today)
-        }
-
-        let clampedProgress = min(max(currentValue / targetValue, 0), 1)
-        let isComplete = clampedProgress >= 1
-        let displayCurrent = isComplete ? targetValue : max(0, currentValue)
-        let summaryText = "\(formattedTodayGoalValue(displayCurrent)) of \(formattedTodayGoalValue(targetValue)) today"
+        let clampedProgress = min(max(evaluated.progress / evaluated.target, 0), 1)
+        let isComplete = evaluated.status == .met
+        let displayCurrent = max(0, evaluated.progress)
+        let summaryText = DetailGoalCopyFormatter.summaryText(
+            currentText: formattedTodayGoalValue(displayCurrent),
+            targetText: formattedTodayGoalValue(evaluated.target),
+            goalPeriod: habit.goalPeriod
+        )
 
         if clampedProgress == 0 {
             cachedTodayGoalProgress = TodayGoalProgressPresentation(
@@ -1263,14 +1324,21 @@ struct HabitDetailSheet: View {
             return
         }
 
-        let remainingValue = max(0, targetValue - currentValue)
+        let remainingValue = max(0, evaluated.remaining)
         let summaryWithRemaining: String
         switch habit.goalType {
         case .frequency:
             let remainingCount = max(0, Int(remainingValue.rounded(.up)))
-            summaryWithRemaining = "\(summaryText) • \(remainingCount) more to hit today"
+            summaryWithRemaining = DetailGoalCopyFormatter.remainingFrequencyText(
+                baseSummary: summaryText,
+                remainingCount: remainingCount,
+                goalPeriod: habit.goalPeriod
+            )
         case .cumulative:
-            summaryWithRemaining = "\(summaryText) • \(formattedTodayGoalValue(remainingValue)) to go"
+            summaryWithRemaining = DetailGoalCopyFormatter.remainingCumulativeText(
+                baseSummary: summaryText,
+                remainingText: formattedTodayGoalValue(remainingValue)
+            )
         }
 
         cachedTodayGoalProgress = TodayGoalProgressPresentation(
@@ -1284,13 +1352,24 @@ struct HabitDetailSheet: View {
     private func applyHistoryProjectionSnapshotRefresh(seedFromCommitted: Bool = false) {
         refreshHistoryProjectionState(seedFromCommitted: seedFromCommitted)
         viewModel.refreshHistorySnapshot(
-            projectedDayStates: historyProjectedDayStates,
+            projectedDayStates: historyEvaluatedDayStates,
             calendar: calculationCalendar
         )
     }
 
     private func requestHistoryProjectionSnapshotRefresh(seedFromCommitted: Bool = false) {
-        guard viewModel.isActive, !isHistoryPresented else {
+        if isHistoryPresented {
+            guard !isHistoryScrollActive else {
+                deferredRefreshQueue.historyProjectionSnapshot = true
+                deferredRefreshQueue.historyProjectionSeedFromCommitted = deferredRefreshQueue.historyProjectionSeedFromCommitted || seedFromCommitted
+                detailPerfLog("history-scroll-defer history-projection")
+                return
+            }
+            applyHistoryProjectionSnapshotRefresh(seedFromCommitted: seedFromCommitted)
+            return
+        }
+
+        guard viewModel.isActive else {
             applyHistoryProjectionSnapshotRefresh(seedFromCommitted: seedFromCommitted)
             return
         }
@@ -1399,6 +1478,28 @@ struct HabitDetailSheet: View {
         }
     }
 
+    private func handleHistoryScrollOffsetChange(_ offset: CGFloat) {
+        guard isHistoryPresented else { return }
+        defer { lastObservedHistoryScrollOffset = offset }
+
+        guard let previous = lastObservedHistoryScrollOffset else { return }
+        guard abs(previous - offset) > 0.5 else { return }
+
+        if !isHistoryScrollActive {
+            isHistoryScrollActive = true
+            detailPerfLog("history-scroll-start")
+        }
+
+        historyScrollIdleTask?.cancel()
+        historyScrollIdleTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            isHistoryScrollActive = false
+            detailPerfLog("history-scroll-stop")
+            flushDeferredRefreshQueueIfNeeded()
+        }
+    }
+
     private func recordUIReconcileProbe(stage: String) {
         guard let startedAt = habitLogService.lastLogUserActionAt else { return }
         let deltaMs = Date().timeIntervalSince(startedAt) * 1000
@@ -1447,12 +1548,41 @@ struct HabitDetailSheet: View {
                 .month(.wide)
         )
         let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth)
-        let monthCounts = snapshot.dailyCounts.filter { day, _ in
-            guard let monthInterval else { return false }
-            return monthInterval.contains(day)
-        }
-        let activeDays = monthCounts.values.filter { $0 > 0 }.count
-        let entries = monthCounts.values.reduce(0, +)
+        let monthStart = monthInterval.map { calendar.startOfDay(for: $0.start) }
+        let monthEndExclusive = monthInterval.map { calendar.startOfDay(for: $0.end) }
+
+        let activeDays: Int = {
+            guard let monthStart, let monthEndExclusive else { return 0 }
+            return snapshot.dailyCounts.reduce(0) { partial, entry in
+                let day = calendar.startOfDay(for: entry.key)
+                guard day >= monthStart, day < monthEndExclusive else { return partial }
+                let value = snapshot.dailyValues[entry.key] ?? 0
+                return (entry.value > 0 || value > 0) ? (partial + 1) : partial
+            }
+        }()
+
+        let checkIns: Int = {
+            guard let monthStart, let monthEndExclusive else { return 0 }
+            return snapshot.dailyCounts.reduce(0) { partial, entry in
+                let day = calendar.startOfDay(for: entry.key)
+                guard day >= monthStart, day < monthEndExclusive else { return partial }
+                return partial + max(0, entry.value)
+            }
+        }()
+
+        let totalValue: Double = {
+            guard let monthStart, let monthEndExclusive else { return 0 }
+            return snapshot.dailyValues.reduce(0) { partial, entry in
+                let day = calendar.startOfDay(for: entry.key)
+                guard day >= monthStart, day < monthEndExclusive else { return partial }
+                return partial + max(0, entry.value)
+            }
+        }()
+
+        let totalValueText: String? = {
+            guard habit.goalType == .cumulative else { return nil }
+            return habitLogService.formatValue(totalValue, for: habit) + habitLogService.displayUnitSuffix(for: habit)
+        }()
         let bestStreak = historyBestStreak(
             snapshot: snapshot,
             visibleMonth: visibleMonth,
@@ -1463,7 +1593,8 @@ struct HabitDetailSheet: View {
         return HistoryInsightSummary(
             monthTitle: monthTitle,
             activeDays: activeDays,
-            entries: entries,
+            totalValueText: totalValueText,
+            checkIns: checkIns,
             bestStreak: bestStreak
         )
     }
@@ -1488,7 +1619,9 @@ struct HabitDetailSheet: View {
         var day = streakCalendar.startOfDay(for: monthInterval.start)
 
         while day <= asOf {
-            if (snapshot.dailyCounts[day] ?? 0) > 0 {
+            let dayCount = snapshot.dailyCounts[day] ?? 0
+            let dayValue = snapshot.dailyValues[day] ?? 0
+            if dayCount > 0 || dayValue > 0 {
                 current += 1
                 best = max(best, current)
             } else {
@@ -1519,7 +1652,7 @@ struct HabitDetailSheet: View {
         switch habit.goalType {
         case .frequency:
             let count = snapshot.dailyCounts[normalizedDate] ?? 0
-            loggedText = "\(count) \(count == 1 ? "entry" : "entries")"
+            loggedText = "\(count) \(count == 1 ? "check-in" : "check-ins")"
         case .cumulative:
             let total = snapshot.dailyValues[normalizedDate] ?? 0
             let valueText = habitLogService.formatValue(total, for: habit)
@@ -1529,6 +1662,15 @@ struct HabitDetailSheet: View {
         return SelectedDayContextSummary(
             dayLabel: dayLabel,
             loggedText: loggedText
+        )
+    }
+
+    private func evaluatedState(on day: Date) -> EvaluatedHabitState? {
+        habitLogService.evaluatedState(
+            for: habit,
+            asOfDate: day,
+            selectedDateContext: day,
+            weekStartPreference: userSettings.weekStartPreference
         )
     }
 
@@ -1618,11 +1760,22 @@ struct HabitDetailSheet: View {
     }
 
     private var isCompleteForSelectedDate: Bool {
-        uiStateStore.projectedDayState(
-            habitID: habit.id,
-            day: selectedDate,
-            calendar: calculationCalendar
-        )?.isComplete ?? false
+        habitLogService.evaluatedState(
+            for: habit,
+            asOfDate: selectedDate,
+            selectedDateContext: selectedDate,
+            weekStartPreference: userSettings.weekStartPreference
+        )?.status == .met
+    }
+
+    private var isCompleteForCurrentDay: Bool {
+        let today = CurrentDayResolver.currentDay(calendar: calculationCalendar)
+        return habitLogService.evaluatedState(
+            for: habit,
+            asOfDate: today,
+            selectedDateContext: today,
+            weekStartPreference: userSettings.weekStartPreference
+        )?.status == .met
     }
 
     private var userDefinedCueText: String? {
@@ -1850,6 +2003,7 @@ struct HabitDetailSheet: View {
             fallbackMessage: guidanceCoachText
         )
         detailPerfLog("ai-section-ready")
+        beginAICoachAppearanceCycle()
         regenerateAICoachOnAppear()
     }
 
@@ -1948,6 +2102,25 @@ struct HabitDetailSheet: View {
         String(format: "%.1f", Date().timeIntervalSince(start) * 1000)
     }
 
+    private func aiCoachDiagnosticsLog(_ message: String) {
+        #if DEBUG
+        print("AI Coach Diagnostics \(message)")
+        #endif
+    }
+
+    private func beginAICoachAppearanceCycle() {
+        aiCoachAppearanceSequence += 1
+        aiLaunchCountForAppearance = 0
+        aiPublishCountForAppearance = 0
+        aiVisibleRequestStartedAt = nil
+        authoritativeRequestFingerprint = nil
+        authoritativeSnapshot = nil
+        lastCoachingSnapshotCandidate = nil
+        aiSnapshotStabilizationTask?.cancel()
+        aiSnapshotStabilizationTask = nil
+        aiCoachDiagnosticsLog("appearance start id=\(aiCoachAppearanceSequence)")
+    }
+
     private func measureMainThreadWork(_ label: String, _ work: () -> Void) {
         let startedAt = Date()
         work()
@@ -1975,12 +2148,6 @@ struct HabitDetailSheet: View {
         }
         refreshCoachingContextAndGuidance(now: appTime.now)
         guard let context = coachingContext else { return }
-        let requestFingerprint = context.aiFingerprint
-
-        let expectedSignals = expectedUsedSignals(
-            depth: context.depth,
-            selectedSignals: context.selectedSignals
-        )
 
         guard aiCoach.isAppleIntelligenceAvailable() else {
             isAICoachRequestInFlight = false
@@ -1989,38 +2156,97 @@ struct HabitDetailSheet: View {
             return
         }
 
+        if let authoritativeRequestFingerprint, isAICoachRequestInFlight {
+            aiCoachDiagnosticsLog("authoritative request preserved fingerprint=\(authoritativeRequestFingerprint) trigger=\(trigger)")
+            return
+        }
+
+        if !isBackgroundRetry {
+            coachPresentationState = .loadingAI
+            startAILoadingWatchdog()
+        }
+        scheduleStabilizedAICoachLaunch(
+            initialContext: context,
+            requestKey: requestKey,
+            trigger: trigger
+        )
+    }
+
+    private func scheduleStabilizedAICoachLaunch(
+        initialContext: CoachingContext,
+        requestKey: String,
+        trigger: AICoachRequestTrigger
+    ) {
+        aiSnapshotStabilizationTask?.cancel()
+        let stabilizationStartedAt = Date()
+        aiSnapshotStabilizationTask = Task { @MainActor in
+            let initialSnapshot = await makeFrozenCoachingSnapshot(context: initialContext)
+            logSnapshotChange(from: lastCoachingSnapshotCandidate, to: initialSnapshot)
+            lastCoachingSnapshotCandidate = initialSnapshot
+
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled else { return }
+            guard viewModel.isActive else { return }
+
+            refreshCoachingContextAndGuidance(now: appTime.now)
+            guard let stabilizedContext = coachingContext else { return }
+            let stabilizedSnapshot = await makeFrozenCoachingSnapshot(context: stabilizedContext)
+            logSnapshotChange(from: initialSnapshot, to: stabilizedSnapshot)
+            lastCoachingSnapshotCandidate = stabilizedSnapshot
+            aiCoachDiagnosticsLog("snapshot stabilized fingerprint=\(stabilizedSnapshot.fingerprint) debounceMs=\(detailElapsedMs(since: stabilizationStartedAt))")
+            launchAICoach(snapshot: stabilizedSnapshot, requestKey: requestKey, trigger: trigger)
+        }
+    }
+
+    private func launchAICoach(
+        snapshot: FrozenCoachingSnapshot,
+        requestKey: String,
+        trigger: AICoachRequestTrigger
+    ) {
+        guard viewModel.isActive else { return }
+        if let authoritativeRequestFingerprint, isAICoachRequestInFlight {
+            aiCoachDiagnosticsLog("authoritative request preserved fingerprint=\(authoritativeRequestFingerprint) ignored=\(snapshot.fingerprint)")
+            return
+        }
+
+        let expectedSignals = expectedUsedSignals(
+            depth: snapshot.depth,
+            selectedSignals: snapshot.selectedSignals
+        )
+
         if let cached = aiCoach.cachedTextIfFresh(
             habitID: habit.id,
-            fingerprint: context.aiFingerprint,
-            depth: context.depth
+            fingerprint: snapshot.fingerprint,
+            depth: snapshot.depth
         ) {
+            authoritativeRequestFingerprint = snapshot.fingerprint
+            authoritativeSnapshot = snapshot
             isAICoachRequestInFlight = false
             cancelAILoadingWatchdog()
             applyAICandidate(
                 PendingAICandidate(
                     result: cached,
                     usedSignals: expectedSignals,
-                    aiFingerprint: context.aiFingerprint,
+                    aiFingerprint: snapshot.fingerprint,
                     trigger: trigger
                 )
             )
             return
         }
 
-        let input = buildAICoachInput(context: context)
-        if !isBackgroundRetry {
-            coachPresentationState = .loadingAI
-            startAILoadingWatchdog()
-        }
+        authoritativeRequestFingerprint = snapshot.fingerprint
+        authoritativeSnapshot = snapshot
+        aiLaunchCountForAppearance += 1
+        aiVisibleRequestStartedAt = Date()
+        aiCoachDiagnosticsLog("authoritative request start fingerprint=\(snapshot.fingerprint) appearance=\(aiCoachAppearanceSequence) launches=\(aiLaunchCountForAppearance)")
         isAICoachRequestInFlight = true
         aiCoach.generate(
             habitID: habit.id,
-            input: input,
-            fingerprint: context.aiFingerprint,
+            input: snapshot.input,
+            fingerprint: snapshot.fingerprint,
             requestKey: requestKey,
             isStillCurrent: {
-                self.refreshCoachingContextAndGuidance(now: self.appTime.now)
-                return self.coachingContext?.aiFingerprint == requestFingerprint
+                self.authoritativeRequestFingerprint == snapshot.fingerprint
             }
         ) { outcome in
             self.isAICoachRequestInFlight = false
@@ -2031,12 +2257,12 @@ struct HabitDetailSheet: View {
                     PendingAICandidate(
                         result: finalResult,
                         usedSignals: expectedSignals,
-                        aiFingerprint: context.aiFingerprint,
+                        aiFingerprint: snapshot.fingerprint,
                         trigger: trigger
                     )
                 )
             case .discarded(.stale):
-                self.handleDiscardedStaleAICandidate(previousFingerprint: requestFingerprint)
+                self.handleDiscardedStaleAICandidate(previousFingerprint: snapshot.fingerprint)
             case .failure:
                 self.refreshCoachingContextAndGuidance(now: self.appTime.now)
                 self.coachPresentationState = .fallbackGuidance(self.guidanceCoachText)
@@ -2051,6 +2277,10 @@ struct HabitDetailSheet: View {
         defer { isHandlingStaleAIDiscard = false }
 
         pendingAICandidate = nil
+        guard authoritativeRequestFingerprint != previousFingerprint else {
+            aiCoachDiagnosticsLog("stale discard ignored for authoritative fingerprint=\(previousFingerprint)")
+            return
+        }
         refreshCoachingContextAndGuidance(now: appTime.now)
         if !isAICoachRequestInFlight {
             coachPresentationState = .loadingAI
@@ -2085,6 +2315,13 @@ struct HabitDetailSheet: View {
         guidanceUsedSignals = []
         aiUsedSignals = []
         pendingAICandidate = nil
+        lastPublishedAIFingerprint = nil
+        aiSnapshotStabilizationTask?.cancel()
+        aiSnapshotStabilizationTask = nil
+        lastCoachingSnapshotCandidate = nil
+        authoritativeRequestFingerprint = nil
+        authoritativeSnapshot = nil
+        aiVisibleRequestStartedAt = nil
         isAICoachRequestInFlight = false
         cancelAILoadingWatchdog()
         staleRetryDebounceTask?.cancel()
@@ -2099,9 +2336,12 @@ struct HabitDetailSheet: View {
         snapshotRefreshTask?.cancel()
         goalProgressAnimationResetTask?.cancel()
         detailScrollIdleTask?.cancel()
+        historyScrollIdleTask?.cancel()
         isDetailScrollActive = false
+        isHistoryScrollActive = false
         deferredRefreshQueue = DetailDeferredRefreshQueue()
         lastObservedDetailScrollOffset = nil
+        lastObservedHistoryScrollOffset = nil
         shouldAnimateGoalProgress = false
     }
 
@@ -2114,36 +2354,66 @@ struct HabitDetailSheet: View {
         }
     }
 
-    private func buildAICoachInput(context: CoachingContext) -> AICoachInput {
-        let strongestTime = context.input.timeOfDayInsights.strongestWindow
-        let streakLabel: String = {
-            let streak = currentStreakState(now: appTime.now)
-            guard streak.currentStreak > 0 else { return "forming" }
-            switch streak.status {
-            case .safe:
-                return "\(streak.currentStreak)-period streak"
-            case .atRisk:
-                return "\(streak.currentStreak)-period streak at risk"
-            case .broken:
-                return "streak broken"
-            }
-        }()
+    private func makeFrozenCoachingSnapshot(context: CoachingContext) async -> FrozenCoachingSnapshot {
+        let habitName = habit.name
+        let recentLogs = recentLogsSummary()
+        let identity = userDefinedIdentityText
+        let stacking = guidancePattern()?.description
+        return await Task.detached(priority: .utility) {
+            let strongestTime = context.input.timeOfDayInsights.strongestWindow
+            let aiInput = AICoachInput(
+                coachingInput: context.input,
+                depth: context.depth,
+                selectedSignals: context.selectedSignals,
+                habitName: habitName,
+                recentLogs: recentLogs,
+                state: context.input.identityState,
+                timingConfidence: context.input.timeOfDayInsights.confidence,
+                strongestTime: strongestTime,
+                weakestTime: nil,
+                streakState: context.input.streakState,
+                identity: identity,
+                stacking: stacking,
+                todayStatus: context.input.todayStatus,
+                behaviourSummary: context.input.recentBehaviourSummary
+            )
+            return FrozenCoachingSnapshot(
+                fingerprint: context.aiFingerprint,
+                input: aiInput,
+                coachingInput: context.input,
+                depth: context.depth,
+                selectedSignals: context.selectedSignals,
+                timingInsights: context.input.timeOfDayInsights,
+                streakState: context.input.streakState,
+                consistency: context.input.consistency,
+                behaviourSummary: context.input.recentBehaviourSummary,
+                generatedAt: Date()
+            )
+        }.value
+    }
 
-        return AICoachInput(
-            coachingInput: context.input,
-            depth: context.depth,
-            selectedSignals: context.selectedSignals,
-            habitName: habit.name,
-            recentLogs: recentLogsSummary(),
-            state: context.input.identityState,
-            timingConfidence: context.input.timeOfDayInsights.confidence,
-            strongestTime: strongestTime,
-            weakestTime: nil,
-            streakState: streakLabel,
-            identity: userDefinedIdentityText,
-            stacking: guidancePattern()?.description,
-            todayStatus: context.input.todayStatus,
-            behaviourSummary: context.input.recentBehaviourSummary
+    private func logSnapshotChange(from oldSnapshot: FrozenCoachingSnapshot?, to newSnapshot: FrozenCoachingSnapshot) {
+        guard let oldSnapshot else {
+            aiCoachDiagnosticsLog("snapshot candidate fingerprint=\(newSnapshot.fingerprint)")
+            return
+        }
+        guard oldSnapshot.fingerprint != newSnapshot.fingerprint else { return }
+        let oldFields = oldSnapshot.diagnosticFields
+        let newFields = newSnapshot.diagnosticFields
+        let changedFields = newFields.keys
+            .sorted()
+            .compactMap { key -> String? in
+                guard oldFields[key] != newFields[key] else { return nil }
+                return "\(key): \(oldFields[key] ?? "nil") -> \(newFields[key] ?? "nil")"
+            }
+            .joined(separator: "; ")
+        aiCoachDiagnosticsLog(
+            """
+            AI Snapshot Changed
+            OLD fingerprint: \(oldSnapshot.fingerprint)
+            NEW fingerprint: \(newSnapshot.fingerprint)
+            Changed fields: \(changedFields.isEmpty ? "fingerprint-only" : changedFields)
+            """
         )
     }
 
@@ -2153,7 +2423,7 @@ struct HabitDetailSheet: View {
     }
 
     private func recentLogsSummary() -> String {
-        let recentDays = historyProjectedDayStates
+        let recentDays = historyEvaluatedDayStates
             .filter { $0.value.count > 0 || $0.value.value > 0 }
             .map(\.key)
             .sorted(by: >)
@@ -2312,7 +2582,7 @@ struct HabitDetailSheet: View {
         let depth = resolvedCoachingDepth
         let selectedSignals = GuidanceEngine.selectSignals(for: input, depth: depth)
         let coreMeaningFingerprint = input.coreMeaningFingerprint(selectedSignals: selectedSignals)
-        let aiFingerprint = input.aiFingerprint(depth: depth, selectedSignals: selectedSignals)
+        let aiFingerprint = input.stableAIFingerprint(depth: depth, selectedSignals: selectedSignals)
         return CoachingContext(
             input: input,
             depth: depth,
@@ -2332,10 +2602,15 @@ struct HabitDetailSheet: View {
         )
         coachingContext = context
         if let previousAIFingerprint, previousAIFingerprint != context.aiFingerprint {
-            aiUsedSignals = []
-            pendingAICandidate = nil
-            if case .ai = coachPresentationState {
-                coachPresentationState = .fallbackGuidance(guidanceCoachText)
+            if let authoritativeRequestFingerprint {
+                aiCoachDiagnosticsLog("live fingerprint drift ignored authoritative=\(authoritativeRequestFingerprint) live=\(context.aiFingerprint)")
+            } else {
+                aiUsedSignals = []
+                pendingAICandidate = nil
+                lastPublishedAIFingerprint = nil
+                if case .ai = coachPresentationState {
+                    coachPresentationState = .fallbackGuidance(guidanceCoachText)
+                }
             }
         }
 
@@ -2410,8 +2685,13 @@ struct HabitDetailSheet: View {
 
     private func publishAICandidate(_ candidate: PendingAICandidate) {
         guard !(staleRetryCapReached && candidate.trigger == .staleRetry) else { return }
-        refreshCoachingContextAndGuidance(now: appTime.now)
-        if coachingContext?.aiFingerprint != candidate.aiFingerprint {
+        guard lastPublishedAIFingerprint != candidate.aiFingerprint else {
+            #if DEBUG
+            print("AI Coach Diagnostics duplicate UI publish suppressed fingerprint=\(candidate.aiFingerprint)")
+            #endif
+            return
+        }
+        guard authoritativeRequestFingerprint == candidate.aiFingerprint else {
             handleDiscardedStaleAICandidate(previousFingerprint: candidate.aiFingerprint)
             return
         }
@@ -2430,6 +2710,11 @@ struct HabitDetailSheet: View {
         _ = guidanceText
         coachPresentationState = .ai(AICoachResult(title: title, body: body))
         aiUsedSignals = candidate.usedSignals
+        lastPublishedAIFingerprint = candidate.aiFingerprint
+        aiPublishCountForAppearance += 1
+        if let aiVisibleRequestStartedAt {
+            aiCoachDiagnosticsLog("visible publish fingerprint=\(candidate.aiFingerprint) appearance=\(aiCoachAppearanceSequence) publishes=\(aiPublishCountForAppearance) totalMs=\(detailElapsedMs(since: aiVisibleRequestStartedAt))")
+        }
         lockCoachRenderWindow()
     }
 
@@ -3246,7 +3531,8 @@ private struct CalendarSection: View, Equatable {
 private struct HistoryInsightSummary: Equatable {
     let monthTitle: String
     let activeDays: Int
-    let entries: Int
+    let totalValueText: String?
+    let checkIns: Int
     let bestStreak: Int
 }
 
@@ -3256,6 +3542,7 @@ private struct SelectedDayContextSummary: Equatable {
 }
 
 private struct HistoryInsightSummarySection: View {
+    let goalType: GoalType
     let summary: HistoryInsightSummary
 
     var body: some View {
@@ -3266,9 +3553,18 @@ private struct HistoryInsightSummarySection: View {
                     CadenceTokens.Color.Text.secondary.opacity(CadenceTokens.Typography.roleLabelOpacity)
                 )
 
-            HistoryInsightMetricRow(value: "\(summary.activeDays)", label: "Active days")
-            HistoryInsightMetricRow(value: "\(summary.entries)", label: "Total entries")
-            HistoryInsightMetricRow(value: "\(summary.bestStreak)", label: "Longest run")
+            VStack(spacing: 0) {
+                HistoryInsightMetricRow(value: "\(summary.activeDays)", label: "Active days")
+                Divider().opacity(0.08)
+                if goalType == .cumulative, let totalValueText = summary.totalValueText {
+                    HistoryInsightMetricRow(value: totalValueText, label: "Total value")
+                } else {
+                    HistoryInsightMetricRow(value: "\(summary.checkIns)", label: "Check-ins")
+                }
+                Divider().opacity(0.08)
+                HistoryInsightMetricRow(value: "\(summary.bestStreak)", label: "Longest run")
+            }
+            .padding(.vertical, 2)
         }
         .padding(.horizontal, CadenceTokens.Space.sm)
         .padding(.bottom, CadenceTokens.Space.md)
@@ -3301,19 +3597,25 @@ private struct HistoryInsightMetricRow: View {
     let label: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.sm) {
-            Text(value)
-                .font(CadenceTokens.Typography.roleDataPrimaryCompact.weight(.semibold))
-                .foregroundStyle(CadenceTokens.Color.Text.primary)
-                .monospacedDigit()
-                .frame(width: 42, alignment: .leading)
-
+        HStack(alignment: .firstTextBaseline, spacing: CadenceTokens.Space.md) {
             Text(label)
                 .font(CadenceTokens.Typography.roleDataSecondary.weight(.regular))
                 .foregroundStyle(
                     CadenceTokens.Color.Text.secondary.opacity(CadenceTokens.Typography.roleDataSecondaryOpacity)
                 )
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(value)
+                .font(CadenceTokens.Typography.roleDataPrimaryCompact.weight(.semibold))
+                .foregroundStyle(CadenceTokens.Color.Text.primary)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.vertical, CadenceTokens.Space.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
