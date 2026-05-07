@@ -73,7 +73,7 @@ struct HabitCard: View {
                     },
                     isCompact: true
                 )
-                .padding(.leading, HabitRowGrid.iconSize + HabitRowGrid.iconToTitleSpacing)
+                .frame(maxWidth: .infinity, alignment: .leading)
             
         }
         .padding(.horizontal, HabitRowGrid.contentLeading)

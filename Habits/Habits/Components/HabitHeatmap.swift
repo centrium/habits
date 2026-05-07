@@ -314,14 +314,17 @@ struct HabitHeatmap: View {
             weekGrid(
                 days: snapshot.firstWeek
             )
+            .frame(maxWidth: .infinity)
 
             weekGrid(
                 days: snapshot.secondWeek
             )
+            .frame(maxWidth: .infinity)
         }
         .id(snapshot.id)
         .padding(.top, compactTopPadding)
         .padding(.bottom, compactBottomPadding)
+        .frame(maxWidth: .infinity)
         .frame(height: compactHeight)
     }
     
@@ -352,6 +355,7 @@ struct HabitHeatmap: View {
                     }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private func refreshCompactRenderSnapshot() {
@@ -423,6 +427,7 @@ struct HabitHeatmap: View {
                 Spacer()
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func momentumDotColor(for tone: MomentumSemanticTone) -> Color {
